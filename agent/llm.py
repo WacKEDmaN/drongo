@@ -154,6 +154,10 @@ class Router:
         self.temperature = cfg.get("llm", "temperature", default=0.7)
         self.max_tokens = cfg.get("llm", "max_tokens", default=2048)
         self.timeout = cfg.get("llm", "request_timeout", default=120)
+        # Minimum gap between LLM calls — throttles bursts so free-tier
+        # per-minute / token-per-minute limits don't get blown instantly.
+        self.min_interval = cfg.get("llm", "min_call_interval_seconds", default=3.0)
+        self._last_call = 0.0
         prefer = cfg.get("llm", "prefer", default="cloud_first")
         specs = cfg.get("llm", "providers", default=[]) or []
         providers = []
@@ -177,6 +181,12 @@ class Router:
         """Return (text, provider_name). Raises AllProvidersFailed."""
         temperature = self.temperature if temperature is None else temperature
         max_tokens = max_tokens or self.max_tokens
+        # Throttle: keep at least min_interval between calls.
+        if self.min_interval:
+            wait = self.min_interval - (time.time() - self._last_call)
+            if wait > 0:
+                time.sleep(wait)
+        self._last_call = time.time()
         errors = []
         for p in self.providers:
             if not p.is_local and not self.mem.can_use(p.name, p.rpm_limit, p.daily_limit):

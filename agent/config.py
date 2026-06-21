@@ -47,6 +47,7 @@ DEFAULTS = {
         "temperature": 0.7,
         "max_tokens": 2048,
         "request_timeout": 120,
+        "min_call_interval_seconds": 3.0,   # throttle bursts to spare free-tier rate limits
         "providers": [],
     },
     "tools": {

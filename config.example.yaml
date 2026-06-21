@@ -40,6 +40,7 @@ llm:
   temperature: 0.7           # ignored by the Claude provider (4.x rejects it)
   max_tokens: 2048
   request_timeout: 120
+  min_call_interval_seconds: 3   # min gap between LLM calls; raise if you still hit rate limits
   # Providers are tried TOP-TO-BOTTOM. Free tiers first; paid Claude is a capped
   # last resort reached only when every free provider is rate-limited; the local
   # model is the never-fail floor below it. A provider with no API key is skipped.
