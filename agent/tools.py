@@ -286,6 +286,8 @@ def generate_image(ctx: ToolContext, prompt: str = "", filename: str = "", **_):
     if not filename.lower().endswith((".png", ".jpg", ".jpeg")):
         filename += ".png"
     filename = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
+    if not prompt.strip():
+        return "ERROR: generate_image needs a prompt describing the picture to draw."
     provider = ctx.cfg.get("tools", "images", "provider", default="pollinations")
     out_path = Path(ctx.cfg.images) / filename
     try:
@@ -295,12 +297,32 @@ def generate_image(ctx: ToolContext, prompt: str = "", filename: str = "", **_):
                    f"?width=768&height=768&nologo=true&seed={int(time.time())%100000}")
             r = requests.get(url, timeout=120)
             r.raise_for_status()
-            out_path.write_bytes(r.content)
+            data = r.content
         else:
             return f"ERROR: unknown image provider '{provider}'"
+        # Make sure we actually got a picture, not an error page / rate-limit
+        # notice — otherwise we'd save HTML as a broken .png and claim success.
+        ctype = r.headers.get("Content-Type", "").lower()
+        real_ext = (".jpg" if data[:3] == b"\xff\xd8\xff"
+                    else ".png" if data[:8] == b"\x89PNG\r\n\x1a\n"
+                    else ".gif" if data[:6] in (b"GIF87a", b"GIF89a")
+                    else ".webp" if data[:4] == b"RIFF"
+                    else None)
+        if not (real_ext or ctype.startswith("image/")) or len(data) < 512:
+            snippet = data[:120].decode("utf-8", "replace").strip()
+            return (f"ERROR: image service returned {ctype or 'no content-type'} "
+                    f"({len(data)} bytes), not an image — try again (maybe rate-limited) "
+                    f"or simplify the prompt. First bytes: {snippet!r}")
+        # Match the saved extension to the real bytes (pollinations returns JPEG
+        # even when asked for .png) so browsers + the gallery render it correctly.
+        if real_ext and not filename.lower().endswith(real_ext):
+            filename = re.sub(r"\.(png|jpg|jpeg|gif|webp)$", "", filename, flags=re.I) + real_ext
+            out_path = Path(ctx.cfg.images) / filename
+        out_path.write_bytes(data)
         rel = f"images/{filename}"
         ctx.add_artifact(rel, f"image: {prompt[:60]}")
-        return f"saved image to {rel} ({len(r.content)} bytes)"
+        return (f"saved a real image to {rel} ({len(data)} bytes). It is now in the "
+                f"gallery — the task is done; do NOT also describe the image in text.")
     except Exception as e:
         return f"ERROR: {e}"
 
