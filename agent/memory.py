@@ -141,6 +141,19 @@ class Memory:
         self._conn.commit()
         return cur.rowcount > 0
 
+    def set_suggestion(self, text):
+        """A human steer for the NEXT new project (consumed once it's started)."""
+        self.remember("suggestion", str(text).strip())
+
+    def get_suggestion(self):
+        return self.recall("suggestion") or ""
+
+    def pop_suggestion(self):
+        s = self.recall("suggestion") or ""
+        if s:
+            self.remember("suggestion", "")
+        return s
+
     def add_fix(self, entry: dict):
         q = self.recall("fix_queue") or []
         q.append(entry)

@@ -74,9 +74,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .prow{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
  .prow input{flex:1;min-width:120px}
  .homewrap{display:flex;gap:16px;align-items:flex-start}
- .homemain{flex:1;min-width:0} .homeside{width:240px;flex:none;position:sticky;top:14px}
+ .homemain{flex:1;min-width:0} .homeside{width:260px;flex:none;position:sticky;top:14px}
  .homeside .row{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--bd);font-size:13px}
  .homeside .row b{font-weight:600} .homeside .row:last-child{border:0}
+ .usaget{width:100%;border-collapse:collapse;font-size:11.5px}
+ .usaget th{color:var(--mut);text-align:left;font-weight:500;padding-bottom:3px}
+ .usaget td{border-top:1px solid var(--bd);padding:3px 0}
+ .usaget th:not(:first-child),.usaget td:not(:first-child){text-align:right}
+ #suggbox{width:100%;background:#0a0d12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;font:13px/1.5 ui-sans-serif,system-ui,sans-serif;resize:vertical}
  @media(max-width:760px){.homewrap{flex-direction:column}.homeside{width:100%;position:static}}
  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ac);color:#02121f;padding:8px 16px;border-radius:8px;font-weight:600;opacity:0;transition:.2s;pointer-events:none;z-index:20}
  #toast.show{opacity:1}
@@ -117,10 +122,19 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      {% for im in images %}<a href="/file/images/{{ im }}" target=_blank><img loading=lazy src="/file/images/{{ im }}"></a>{% endfor %}
    </div>{% endif %}
   </div>
-  <aside class=homeside><div class=card>
+  <aside class=homeside>
+   <div class=card>
     <h3 style="margin-top:0">Live</h3>
     <div id=homestats class=meta>loading…</div>
-  </div></aside>
+   </div>
+   <div class=card>
+    <h3 style="margin-top:0">LLM usage today</h3>
+    <table class=usaget>
+     <tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>
+     {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=4 class=meta>no calls yet</td></tr>{% endfor %}
+    </table>
+   </div>
+  </aside>
  </div></section>
 
  <section id=system class="tab">
@@ -130,6 +144,16 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=projects class="tab">
+  <div class="card">
+    <h3 style="margin-top:0">💡 Suggest the next project</h3>
+    <p class="meta">Tell {{ name }} what to build next. It finishes anything in
+      progress first, then takes your suggestion on before inventing its own idea.</p>
+    <textarea id=suggbox rows=2 placeholder="e.g. a Pong clone where the paddles speed up with CPU temperature"></textarea>
+    <div style="margin-top:8px">
+      <button class="act big" onclick="sendSuggest()">Send suggestion</button>
+      <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span>
+    </div>
+  </div>
   <h2>Projects it has built — open, run, tag, or flag broken ones for a fix</h2>
   {% for j in projects %}
    <div class="card" data-id="{{ j.id }}">
@@ -197,12 +221,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <button class="act big danger" onclick="saveSettings(true)">Save &amp; Restart</button>
    </div>
   </div>
-
-  <h2>LLM usage today</h2>
-  <table style="width:100%;border-collapse:collapse;font-size:13px">
-   <tr style="color:var(--mut);text-align:left"><th>provider</th><th>today</th><th>min</th><th>total</th><th>cooldown</th></tr>
-   {% for u in usage %}<tr style="border-top:1px solid var(--bd)"><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.minute_count }}</td><td>{{ u.total }}</td><td>{{ u.cool }}</td></tr>{% endfor %}
-  </table>
  </section>
 </main>
 <div id=toast></div>
@@ -231,6 +249,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function addtag(id){const t=prompt('Tag (e.g. favourite, idea, wip):');if(!t)return;
    fetch('/control/tag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,tag:t})})
    .then(r=>r.json()).then(d=>{if(d.ok)addchip(id,t);});}
+ function sendSuggest(){const t=gv('suggbox');if(!t){toast('type a suggestion first');return;}
+   fetch('/control/suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})})
+   .then(r=>r.json()).then(d=>{if(d.ok){$('#suggbox').value='';
+     $('#suggcur').textContent='Queued: '+t;toast('Suggestion queued for next ✓');}
+     else toast(d.error||'failed');});}
  function viewfile(path){$('#modaltitle').textContent='📄 '+path;$('#modalout').textContent='loading…';
    $('#fixbtn').style.display='none';$('#modal').classList.add('show');
    fetch('/file/'+path.split('/').map(encodeURIComponent).join('/'))
@@ -398,6 +421,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             hb=(f"{int(age)}s ago" if age is not None else ""),
             safe=bool(mem.recall("safe_mode")),
             working_on=mem.recall("working_on"),
+            suggestion=mem.get_suggestion(),
             integ_ok=integ_ok)
 
     @app.route("/settings", methods=["POST"])
@@ -537,6 +561,17 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.remove_fix(jid)
         log.info("deleted project: %s (%d path(s))", j["title"], len(removed))
         return {"ok": True, "removed": removed}
+
+    @app.route("/control/suggest", methods=["POST"])
+    def control_suggest():
+        d = request.get_json(silent=True) or {}
+        text = (d.get("text") or "").strip()[:500]
+        if not text:
+            return {"ok": False, "error": "empty suggestion"}, 400
+        mem.set_suggestion(text)
+        mem.remember("run_now", True)   # wake it so an idle agent picks this up soon
+        log.info("human suggestion queued: %s", text[:120])
+        return {"ok": True}
 
     @app.route("/run", methods=["POST"])
     def run_py():

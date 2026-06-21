@@ -158,7 +158,7 @@ class AgentLoop:
         self.safe_reason = ""
 
     # ---- ideation ------------------------------------------------------
-    def ideate(self) -> dict:
+    def ideate(self, suggestion: str = "") -> dict:
         recent = self.mem.recent_task_titles(self.cfg.get("loop", "max_recent_tasks", default=12))
         interests = self.cfg.get("interests", default=[])
         hw = self.mem.recall("hardware")
@@ -170,9 +170,15 @@ class AgentLoop:
                        f"thermals={[t.get('type') for t in hw.get('thermals', [])]}.")
         else:
             hw_hint = "\nYou have not scanned the hardware yet — a sensor dashboard could start with discover_sensors."
-        user = (f"Your interests: {interests}\n"
-                f"Recent projects (don't repeat): {recent}{hw_hint}\n\n"
-                "Propose your next project now.")
+        if suggestion:
+            user = (f"Your human has asked for this NEXT: \"{suggestion}\"\n"
+                    f"Build exactly that. Pick the best-matching task_type and flesh it "
+                    f"out into a concrete, finishable project.{hw_hint}\n\n"
+                    "Propose it now.")
+        else:
+            user = (f"Your interests: {interests}\n"
+                    f"Recent projects (don't repeat): {recent}{hw_hint}\n\n"
+                    "Propose your next project now.")
         system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
         text, provider = self.router.complete(system, user, temperature=0.9)
         obj = extract_json(text) or {}
@@ -297,8 +303,19 @@ class AgentLoop:
             if saved:
                 self.mem.remember("current_project", None)
             messages, attempt, prior_artifacts = None, 1, []
-            fix = self.mem.pop_fix()      # flagged-broken projects jump the queue
-            if fix:
+            suggestion = self.mem.pop_suggestion()   # human's steer wins the next slot
+            fix = None if suggestion else self.mem.pop_fix()  # else flagged fixes jump the queue
+            if suggestion:
+                try:
+                    task = self.ideate(suggestion=suggestion)
+                except AllProvidersFailed as e:
+                    self.mem.set_suggestion(suggestion)   # don't lose it
+                    self.mem.add_journal("error", "Could not plan a project", str(e), ok=False)
+                    self._alert_problem(f"Couldn't reach any LLM to plan your suggestion: {e}")
+                    return {"ok": False}
+                log.info("New project from your suggestion: %s [%s]",
+                         task["title"], task["task_type"])
+            elif fix:
                 arts = fix.get("artifacts") or []
                 task = {
                     "task_type": "fix",
