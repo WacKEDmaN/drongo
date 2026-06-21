@@ -45,6 +45,9 @@ Rules:
 - Build something real and finished, not a stub. Test it when you can.
 - Save games/scripts under projects/, images go to the gallery via generate_image,
   dashboards via make_dashboard. Keep everything inside the workspace.
+- DOCUMENT every project: alongside the code write a short README.md (in the same
+  projects/ folder) covering what it is, how to run it (exact command), what it
+  needs (dependencies), and how to use it. Keep code commented where it helps.
 - Return "final" ONLY when the artifact actually exists and works and you've
   verified it (e.g. read the file back / ran it). NEVER return "final" just
   because you're stuck, blocked, rate-limited, or out of ideas — that falsely

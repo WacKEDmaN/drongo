@@ -21,7 +21,7 @@ ProtectHome=true
 ReadWritePaths=/var/lib/drongo
 PrivateTmp=true
 TasksMax=64
-MemoryMax=256M
+MemoryMax=512M
 
 # --- Network: the dashboard may ONLY be reached from loopback + private LAN.
 #     Public/internet source addresses are dropped by the kernel (BPF), so even

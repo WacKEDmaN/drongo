@@ -87,7 +87,7 @@ DEFAULTS = {
         "ntfy": {"enabled": False, "server": "https://ntfy.sh", "topic": ""},
         "command": {"enabled": False, "run": ""},
     },
-    "web": {"host": "0.0.0.0", "port": 8080},
+    "web": {"host": "0.0.0.0", "port": 8080, "allow_run": True},
     "selfupdate": {"enabled": True, "repo_dir": "."},
 }
 

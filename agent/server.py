@@ -1,12 +1,14 @@
 """Local web dashboard + control panel for DRONGO.
 
-Tabs: Home (status + activity + gallery), System (live host stats), Projects
-(everything it built, with tagging + "fix this" flags), and Control (pause /
-resume / run-now / restart).
+Tabs: Home (status + live stats sidebar + activity + gallery), System (full live
+host stats), Projects (everything it built — open/run/tag, flag broken ones for
+fixing), and Control (pause / resume / run-now / restart).
 
-Runs as the unprivileged 'drongo' user, LAN-locked + password-protected. All
-controls work via files / DB flags the agent watches — no systemctl, no root,
-no arbitrary commands — so the dashboard stays inside the security sandbox.
+Runs as the unprivileged 'drongo' user, LAN-locked + password-protected. Controls
+work via files / DB flags the agent watches — no systemctl, no root. The one
+exception is "Run" (executes a generated .py): it runs as the same unprivileged
+user with a timeout + memory cap, only on files under projects/, and can be
+turned off with web.allow_run: false.
 """
 
 from __future__ import annotations
@@ -16,12 +18,13 @@ import ipaddress
 import json
 import logging
 import os
+import subprocess
 import time
 from pathlib import Path
 
 from flask import Flask, Response, abort, render_template_string, request, send_from_directory
 
-from . import watchdog
+from . import safeguard, watchdog
 from .memory import Memory, utc_iso
 from .safeguard import integrity_status
 from .tools import system_stats
@@ -42,7 +45,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  nav{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
  nav button{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:14px}
  nav button.on{background:var(--ac);color:#02121f;border-color:var(--ac);font-weight:600}
- main{max-width:1040px;margin:0 auto;padding:20px}
+ main{max-width:1080px;margin:0 auto;padding:20px}
  .tab{display:none} .tab.on{display:block}
  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin:12px 0}
  .card h3{margin:0 0 4px;font-size:15px} .meta{color:var(--mut);font-size:12.5px}
@@ -60,8 +63,18 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  button.act{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:5px 11px;cursor:pointer;font-size:12.5px;margin:4px 6px 0 0}
  button.act:hover{border-color:var(--ac)} button.danger:hover{border-color:var(--bad)}
  .big{font-size:15px;padding:10px 18px;margin:6px 10px 6px 0}
- #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ac);color:#02121f;padding:8px 16px;border-radius:8px;font-weight:600;opacity:0;transition:.2s;pointer-events:none}
+ .runbtn{font-size:11px;padding:1px 7px;margin-left:4px;background:#0a0d12;color:var(--ok);border:1px solid #1c3;border-radius:6px;cursor:pointer}
+ .homewrap{display:flex;gap:16px;align-items:flex-start}
+ .homemain{flex:1;min-width:0} .homeside{width:240px;flex:none;position:sticky;top:14px}
+ .homeside .row{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--bd);font-size:13px}
+ .homeside .row b{font-weight:600} .homeside .row:last-child{border:0}
+ @media(max-width:760px){.homewrap{flex-direction:column}.homeside{width:100%;position:static}}
+ #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ac);color:#02121f;padding:8px 16px;border-radius:8px;font-weight:600;opacity:0;transition:.2s;pointer-events:none;z-index:20}
  #toast.show{opacity:1}
+ .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}
+ .modal.show{display:flex}
+ .modal .box{background:var(--card);border:1px solid var(--bd);border-radius:10px;max-width:780px;width:100%;max-height:82vh;overflow:auto;padding:16px}
+ .modal pre{white-space:pre-wrap;word-break:break-word;font-size:12.5px;background:#0a0d12;padding:10px;border-radius:6px;margin:0}
 </style></head><body>
 <header>
  <h1>{{ name }}</h1>
@@ -78,22 +91,28 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </header>
 <main>
 
- <section id=home class="tab on">
-  {% if working_on %}<div class="card"><b>⏳ Working on:</b> {{ working_on.title }}
-    <span class=meta>({{ working_on.type }} · attempt {{ working_on.attempt }})</span></div>{% endif %}
-  <h2>Recent activity</h2>
-  {% for j in journal %}
-   <div class="card">
-     <h3>{{ j.title }} <span class="meta">· {{ j.kind }}{% if j.task_type %} · {{ j.task_type }}{% endif %}</span></h3>
-     <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}{% if not j.ok %} · ⚠ unfinished{% endif %}</div>
-     <p>{{ j.body }}</p>
-     {% for a in j.arts %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endfor %}
-   </div>
-  {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
-  {% if images %}<h2>Gallery</h2><div class="grid">
-    {% for im in images %}<a href="/file/images/{{ im }}" target=_blank><img loading=lazy src="/file/images/{{ im }}"></a>{% endfor %}
-  </div>{% endif %}
- </section>
+ <section id=home class="tab on"><div class=homewrap>
+  <div class=homemain>
+   {% if working_on %}<div class="card"><b>⏳ Working on:</b> {{ working_on.title }}
+     <span class=meta>({{ working_on.type }} · attempt {{ working_on.attempt }})</span></div>{% endif %}
+   <h2>Recent activity</h2>
+   {% for j in journal %}
+    <div class="card">
+      <h3>{{ j.title }} <span class="meta">· {{ j.kind }}{% if j.task_type %} · {{ j.task_type }}{% endif %}</span></h3>
+      <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}{% if not j.ok %} · ⚠ unfinished{% endif %}</div>
+      <p>{{ j.body }}</p>
+      {% for a in j.arts %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endfor %}
+    </div>
+   {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
+   {% if images %}<h2>Gallery</h2><div class="grid">
+     {% for im in images %}<a href="/file/images/{{ im }}" target=_blank><img loading=lazy src="/file/images/{{ im }}"></a>{% endfor %}
+   </div>{% endif %}
+  </div>
+  <aside class=homeside><div class=card>
+    <h3 style="margin-top:0">Live</h3>
+    <div id=homestats class=meta>loading…</div>
+  </div></aside>
+ </div></section>
 
  <section id=system class="tab">
   <h2>Host</h2>
@@ -102,14 +121,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=projects class="tab">
-  <h2>Projects it has built — tag broken ones to send them back for a fix</h2>
+  <h2>Projects it has built — open, run, tag, or flag broken ones for a fix</h2>
   {% for j in projects %}
    <div class="card" data-id="{{ j.id }}">
      <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
      <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
      <p>{{ j.body }}</p>
-     {% for a in j.arts %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endfor %}
-     <div style="margin-top:8px">
+     {% for a in j.arts %}<span style="white-space:nowrap"><a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick="runpy('{{ a.path }}')">▶ run</button>{% endif %}</span> {% endfor %}
+     <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
        {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
      </div>
      <button class="act danger" onclick="fixit({{ j.id }})">🔧 Fix this</button>
@@ -127,7 +146,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <button class="act big" onclick="ctl('stop')">⏹ Stop (dormant)</button>
    <button class="act big danger" onclick="if(confirm('Restart the agent?'))ctl('restart')">⟳ Restart</button>
    <p class="meta">Pause/Stop just idle it (removable). Restart relaunches via systemd.
-     “Fix” flags queue here and get worked on before new projects.</p>
+     Flagged fixes are worked before new projects.</p>
    <p class="meta" id=fixq></p>
   </div>
   <h2>LLM usage today</h2>
@@ -138,25 +157,39 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 </main>
 <div id=toast></div>
+<div class=modal id=modal onclick="if(event.target===this)this.classList.remove('show')">
+  <div class=box><h3 id=modaltitle style="margin-top:0"></h3><pre id=modalout></pre>
+    <button class="act" onclick="document.getElementById('modal').classList.remove('show')">close</button></div>
+</div>
 <script>
  const $=s=>document.querySelector(s);
- document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
-   document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
-   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
-   b.classList.add('on'); $('#'+b.dataset.t).classList.add('on');
- });
- function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+ function showTab(t){
+   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
+   history.replaceState(null,'','#'+t);
+ }
+ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
+ if(location.hash){const t=location.hash.slice(1); if($('#'+t)) showTab(t);}
+ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
  function ctl(a){fetch('/control/'+a,{method:'POST'}).then(r=>r.json()).then(d=>{toast(a+(d.ok?' ✓':' — '+(d.error||'failed')));refresh();});}
- function fixit(id){const n=prompt("What's wrong / what should it fix? (optional)")||"";
+ function addchip(id,text,cls){const c=$('#chips-'+id);if(!c)return;
+   if([...c.children].some(x=>x.textContent===text))return;
+   const s=document.createElement('span');s.className='chip '+(cls||'');s.textContent=text;c.appendChild(s);}
+ function fixit(id){const n=prompt("What's wrong / what should it fix? (optional)");if(n===null)return;
    fetch('/control/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,note:n})})
-   .then(r=>r.json()).then(d=>{toast(d.ok?'Queued for fixing ✓':'failed');setTimeout(()=>location.reload(),700);});}
+   .then(r=>r.json()).then(d=>{if(d.ok){addchip(id,'needs-fix','fix');toast('Queued for fixing ✓');}else toast(d.error||'failed');});}
  function addtag(id){const t=prompt('Tag (e.g. favourite, idea, wip):');if(!t)return;
    fetch('/control/tag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,tag:t})})
-   .then(()=>location.reload());}
+   .then(r=>r.json()).then(d=>{if(d.ok)addchip(id,t);});}
+ function runpy(path){toast('running '+path.split('/').pop()+'…');
+   $('#modaltitle').textContent='▶ '+path; $('#modalout').textContent='running…'; $('#modal').classList.add('show');
+   fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})})
+   .then(r=>r.json()).then(d=>{$('#modalout').textContent=d.ok?('(exit '+d.rc+')\\n'+(d.out||'(no output)')):('ERROR: '+(d.error||'failed'));});}
  function pct(v){return v==null?'—':v+'%';}
  function refresh(){fetch('/api/system').then(r=>r.json()).then(d=>{
    const s=d.stats||{};
-   $('#p_status').textContent=(d.status||'?')+(d.next_cycle_in!=null&&d.status=='sleeping'?' · next in '+d.next_cycle_in+'s':'');
+   const status=(d.status||'?')+(d.next_cycle_in!=null&&d.status=='sleeping'?' · next in '+d.next_cycle_in+'s':'');
+   $('#p_status').textContent=status;
    const cells=[
      ['status',d.status||'?'],['time',s.time||'—'],['uptime',s.uptime||'—'],
      ['cpu',pct(s.cpu_pct)],['memory',s.mem_pct!=null?s.mem_used_mb+'/'+s.mem_total_mb+'MB':'—'],
@@ -171,6 +204,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      return '<div class=stat><div class=k>'+k+'</div><div class=v>'+v+'</div>'+bar+'</div>';
    }).join('');
    $('#sysmodel').textContent=(s.model||'')+(s.date?'  ·  '+s.date:'');
+   const t0=(s.temps&&s.temps[0])?(s.temps[0].c+'°C'):'—';
+   const rows=[['status',status],['time',s.time||'—'],['date',s.date||''],['uptime',s.uptime||'—'],
+     ['cpu',pct(s.cpu_pct)],['mem',pct(s.mem_pct)],['disk',pct(s.disk_pct)],['temp',t0],
+     ['load',(s.load||[]).join(' ')||'—']];
+   $('#homestats').innerHTML=rows.map(([k,v])=>'<div class=row><span>'+k+'</span><b>'+v+'</b></div>').join('');
    $('#fixq').textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
  }).catch(()=>{});}
  refresh(); setInterval(refresh,4000);
@@ -189,6 +227,7 @@ def create_app(cfg, mem: Memory) -> Flask:
     app = Flask(__name__)
     name = cfg.get("identity", "name", default="DRONGO")
     ws = Path(cfg.workspace)
+    allow_run = bool(cfg.get("web", "allow_run", default=True))
 
     password = os.environ.get("DRONGO_WEB_PASSWORD", "")
     nets = []
@@ -239,11 +278,10 @@ def create_app(cfg, mem: Memory) -> Flask:
         running_root = getattr(os, "geteuid", lambda: -1)() == 0
         integ_ok = integ["hash_ok"] and (running_root or not integ["writable_by_me"])
         return render_template_string(
-            PAGE, name=name,
-            journal=rows,
+            PAGE, name=name, journal=rows,
             projects=[r for r in rows if r["kind"] == "cycle"],
             images=_ls(cfg.images, (".png", ".jpg", ".jpeg")),
-            usage=usage,
+            usage=usage, allow_run=allow_run,
             alive=age is not None and age < 1800,
             hb=(f"{int(age)}s ago" if age is not None else ""),
             safe=bool(mem.recall("safe_mode")),
@@ -323,6 +361,30 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.tag_entry(jid, "needs-fix", on=True)
         log.info("flagged for fixing: %s", j["title"])
         return {"ok": True}
+
+    @app.route("/run", methods=["POST"])
+    def run_py():
+        if not allow_run:
+            return {"ok": False, "error": "running is disabled (web.allow_run: false)"}, 403
+        rel = ((request.get_json(silent=True) or {}).get("path") or "").strip()
+        if not rel.endswith(".py"):
+            return {"ok": False, "error": "only .py files can be run"}, 400
+        try:
+            full = safeguard.safe_join(str(ws), rel)
+        except Exception:
+            return {"ok": False, "error": "path escapes the workspace"}, 400
+        if not os.path.isfile(full) or "/projects/" not in full.replace(os.sep, "/"):
+            return {"ok": False, "error": "only scripts under projects/ can be run"}, 404
+        try:
+            p = subprocess.run(["python3", full], cwd=str(ws), capture_output=True,
+                               text=True, timeout=30,
+                               preexec_fn=safeguard.posix_limits(mem_mb=300, cpu_seconds=25))
+            out = (p.stdout or "") + (("\n[stderr]\n" + p.stderr) if p.stderr else "")
+            return {"ok": True, "rc": p.returncode, "out": out[:4000] or "(no output)"}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "timed out after 30s"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     @app.route("/file/<path:relpath>")
     def serve_file(relpath):

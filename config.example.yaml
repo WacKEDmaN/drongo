@@ -212,6 +212,10 @@ web:
   # private LAN ranges at the kernel level (see drongo-web.service IPAddressAllow).
   host: 0.0.0.0
   port: 8080
+  # Let the dashboard's "Run" button execute the agent's generated .py files
+  # (only files under projects/, as the unprivileged drongo user, 30s timeout).
+  # Set false to disable that button entirely.
+  allow_run: true
 
 selfupdate:
   enabled: true
