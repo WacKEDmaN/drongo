@@ -81,6 +81,13 @@ def cmd_doctor(args):
     strict = cfg.get("safety", "strict", default=False)
     issues = []   # plain-English things a human must fix
 
+    # Footgun guard: if you run this from a git clone, `python -m agent` loads
+    # the clone's code, NOT the installed agent. Say so loudly.
+    pkg_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.isdir("/opt/drongo") and pkg_root != "/opt/drongo":
+        print(f"NOTE: inspecting code at {pkg_root}, not the installed /opt/drongo.")
+        print("      Run 'sudo drongo doctor' (or cd /opt/drongo first) for the real agent.\n")
+
     print(f"Config:      {cfg.source_path or '(defaults only)'}")
     print(f"Base dir:    {cfg.base_dir}")
     print(f"DB:          {cfg.db_path}")

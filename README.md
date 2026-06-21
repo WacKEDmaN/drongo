@@ -42,7 +42,7 @@ already working on the local model, no keys required.
 
 **3. Did it work?**
 ```bash
-sudo /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml doctor
+sudo drongo doctor
 ```
 You want **`VERDICT: ✓ READY`**. Then open the dashboard in a browser:
 **`http://<your-pi-ip>:8080/`** and watch it build things. Check in whenever you like.
@@ -193,7 +193,7 @@ Check on it:
 
 ```bash
 journalctl -u drongo -f                                   # live log
-/opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml doctor
+sudo drongo doctor
 # Dashboard:  http://<pi-ip>:8080/
 ```
 
@@ -271,7 +271,7 @@ under `alerts:` — they all fire together. The root observer/updater also use D
    (Needs `python-periphery`, already in `requirements.txt`.)
 
 > Quick test: `sudo systemctl restart drongo` and watch — or trigger one cycle with
-> `sudo /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml once`.
+> `sudo drongo once`.
 > The **`command`** channel can run any script on an alert (it gets `DRONGO_ALERT_*`
 > env vars) if you want to drive something more exotic.
 
@@ -343,7 +343,7 @@ SSH-key repo that's usually not the case, so `update.sh` is the reliable path.)*
 
 **First move, always:** run the doctor — it tells you in plain English what's wrong.
 ```bash
-sudo /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml doctor
+sudo drongo doctor
 ```
 
 | Symptom | Likely cause → fix |

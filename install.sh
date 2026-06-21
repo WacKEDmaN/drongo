@@ -200,6 +200,9 @@ systemctl daemon-reload
 systemctl enable --now drongo.service drongo-web.service \
                        drongo-observer.timer drongo-update.timer
 
+# Convenience CLI: `sudo drongo doctor|configure|...` always targets /opt/drongo.
+cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/drongo
+
 # ---------------------------------------------------------------------------
 # Self-check so you immediately know whether it's healthy.
 say "Health check"
@@ -222,8 +225,8 @@ cat <<EOF
     (Discord webhook, LED pin, API keys — it restarts DRONGO for you.)
 
   HOW DO I KNOW IT'S WORKING?
-    sudo $INSTALL/.venv/bin/python -m agent -c $ETC/config.yaml doctor   # should say READY
-    journalctl -u drongo -f                                              # watch it think
+    sudo drongo doctor          # should say READY (run from anywhere)
+    journalctl -u drongo -f     # watch it think
     Dashboard:  http://${IP:-<pi-ip>}:8080/
        login: ANY username   password: $(grep -m1 '^DRONGO_WEB_PASSWORD=' "$ETC/drongo.env" | cut -d= -f2-)
        (LAN-only + password-protected. Change it in $ETC/drongo.env, then restart drongo-web.)

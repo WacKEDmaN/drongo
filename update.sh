@@ -29,6 +29,9 @@ chown -R root:root "$INSTALL"
 chmod 0444 "$INSTALL/agent/safeguard.py" "$INSTALL/agent/safeguard.py.sha256"
 [ -d "$INSTALL/.git" ] && git -C "$INSTALL" tag -f drongo-lkg HEAD >/dev/null 2>&1 || true
 
+echo "==> refreshing the 'drongo' CLI wrapper"
+cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/drongo
+
 echo "==> fixing runtime ownership"
 chown -R drongo:drongo /var/lib/drongo
 

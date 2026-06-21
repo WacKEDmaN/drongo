@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# DRONGO admin CLI — always targets the INSTALLED agent at /opt/drongo, from
+# any directory (so it never accidentally runs a git-clone copy instead).
+#   sudo drongo doctor | configure | discover | verify | seal | once | run | web
+cd /opt/drongo 2>/dev/null || { echo "DRONGO is not installed at /opt/drongo"; exit 1; }
+exec /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml "$@"
