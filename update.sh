@@ -32,6 +32,10 @@ chmod 0444 "$INSTALL/agent/safeguard.py" "$INSTALL/agent/safeguard.py.sha256"
 echo "==> refreshing the 'drongo' CLI wrapper"
 cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/drongo
 
+echo "==> refreshing systemd units"
+cp "$INSTALL"/systemd/*.service "$INSTALL"/systemd/*.timer /etc/systemd/system/
+systemctl daemon-reload
+
 echo "==> fixing runtime ownership"
 chown -R drongo:drongo /var/lib/drongo
 
