@@ -135,7 +135,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
      <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
      <p>{{ j.body }}</p>
-     {% for a in j.arts %}<span style="white-space:nowrap"><a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick="runpy('{{ a.path }}')">▶ run</button>{% endif %}</span> {% endfor %}
+     {% for a in j.arts %}<span style="white-space:nowrap"><a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick="runpy('{{ a.path }}',{{ j.id }})">▶ run</button>{% endif %}</span> {% endfor %}
      <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
        {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
      </div>
@@ -206,6 +206,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <div id=toast></div>
 <div class=modal id=modal onclick="if(event.target===this)this.classList.remove('show')">
   <div class=box><h3 id=modaltitle style="margin-top:0"></h3><pre id=modalout></pre>
+    <button class="act danger" id=fixbtn style="display:none" onclick="fixFromRun()">🔧 Fix this with the error above</button>
     <button class="act" onclick="document.getElementById('modal').classList.remove('show')">close</button></div>
 </div>
 <script>
@@ -228,10 +229,18 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function addtag(id){const t=prompt('Tag (e.g. favourite, idea, wip):');if(!t)return;
    fetch('/control/tag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,tag:t})})
    .then(r=>r.json()).then(d=>{if(d.ok)addchip(id,t);});}
- function runpy(path){toast('running '+path.split('/').pop()+'…');
-   $('#modaltitle').textContent='▶ '+path; $('#modalout').textContent='running…'; $('#modal').classList.add('show');
+ let _runid=null;
+ function runpy(path,id){_runid=id; toast('running '+path.split('/').pop()+'…');
+   $('#modaltitle').textContent='▶ '+path; $('#modalout').textContent='running…';
+   $('#fixbtn').style.display='none'; $('#modal').classList.add('show');
    fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})})
-   .then(r=>r.json()).then(d=>{$('#modalout').textContent=d.ok?('(exit '+d.rc+')\\n'+(d.out||'(no output)')):('ERROR: '+(d.error||'failed'));});}
+   .then(r=>r.json()).then(d=>{
+     const failed=!d.ok||d.rc!==0;
+     $('#modalout').textContent=d.ok?('(exit '+d.rc+')\\n'+(d.out||'(no output)')):('ERROR: '+(d.error||'failed'));
+     $('#fixbtn').style.display=(failed&&_runid!=null)?'inline-block':'none';});}
+ function fixFromRun(){const note='Run failed:\\n'+($('#modalout').textContent||'').slice(0,1400);
+   fetch('/control/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:_runid,note})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?'Queued for fixing ✓':'failed');$('#modal').classList.remove('show');});}
  const PKEY={{ pkey_json|safe }};
  const gv=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
  const gc=id=>{const e=document.getElementById(id);return e?e.checked:false;};
@@ -443,7 +452,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             return {"ok": False, "error": "entry not found"}, 404
         j = match[0]
         arts = json.loads(j["artifacts"] or "[]")
-        mem.add_fix({"id": jid, "title": j["title"], "note": (d.get("note") or "")[:200],
+        mem.add_fix({"id": jid, "title": j["title"], "note": (d.get("note") or "")[:1500],
                      "artifacts": [a["path"] for a in arts]})
         mem.tag_entry(jid, "needs-fix", on=True)
         log.info("flagged for fixing: %s", j["title"])

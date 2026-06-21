@@ -45,6 +45,12 @@ Rules:
 - Build something real and finished, not a stub. Test it when you can.
 - Save games/scripts under projects/, images go to the gallery via generate_image,
   dashboards via make_dashboard. Keep everything inside the workspace.
+- For anything that DISPLAYS data (dashboards, visualisations, status pages),
+  build STATIC HTML via make_dashboard — it's served by the existing web UI. Do
+  NOT write a standalone web server (HTTPServer/Flask app.run): it never exits,
+  can't be run from the dashboard, and port 8080 is already taken by DRONGO. If
+  you truly need live data, generate the HTML with the numbers baked in and
+  refresh by regenerating it; don't open a listening socket.
 - DOCUMENT every project: alongside the code write a short README.md (in the same
   projects/ folder) covering what it is, how to run it (exact command), what it
   needs (dependencies), and how to use it. Keep code commented where it helps.
