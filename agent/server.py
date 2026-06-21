@@ -486,6 +486,45 @@ def create_app(cfg, mem: Memory) -> Flask:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @app.route("/data/<path:relpath>")
+    def run_data(relpath):
+        # Per-request "backend" for the agent's DYNAMIC dashboards: runs a small
+        # projects/ .py and returns its stdout verbatim (JSON), so a static HTML+JS
+        # page can fetch() live data without anyone running a standalone server.
+        # Same safety envelope as /run: projects/ only, .py only, venv, sandboxed,
+        # short timeout, unprivileged. GET so client JS can poll it directly.
+        if not allow_run:
+            abort(403)
+        if not relpath.endswith(".py"):
+            abort(400)
+        try:
+            full = safeguard.safe_join(str(ws), relpath)
+        except Exception:
+            abort(400)
+        if not os.path.isfile(full) or "/projects/" not in full.replace(os.sep, "/"):
+            abort(404)
+        venv_py = os.path.join(str(cfg.project_venv), "bin", "python")
+        py = venv_py if os.path.exists(venv_py) else "python3"
+        env = dict(os.environ, VIRTUAL_ENV=str(cfg.project_venv),
+                   PATH=os.path.join(str(cfg.project_venv), "bin") + os.pathsep + os.environ.get("PATH", ""))
+        try:
+            p = subprocess.run([py, full], cwd=str(ws), capture_output=True,
+                               text=True, timeout=20, env=env,
+                               preexec_fn=safeguard.posix_limits(mem_mb=300, cpu_seconds=15))
+        except subprocess.TimeoutExpired:
+            return Response('{"error":"data script timed out"}', status=504,
+                            mimetype="application/json")
+        except Exception as e:
+            return Response(json.dumps({"error": str(e)}), status=500,
+                            mimetype="application/json")
+        out = p.stdout or ""
+        if p.returncode != 0:
+            return Response(json.dumps({"error": "data script exited %d" % p.returncode,
+                                        "stderr": (p.stderr or "")[:1000]}),
+                            status=502, mimetype="application/json")
+        ct = "application/json" if out.lstrip().startswith(("{", "[")) else "text/plain; charset=utf-8"
+        return Response(out, mimetype=ct)
+
     @app.route("/file/<path:relpath>")
     def serve_file(relpath):
         root = os.path.realpath(str(ws))

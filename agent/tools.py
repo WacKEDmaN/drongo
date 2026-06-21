@@ -43,6 +43,10 @@ class ToolContext:
         return str(self.cfg.workspace)
 
     def add_artifact(self, rel_path, label):
+        for a in self.artifacts:           # dedupe: a file written N times = one artifact
+            if a["path"] == rel_path:
+                a["label"] = label
+                return
         self.artifacts.append({"path": rel_path, "label": label})
 
 

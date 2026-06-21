@@ -45,12 +45,23 @@ Rules:
 - Build something real and finished, not a stub. Test it when you can.
 - Save games/scripts under projects/, images go to the gallery via generate_image,
   dashboards via make_dashboard. Keep everything inside the workspace.
-- For anything that DISPLAYS data (dashboards, visualisations, status pages),
-  build STATIC HTML via make_dashboard — it's served by the existing web UI. Do
-  NOT write a standalone web server (HTTPServer/Flask app.run): it never exits,
-  can't be run from the dashboard, and port 8080 is already taken by DRONGO. If
-  you truly need live data, generate the HTML with the numbers baked in and
-  refresh by regenerating it; don't open a listening socket.
+- DASHBOARDS can be fully DYNAMIC (live data, JS, charts) AND have a Python
+  backend — you just don't run your own web server. The pattern:
+    1. Frontend: an HTML file with client-side JavaScript (fetch, canvas,
+       <table>, charts — whatever you like). Put it under projects/<name>/ or
+       make a static one via make_dashboard.
+    2. Backend: a SMALL Python script under projects/<name>/ that, when run,
+       prints ONE JSON object to stdout and exits (read sensors / stats / files,
+       json.dumps(...), print it, done — NO server, NO loop, NO input()).
+    3. Wire them: your JS polls GET /data/projects/<name>/<script>.py on the
+       SAME origin, e.g.
+         setInterval(()=>fetch('/data/projects/foo/data.py')
+           .then(r=>r.json()).then(render), 2000);
+       DRONGO runs that script in your venv per request and returns its stdout
+       as the response — that IS your live Python backend. Open the page from
+       the Projects/Home file links.
+  Do NOT use HTTPServer / Flask app.run / socket.bind — a long-running server
+  never exits (so it can't be Run from the UI) and port 8080 is already DRONGO's.
 - DOCUMENT every project: alongside the code write a short README.md (in the same
   projects/ folder) covering what it is, how to run it (exact command), what it
   needs (dependencies), and how to use it. Keep code commented where it helps.
@@ -299,7 +310,12 @@ class AgentLoop:
         self.mem.remember("working_on", {"title": task["title"], "attempt": attempt,
                                          "type": task["task_type"]})
         outcome, provider, messages, finished = self.execute(task, ctx, messages)
-        all_artifacts = (prior_artifacts or []) + ctx.artifacts
+        # Merge this cycle's artifacts with prior ones, deduped by path (a project
+        # spans several cycles and rewrites files, so keep one entry per file).
+        merged = {}
+        for a in (prior_artifacts or []) + ctx.artifacts:
+            merged[a["path"]] = a
+        all_artifacts = list(merged.values())
         llm_down = outcome.lower().startswith("llm unavailable")
         elapsed = int(time.time() - t0)
 
