@@ -247,11 +247,13 @@ LAN-only) — four tabs:
 | See/launch what it built | Dashboard → Projects (HTML opens in a new tab) |
 | Pause / resume / restart | Dashboard → Control (or `touch …/workspace/PAUSE`, remove to resume) |
 | Send a broken project back for fixing | Dashboard → Projects → **🔧 Fix this** |
+| Delete a project (removes its files too) | Dashboard → Projects → **🗑 Delete** |
 | Run a cycle right now | Dashboard → Control → **▶ Run a cycle now** |
 | Watch it live | `journalctl -u drongo -f` |
 | Steer its interests | edit `interests:` in `/etc/drongo/config.yaml`, restart |
 | Force a code update | `sudo systemctl start drongo-update` |
 | Check health/guard | `sudo drongo doctor` |
+| **Wipe ALL projects + history** (keeps your settings/keys) | `sudo drongo reset` |
 
 The agent only pushes an alert when it finishes something with artifacts (set
 `alerts.notify_every_cycle: true` for a ping every cycle).

@@ -87,6 +87,26 @@ class Memory:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def count_journal(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) AS c FROM journal").fetchone()["c"]
+
+    def reset_runtime(self, keep_keys=("settings",)) -> int:
+        """Wipe ALL projects' history: clears the journal, the LLM usage/cooldown
+        counters, and every kv entry EXCEPT keep_keys (settings are kept so API
+        keys / persona / interests survive). Returns the number of journal rows
+        removed. Caller is responsible for deleting the workspace files."""
+        n = self.count_journal()
+        self._conn.execute("DELETE FROM journal")
+        self._conn.execute("DELETE FROM usage")
+        if keep_keys:
+            placeholders = ",".join("?" * len(keep_keys))
+            self._conn.execute(f"DELETE FROM kv WHERE key NOT IN ({placeholders})",
+                               tuple(keep_keys))
+        else:
+            self._conn.execute("DELETE FROM kv")
+        self._conn.commit()
+        return n
+
     def recent_task_titles(self, limit=12):
         rows = self._conn.execute(
             "SELECT title FROM journal WHERE kind='cycle' ORDER BY id DESC LIMIT ?",

@@ -7,6 +7,7 @@
     python -m agent doctor     # check providers, paths and guard integrity
     python -m agent verify     # check safeguard integrity (exit 0 = ok)
     python -m agent seal       # (run as ROOT) write the safeguard .sha256 sidecar
+    python -m agent reset      # WIPE ALL PROJECTS + history (keeps your settings)
 """
 
 from __future__ import annotations
@@ -242,6 +243,90 @@ def cmd_configure(args):
     print("\nDone. Re-run anytime:  sudo /opt/drongo/configure.sh\n")
 
 
+def cmd_reset(args):
+    """Factory-reset DRONGO's RUNTIME: delete every project, the whole journal,
+    the gallery/dashboards, the fix queue and cooldowns. Your settings (API keys,
+    Discord webhook, persona, interests) are KEPT. The code is untouched."""
+    import shutil as _sh
+    import subprocess as _sp
+
+    cfg = load_config(args.config)
+    _setup_logging(cfg)
+    mem = Memory(cfg.db_path)
+
+    projects = sorted(p.name for p in cfg.projects.glob("*")) if cfg.projects.exists() else []
+    n_journal = mem.count_journal()
+
+    print("\n*** DRONGO RESET — THIS PERMANENTLY WIPES ALL PROJECTS ***\n")
+    print(f"  Projects to DELETE ({len(projects)}): " + (", ".join(projects) or "(none)"))
+    print(f"  Journal entries to delete:  {n_journal}")
+    print("  Also cleared:  dashboards, generated images, fix queue, cooldowns, working state.")
+    print("  KEPT:          your settings — API keys, Discord webhook, persona, interests.")
+    print("  Your code and OS are untouched.\n")
+
+    if not args.yes:
+        try:
+            ans = input("This cannot be undone. Type 'wipe' to confirm: ").strip()
+        except EOFError:
+            ans = ""
+        if ans != "wipe":
+            print("Aborted — nothing was changed.")
+            return
+
+    posix = hasattr(os, "geteuid")
+    is_root = posix and os.geteuid() == 0
+    # Remember who owns the DB so we can hand everything back after touching it
+    # as root (a root-written WAL would otherwise lock the agent out).
+    owner = None
+    if posix and cfg.db_path.exists():
+        st = cfg.db_path.stat()
+        owner = (st.st_uid, st.st_gid)
+
+    # Stop the agent so it isn't writing while we wipe (best-effort).
+    have_systemctl = bool(_sh.which("systemctl"))
+    if have_systemctl:
+        _sp.run("systemctl stop drongo drongo-web", shell=True)
+
+    n = mem.reset_runtime(keep_keys=("settings",))
+
+    for d in (cfg.projects, cfg.dashboards, cfg.images):
+        if not d.exists():
+            continue
+        for child in d.iterdir():
+            try:
+                if child.is_dir() and not child.is_symlink():
+                    _sh.rmtree(child)
+                else:
+                    child.unlink()
+            except OSError as e:
+                print(f"  ! could not remove {child}: {e}")
+    cfg.ensure_dirs()
+
+    # Restore ownership of anything we may have touched as root (DB + WAL/SHM,
+    # recreated dirs) so the unprivileged agent can read/write it again.
+    if is_root and owner:
+        for base, dirs, files in os.walk(cfg.base_dir):
+            for nm in (*dirs, *files):
+                try:
+                    os.chown(os.path.join(base, nm), *owner)
+                except OSError:
+                    pass
+            try:
+                os.chown(base, *owner)
+            except OSError:
+                pass
+
+    if have_systemctl:
+        _sp.run("systemctl start drongo drongo-web", shell=True)
+        print(f"\nReset complete — wiped {len(projects)} project(s) and {n} journal "
+              f"entr{'y' if n == 1 else 'ies'}. DRONGO restarted on a clean slate.")
+    else:
+        print(f"\nReset complete — wiped {len(projects)} project(s) and {n} journal "
+              f"entr{'y' if n == 1 else 'ies'}.")
+        print("NOTE: systemctl not found — if the agent is running, restart it to pick "
+              "up the clean state.")
+
+
 def cmd_seal(args):
     # No config/logging needed; just (re)write the sidecar next to safeguard.py.
     digest = safeguard.self_seal()
@@ -273,12 +358,15 @@ def main(argv=None):
         ("doctor", cmd_doctor, "diagnostics + READY/NOT-READY verdict"),
         ("verify", cmd_verify, "check safeguard integrity"),
         ("seal", cmd_seal, "write safeguard hash sidecar (root)"),
+        ("reset", cmd_reset, "WIPE ALL PROJECTS + history (keeps settings)"),
     ]:
         sp = sub.add_parser(name, help=help_)
         sp.set_defaults(func=fn)
         parsers[name] = sp
     parsers["doctor"].add_argument("--quick", action="store_true",
                                    help="skip the live LLM connectivity test")
+    parsers["reset"].add_argument("--yes", action="store_true",
+                                  help="skip the confirmation prompt (DANGER)")
     args = p.parse_args(argv)
     args.func(args)
 
