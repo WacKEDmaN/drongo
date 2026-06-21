@@ -18,6 +18,7 @@ import ipaddress
 import json
 import logging
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -109,7 +110,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <h3>{{ j.title }} <span class="meta">· {{ j.kind }}{% if j.task_type %} · {{ j.task_type }}{% endif %}</span></h3>
       <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}{% if not j.ok %} · ⚠ unfinished{% endif %}</div>
       <p>{{ j.body }}</p>
-      {% for a in j.arts %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endfor %}
+      {% for a in j.arts %}{% if a.view %}<a class="art" href="#" onclick="viewfile('{{ a.path }}');return false">▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% endfor %}
     </div>
    {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
    {% if images %}<h2>Gallery</h2><div class="grid">
@@ -135,12 +136,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
      <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
      <p>{{ j.body }}</p>
-     {% for a in j.arts %}<span style="white-space:nowrap"><a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick="runpy('{{ a.path }}',{{ j.id }})">▶ run</button>{% endif %}</span> {% endfor %}
+     {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick="viewfile('{{ a.path }}');return false">▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick="runpy('{{ a.path }}',{{ j.id }})">▶ run</button>{% endif %}</span> {% endfor %}
      <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
        {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
      </div>
      <button class="act danger" onclick="fixit({{ j.id }})">🔧 Fix this</button>
      <button class="act" onclick="addtag({{ j.id }})">+ tag</button>
+     <button class="act danger" onclick="delproj({{ j.id }},this)">🗑 Delete</button>
    </div>
   {% else %}<p class="meta">No finished projects yet.</p>{% endfor %}
  </section>
@@ -229,6 +231,17 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function addtag(id){const t=prompt('Tag (e.g. favourite, idea, wip):');if(!t)return;
    fetch('/control/tag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,tag:t})})
    .then(r=>r.json()).then(d=>{if(d.ok)addchip(id,t);});}
+ function viewfile(path){$('#modaltitle').textContent='📄 '+path;$('#modalout').textContent='loading…';
+   $('#fixbtn').style.display='none';$('#modal').classList.add('show');
+   fetch('/file/'+path.split('/').map(encodeURIComponent).join('/'))
+   .then(r=>r.ok?r.text():Promise.reject(r.status))
+   .then(t=>{$('#modalout').textContent=(t||'(empty file)').slice(0,200000);})
+   .catch(e=>{$('#modalout').textContent='ERROR: could not read file ('+e+')';});}
+ function delproj(id,btn){if(!confirm('Delete this project and its files? This cannot be undone.'))return;
+   fetch('/control/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
+   .then(r=>r.json()).then(d=>{if(d.ok){const c=btn.closest('.card');if(c)c.remove();
+     toast('Deleted '+(d.removed&&d.removed.length?d.removed.length+' file(s) ✓':'✓'));}
+     else toast(d.error||'failed');});}
  let _runid=null;
  function runpy(path,id){_runid=id; toast('running '+path.split('/').pop()+'…');
    $('#modaltitle').textContent='▶ '+path; $('#modalout').textContent='running…';
@@ -295,6 +308,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </body></html>"""
 
 
+# Files we show inline in the dashboard modal rather than opening in a new tab.
+# Files we show inline in the dashboard modal rather than opening in a new tab.
+# (.html is intentionally excluded — those open in a new tab so they render.)
+TEXT_EXTS = (".py", ".js", ".sh", ".md", ".txt", ".json", ".css", ".cfg",
+             ".ini", ".yaml", ".yml", ".toml", ".c", ".h", ".cpp", ".asm",
+             ".z80", ".s", ".log", ".csv")
+
+
 def _parse_tags(raw):
     try:
         return json.loads(raw or "[]")
@@ -341,6 +362,7 @@ def create_app(cfg, mem: Memory) -> Flask:
         seen = {}
         for a in arts:
             if isinstance(a, dict) and "path" in a:
+                a["view"] = str(a["path"]).lower().endswith(TEXT_EXTS)
                 seen[a["path"]] = a
         return list(seen.values())
 
@@ -467,6 +489,54 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.tag_entry(jid, "needs-fix", on=True)
         log.info("flagged for fixing: %s", j["title"])
         return {"ok": True}
+
+    @app.route("/control/delete", methods=["POST"])
+    def control_delete():
+        d = request.get_json(silent=True) or {}
+        try:
+            jid = int(d.get("id"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "bad id"}, 400
+        match = [j for j in mem.recent_journal(500) if j["id"] == jid]
+        if not match:
+            return {"ok": False, "error": "entry not found"}, 404
+        j = match[0]
+        arts = json.loads(j["artifacts"] or "[]")
+        root = os.path.realpath(str(ws))
+        proj_root = os.path.realpath(str(cfg.projects))
+        removed, proj_dirs = [], set()
+        for a in arts:
+            try:
+                full = os.path.realpath(safeguard.safe_join(str(ws), a["path"]))
+            except Exception:
+                continue
+            if full != root and not full.startswith(root + os.sep):
+                continue  # never touch anything outside the workspace
+            # A file under projects/<name>/... means delete that whole project dir.
+            if full.startswith(proj_root + os.sep):
+                rel = os.path.relpath(full, proj_root).replace(os.sep, "/")
+                top = rel.split("/", 1)[0]
+                if top and top not in (".", ".."):
+                    proj_dirs.add(os.path.join(proj_root, top))
+                    continue
+            if os.path.isfile(full):  # loose file (dashboards/, images/, ...)
+                try:
+                    os.remove(full)
+                    removed.append(a["path"])
+                except OSError:
+                    pass
+        for pd in proj_dirs:
+            rp = os.path.realpath(pd)
+            if rp.startswith(proj_root + os.sep) and os.path.isdir(rp):
+                try:
+                    shutil.rmtree(rp)
+                    removed.append(os.path.relpath(rp, root).replace(os.sep, "/") + "/")
+                except OSError:
+                    pass
+        mem.delete_journal(jid)
+        mem.remove_fix(jid)
+        log.info("deleted project: %s (%d path(s))", j["title"], len(removed))
+        return {"ok": True, "removed": removed}
 
     @app.route("/run", methods=["POST"])
     def run_py():

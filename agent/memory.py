@@ -116,10 +116,22 @@ class Memory:
         self.set_tags(journal_id, tags)
         return tags
 
+    def delete_journal(self, journal_id) -> bool:
+        cur = self._conn.execute("DELETE FROM journal WHERE id=?", (journal_id,))
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def add_fix(self, entry: dict):
         q = self.recall("fix_queue") or []
         q.append(entry)
         self.remember("fix_queue", q)
+
+    def remove_fix(self, journal_id) -> None:
+        """Drop any queued fix that targets this journal entry (e.g. on delete)."""
+        q = self.recall("fix_queue") or []
+        kept = [e for e in q if e.get("id") != journal_id]
+        if len(kept) != len(q):
+            self.remember("fix_queue", kept)
 
     def pop_fix(self):
         q = self.recall("fix_queue") or []
