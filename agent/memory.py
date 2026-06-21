@@ -164,6 +164,12 @@ class Memory:
         )
         self._conn.commit()
 
+    def clear_cooldowns(self):
+        """Drop all provider cooldowns — called at startup so a restart (e.g.
+        after fixing a model id) immediately re-tries every provider."""
+        self._conn.execute("UPDATE usage SET cooldown_until=0")
+        self._conn.commit()
+
     def usage_summary(self):
         rows = self._conn.execute("SELECT * FROM usage ORDER BY provider").fetchall()
         return [dict(r) for r in rows]

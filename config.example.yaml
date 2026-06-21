@@ -47,10 +47,12 @@ llm:
     # ---- Cerebras: extremely fast, generous free tier --------------------
     #   404 "model not found"? Model ids change — list yours and update below:
     #   curl -s https://api.cerebras.ai/v1/models -H "Authorization: Bearer $CEREBRAS_API_KEY"
+    # 404 "model not found"? ids change - list yours and update `model` below:
+    #   curl -s https://api.cerebras.ai/v1/models -H "Authorization: Bearer $CEREBRAS_API_KEY"
     - name: cerebras
       base_url: https://api.cerebras.ai/v1
       api_key_env: CEREBRAS_API_KEY
-      model: llama-3.3-70b
+      model: gpt-oss-120b
       rpm_limit: 28
       daily_limit: 13000
       enabled: true

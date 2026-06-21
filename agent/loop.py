@@ -329,6 +329,7 @@ class AgentLoop:
         self.safe_mode = start["safe_mode"]
         self.safe_reason = start["reason"]
         self.mem.remember("safe_mode", self.safe_mode)
+        self.mem.clear_cooldowns()   # fresh start: re-try every provider now
         watchdog.notify_ready()
         watchdog.heartbeat(self.cfg, force=True)
 
