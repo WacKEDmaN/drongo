@@ -334,6 +334,16 @@ def create_app(cfg, mem: Memory) -> Flask:
                                 {"WWW-Authenticate": 'Basic realm="DRONGO"'})
         return None
 
+    def _dedupe_arts(arts):
+        # Old journal rows were stored with one entry per write_file call, so a
+        # file edited several times shows up repeatedly. Collapse to one per path
+        # at render time (keeps the last label) so existing rows display clean too.
+        seen = {}
+        for a in arts:
+            if isinstance(a, dict) and "path" in a:
+                seen[a["path"]] = a
+        return list(seen.values())
+
     def _journal(limit):
         rows = []
         for j in mem.recent_journal(limit):
@@ -341,7 +351,7 @@ def create_app(cfg, mem: Memory) -> Flask:
                          "task_type": j["task_type"], "body": j["body"] or "",
                          "provider": j["provider"], "ok": bool(j["ok"]),
                          "when": utc_iso(j["ts"]),
-                         "arts": json.loads(j["artifacts"] or "[]"),
+                         "arts": _dedupe_arts(json.loads(j["artifacts"] or "[]")),
                          "tags": _parse_tags(j["tags"] if "tags" in j.keys() else "")})
         return rows
 
