@@ -88,6 +88,11 @@ def cmd_doctor(args):
         print(f"NOTE: inspecting code at {pkg_root}, not the installed /opt/drongo.")
         print("      Run 'sudo drongo doctor' (or cd /opt/drongo first) for the real agent.\n")
 
+    import subprocess as _sp
+    from . import __version__
+    gh = _sp.run(f"git -C '{pkg_root}' rev-parse --short HEAD", shell=True,
+                 capture_output=True, text=True).stdout.strip() or "n/a"
+    print(f"Version:     {__version__}  (git {gh})  from {pkg_root}")
     print(f"Config:      {cfg.source_path or '(defaults only)'}")
     print(f"Base dir:    {cfg.base_dir}")
     print(f"DB:          {cfg.db_path}")

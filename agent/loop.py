@@ -44,8 +44,12 @@ Rules:
 - Build something real and finished, not a stub. Test it when you can.
 - Save games/scripts under projects/, images go to the gallery via generate_image,
   dashboards via make_dashboard. Keep everything inside the workspace.
-- When the project is genuinely done and verified, return the "final" form.
-- Be efficient: you have a limited number of steps.
+- Return "final" ONLY when the artifact actually exists and works and you've
+  verified it (e.g. read the file back / ran it). NEVER return "final" just
+  because you're stuck, blocked, rate-limited, or out of ideas — that falsely
+  reports success. If you can't finish now, keep using tools; you'll be resumed
+  next cycle to continue exactly where you left off.
+- Be efficient with each step, but it's fine to take several cycles to finish.
 
 Available tools:
 {tools}
