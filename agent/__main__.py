@@ -90,7 +90,9 @@ def cmd_doctor(args):
         issues.append("No usable LLM providers. Add API keys to /etc/drongo/drongo.env, "
                       "or make sure Ollama is running with a model pulled.")
 
-    print(f"Alerts:      {alerter.provider} (phone notifications {'ON' if alerter.enabled() else 'OFF'})")
+    chans = ", ".join(f"{c.name}{'' if getattr(c, 'usable', False) else ' (not configured)'}"
+                      for c in alerter.channels) or "none"
+    print(f"Alerts:      {chans}")
     age = watchdog.heartbeat_age(cfg)
     print(f"Heartbeat:   {('%ds ago' % age) if age is not None else 'none yet (agent may not have run)'}")
 
@@ -102,6 +104,17 @@ def cmd_doctor(args):
     if not ok and strict:
         issues.append("Safeguard integrity check failed (see above). On the Pi this should be "
                       "0444 root-owned + sealed; re-run the installer if it isn't.")
+
+    # Hardware DRONGO can see (kernel + device tree — works headless).
+    from .tools import hardware_summary
+    hw = hardware_summary()
+    print("Hardware:")
+    print(f"  model:    {hw['model']}")
+    print(f"  thermals: {', '.join(hw['thermals']) or 'none'}")
+    print(f"  i2c:      {hw['i2c'] or 'none'}    spi: {hw['spi'] or 'none'}    "
+          f"1-wire: {hw['onewire'] or 'none'}")
+    print(f"  cameras:  {hw['cameras'] or 'none'}")
+    print(f"  gpio:     {', '.join(hw['gpiochips']) or 'none (is gpiod installed + drongo in the gpio group?)'}")
 
     if not getattr(args, "quick", False):
         print("LLM check:   testing - first run loads the model, can take ~a minute...")

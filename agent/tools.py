@@ -351,6 +351,35 @@ def collect_hardware() -> dict:
     return info
 
 
+def hardware_summary() -> dict:
+    """Fast, non-intrusive snapshot of what's wired up — lists buses/devices and
+    reads thermals, but does NOT probe i2c (so it never disturbs a device).
+    Used by `doctor` so you can see your sensors right after install."""
+    def temps():
+        out = []
+        for z in sorted(glob.glob("/sys/class/thermal/thermal_zone*")):
+            t = _read_first(f"{z}/temp")
+            ty = _read_first(f"{z}/type")
+            if t and t.lstrip("-").isdigit():
+                out.append(f"{ty or os.path.basename(z)}={int(t)/1000.0:.1f}C")
+        return out
+
+    # Only accept real gpiodetect output (lines like "gpiochip0 [gpio0] ..."),
+    # so an error message from a missing/denied gpiodetect doesn't show as noise.
+    chips = [ln.split()[0] for ln in _run("gpiodetect").splitlines()
+             if ln.strip().startswith("gpiochip")]
+    return {
+        "model": _read_first("/proc/device-tree/model") or "unknown",
+        "thermals": temps(),
+        "i2c": sorted(os.path.basename(p) for p in glob.glob("/dev/i2c-*")),
+        "spi": sorted(os.path.basename(p) for p in glob.glob("/dev/spidev*")),
+        "onewire": sorted(os.path.basename(p) for p in glob.glob("/sys/bus/w1/devices/*")
+                          if not os.path.basename(p).startswith("w1_bus")),
+        "cameras": sorted(os.path.basename(p) for p in glob.glob("/dev/video*")),
+        "gpiochips": chips,
+    }
+
+
 @tool("discover_sensors",
       "Scan the machine for sensors, buses (i2c/spi/1-wire), cameras, thermals and USB devices.",
       "")
