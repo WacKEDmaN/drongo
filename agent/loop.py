@@ -142,30 +142,41 @@ class AgentLoop:
         }
 
     # ---- execution (ReAct) --------------------------------------------
-    def execute(self, task: dict, ctx: tools.ToolContext) -> tuple[str, str]:
+    def execute(self, task: dict, ctx: tools.ToolContext, messages=None):
+        """Run up to max_steps of the ReAct loop. Returns
+        (outcome, provider, messages, finished). `finished` is True only when
+        the model returns the "final" form. Pass `messages` to RESUME a project
+        across cycles instead of starting it over."""
         registry = tools.build_registry(ctx)
-        system = EXEC_SYSTEM.format(persona=self.persona,
-                                    tools=tools.tools_prompt(registry))
-        task_msg = (f"Project type: {task['task_type']}\n"
-                    f"Title: {task['title']}\n"
-                    f"Goal: {task['description']}\n\nBegin.")
-        messages = [{"role": "system", "content": system},
-                    {"role": "user", "content": task_msg}]
+        if messages is None:
+            system = EXEC_SYSTEM.format(persona=self.persona,
+                                        tools=tools.tools_prompt(registry))
+            task_msg = (f"Project type: {task['task_type']}\n"
+                        f"Title: {task['title']}\n"
+                        f"Goal: {task['description']}\n\nBegin.")
+            messages = [{"role": "system", "content": system},
+                        {"role": "user", "content": task_msg}]
+        else:
+            messages = list(messages) + [{"role": "user", "content":
+                "Continue this project from where you left off. Keep working until it "
+                "is genuinely 100% finished and verified, THEN return the \"final\" form. "
+                "Don't start anything new."}]
         last_provider = task.get("provider", "")
         for step in range(self.max_steps):
             watchdog.heartbeat(self.cfg)   # prove we're alive between steps
             try:
                 text, last_provider = self.router.chat(messages)
             except AllProvidersFailed as e:
-                return f"LLM unavailable: {e}", last_provider
+                return f"LLM unavailable: {e}", last_provider, messages, False
             obj = extract_json(text)
             if obj is None:
                 messages.append({"role": "assistant", "content": text[:500]})
                 messages.append({"role": "user",
                                  "content": "That was not valid JSON. Reply with ONE JSON object only."})
+                messages = self._trim(messages)
                 continue
             if "final" in obj:
-                return str(obj["final"]), last_provider
+                return str(obj["final"]), last_provider, messages, True
             name = obj.get("tool", "")
             args = obj.get("args", {}) or {}
             thought = obj.get("thought", "")
@@ -182,7 +193,8 @@ class AgentLoop:
             messages.append({"role": "assistant", "content": text[:1200]})
             messages.append({"role": "user", "content": f"Observation:\n{observation}"})
             messages = self._trim(messages)
-        return "Reached the step limit before finishing. Partial work saved in the workspace.", last_provider
+        return ("Ran out of steps this cycle; not finished yet.",
+                last_provider, messages, False)
 
     @staticmethod
     def _trim(messages, keep=14):
@@ -202,37 +214,103 @@ class AgentLoop:
         except AllProvidersFailed:
             return outcome
 
+    # ---- alerts: ONLY on completion or a problem ----------------------
+    def _alert_done(self, task, note):
+        if not self.alerter.enabled():
+            return
+        host = socket.gethostname()
+        port = self.cfg.get("web", "port", default=8080)
+        link = f"http://{host}:{port}/" if host else None
+        self.alerter.send(f"{task['title']}\n{note[:280]}",
+                          title=f"{self.name} completed a project", link=link)
+
+    def _alert_problem(self, message):
+        if not self.alerter.enabled():
+            return
+        # Debounce so a persistent issue doesn't spam you (max 1 / 30 min).
+        last = self.mem.recall("last_problem_alert_ts") or 0
+        if time.time() - last < 1800:
+            log.info("problem (alert debounced): %s", message)
+            return
+        self.mem.remember("last_problem_alert_ts", time.time())
+        self.alerter.send(message, title=f"{self.name} hit a problem", priority="high")
+
     # ---- one full cycle -----------------------------------------------
     def run_cycle(self) -> dict:
         t0 = time.time()
         ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
                                 alerter=self.alerter, log=log, safe_mode=self.safe_mode)
-        try:
-            task = self.ideate()
-        except AllProvidersFailed as e:
-            self.mem.add_journal("error", "Could not ideate", str(e), ok=False)
-            log.error("ideation failed: %s", e)
-            return {"ok": False, "error": str(e)}
+        max_attempts = self.cfg.get("loop", "max_resume_attempts", default=8)
+        saved = self.mem.recall("current_project")
+        saved = saved if isinstance(saved, dict) else None
 
-        log.info("New project: %s [%s]", task["title"], task["task_type"])
-        outcome, provider = self.execute(task, ctx)
-        note = self.reflect(task, outcome, ctx)
-        ok = not outcome.lower().startswith(("llm unavailable", "reached the step"))
+        # Resume an unfinished project, or start a new one.
+        if saved and saved.get("attempts", 0) < max_attempts:
+            task = saved["task"]
+            messages = saved.get("messages")
+            attempt = saved.get("attempts", 0) + 1
+            prior_artifacts = saved.get("artifacts", [])
+            log.info("Resuming '%s' (attempt %d/%d)", task["title"], attempt, max_attempts)
+        else:
+            if saved:
+                self.mem.remember("current_project", None)
+            try:
+                task = self.ideate()
+            except AllProvidersFailed as e:
+                self.mem.add_journal("error", "Could not plan a project", str(e), ok=False)
+                self._alert_problem(f"Couldn't reach any LLM to plan a project: {e}")
+                return {"ok": False}
+            messages, attempt, prior_artifacts = None, 1, []
+            log.info("New project: %s [%s]", task["title"], task["task_type"])
 
-        jid = self.mem.add_journal(
-            "cycle", task["title"], note, task_type=task["task_type"],
-            artifacts=ctx.artifacts, provider=provider, ok=ok,
-        )
+        self.mem.remember("working_on", {"title": task["title"], "attempt": attempt,
+                                         "type": task["task_type"]})
+        outcome, provider, messages, finished = self.execute(task, ctx, messages)
+        all_artifacts = (prior_artifacts or []) + ctx.artifacts
+        llm_down = outcome.lower().startswith("llm unavailable")
         elapsed = int(time.time() - t0)
-        log.info("Cycle done in %ds: %s", elapsed, task["title"])
 
-        if self.alerter.enabled() and (self.cfg.get("alerts", "notify_every_cycle", default=False) or ctx.artifacts):
-            host = socket.gethostname()
-            port = self.cfg.get("web", "port", default=8080)
-            link = f"http://{host}:{port}/" if host else None
-            self.alerter.send(f"{task['title']}\n{note[:300]}",
-                              title=f"{self.name} finished a project", link=link)
-        return {"ok": ok, "id": jid, "task": task, "artifacts": ctx.artifacts}
+        # --- finished: journal it, alert completion, pick something new next ---
+        if finished:
+            self.mem.remember("current_project", None)
+            self.mem.remember("working_on", None)
+            note = self.reflect(task, outcome, ctx)
+            self.mem.add_journal("cycle", task["title"], note, task_type=task["task_type"],
+                                 artifacts=all_artifacts, provider=provider, ok=True)
+            self._alert_done(task, note)
+            log.info("Completed '%s' in %d attempt(s), %ds.", task["title"], attempt, elapsed)
+            return {"ok": True}
+
+        # --- LLM unreachable: keep the project, alert a problem (debounced) ---
+        if llm_down:
+            self.mem.remember("current_project",
+                              {"task": task, "messages": messages,
+                               "attempts": attempt - 1, "artifacts": all_artifacts})
+            self.mem.add_journal("error", "LLM unavailable", outcome, ok=False)
+            self._alert_problem(f"All LLM providers are unavailable; paused on '{task['title']}'.")
+            return {"ok": False}
+
+        # --- gave up after too many attempts: journal + problem alert, move on -
+        if attempt >= max_attempts:
+            self.mem.remember("current_project", None)
+            self.mem.remember("working_on", None)
+            note = self.reflect(task, outcome, ctx)
+            self.mem.add_journal("cycle", task["title"],
+                                 note + f"\n\n(couldn't finish after {attempt} attempts)",
+                                 task_type=task["task_type"], artifacts=all_artifacts,
+                                 provider=provider, ok=False)
+            self._alert_problem(f"Couldn't finish '{task['title']}' after {attempt} attempts - moving on.")
+            log.info("Gave up on '%s' after %d attempts.", task["title"], attempt)
+            return {"ok": True}
+
+        # --- still in progress: save and CONTINUE next cycle. No alert, no -----
+        #     'cycle' journal entry (so you don't see a pile of "unfinished").
+        self.mem.remember("current_project",
+                          {"task": task, "messages": messages,
+                           "attempts": attempt, "artifacts": all_artifacts})
+        log.info("'%s' not finished (attempt %d/%d, %ds) - continuing next cycle.",
+                 task["title"], attempt, max_attempts, elapsed)
+        return {"ok": True}
 
     # ---- forever -------------------------------------------------------
     def run_forever(self):

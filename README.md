@@ -47,8 +47,10 @@ sudo /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml doctor
 You want **`VERDICT: ✓ READY`**. Then open the dashboard in a browser:
 **`http://<your-pi-ip>:8080/`** and watch it build things. Check in whenever you like.
 
-**4. (Optional) Make it smarter + get alerts:** add free keys, and a Discord webhook
-or a GPIO LED — see [Alerts](#alerts--discord-or-an-led) below — then `sudo systemctl restart drongo`.
+**4. Setup wizard (runs automatically at the end of install):** it asks for a Discord
+webhook, an LED pin, and any free API keys — **press Enter to skip anything**, and it
+restarts DRONGO for you. Re-run it any time with `sudo /opt/drongo/configure.sh`. (You
+can also hand-edit `/etc/drongo/drongo.env` — see [Alerts](#alerts--discord-or-an-led).)
 
 > **Changed your mind?** `sudo /opt/drongo/uninstall.sh` removes it cleanly (keeps your
 > data unless you add `--purge`). Jump to [Troubleshooting](#troubleshooting) if anything looks off.

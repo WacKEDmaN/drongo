@@ -24,10 +24,11 @@ interests:
   - "short research notes on things it just learned"
 
 loop:
-  interval_seconds: 1800     # ~30 min between projects. Raise for less activity.
-  jitter_seconds: 300        # randomise so it's not robotic
-  max_steps: 14              # tool calls allowed per project
+  interval_seconds: 450      # gap between projects (~7.5 min); with the jitter below = 5-10 min
+  jitter_seconds: 150        # randomises the gap so it's not robotic
+  max_steps: 14              # tool calls per cycle; a project RESUMES across cycles until done
   max_recent_tasks: 12       # how many past titles to avoid repeating
+  max_resume_attempts: 8     # keep working ONE project up to this many cycles before giving up
 
 # ---------------------------------------------------------------------------
 # LLM routing. Providers are tried TOP-TO-BOTTOM. Cloud free tiers first
@@ -164,7 +165,9 @@ safe_mode:                   # crash-loop self-defence
 # subscribe to a long random topic, put it here. No account needed.
 # ---------------------------------------------------------------------------
 alerts:
-  notify_every_cycle: false   # true = ping on every project, not just notable ones
+  # DRONGO only alerts you when a project is 100% COMPLETED, or when it hits a
+  # PROBLEM (LLM unreachable, or it gave up after max_resume_attempts). No pings
+  # for work-in-progress. Problem alerts are debounced to ~1 per 30 min.
 
   # --- Discord: easiest, no phone/bot needed -------------------------------
   # In Discord: Server Settings -> Integrations -> Webhooks -> New Webhook ->

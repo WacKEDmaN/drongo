@@ -206,22 +206,20 @@ say "Health check"
 sleep 3
 ( cd "$INSTALL" && "$INSTALL/.venv/bin/python" -m agent -c "$ETC/config.yaml" doctor --quick ) || true
 
+# Interactive setup wizard (alerts + keys) — only when run on a real terminal.
+if [ -t 0 ]; then
+  ( cd "$INSTALL" && "$INSTALL/.venv/bin/python" -m agent -c "$ETC/config.yaml" configure ) || true
+fi
+
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 trap - EXIT
 printf '\n\033[1;32mDRONGO is installed and running.\033[0m\n'
 cat <<EOF
 
-  IT ALREADY WORKS on the local model. To make it smarter, add free API keys:
+  IT ALREADY WORKS on the local model (and on whatever you set in the wizard).
 
-    1. Edit your keys:        sudo nano $ETC/drongo.env
-         (CEREBRAS / GROQ / GEMINI / MISTRAL / OPENROUTER - ANTHROPIC_API_KEY is optional/paid)
-    2. Want alerts? Two easy options (Discord is on by default):
-         Discord: make a channel webhook (Server Settings -> Integrations ->
-           Webhooks -> Copy URL), then  sudo nano $ETC/drongo.env  -> DISCORD_WEBHOOK_URL
-           (paste the same URL into $ETC/observer.env -> DRONGO_DISCORD_WEBHOOK too).
-         LED:     wire an LED to a GPIO pin, find it with 'gpioinfo', then set
-           alerts.led (enabled/chip/line) in $ETC/config.yaml.
-    3. Apply changes:         sudo systemctl restart drongo drongo-web
+    Re-run the setup wizard any time:   sudo $INSTALL/configure.sh
+    (Discord webhook, LED pin, API keys — it restarts DRONGO for you.)
 
   HOW DO I KNOW IT'S WORKING?
     sudo $INSTALL/.venv/bin/python -m agent -c $ETC/config.yaml doctor   # should say READY

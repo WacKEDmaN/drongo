@@ -53,6 +53,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  <span class="pill">providers: {{ providers }}</span>
 </header>
 <main>
+ {% if working_on %}<p class="meta">⏳ Currently working on: <b>{{ working_on.title }}</b>
+   <span style="opacity:.6">({{ working_on.type }} · attempt {{ working_on.attempt }})</span></p>{% endif %}
  <h2>Recent activity</h2>
  {% for j in journal %}
   <div class="card">
@@ -145,6 +147,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             alive=age is not None and age < 1800,
             hb=(f"{int(age)}s ago" if age is not None else "—"),
             safe=bool(mem.recall("safe_mode")),
+            working_on=mem.recall("working_on"),
             integ_ok=integ_ok, integ=integ)
 
     @app.route("/file/<path:relpath>")

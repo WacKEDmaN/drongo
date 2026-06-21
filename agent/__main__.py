@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 
 from . import safeguard, watchdog
@@ -148,6 +149,85 @@ def cmd_verify(args):
     sys.exit(1)
 
 
+def cmd_configure(args):
+    """Friendly interactive setup. Edits only the env files (so your config.yaml
+    comments stay intact) and restarts the services. Press Enter to skip items."""
+    import shutil
+    import subprocess
+
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        print("Please run with sudo:  sudo /opt/drongo/configure.sh")
+        sys.exit(1)
+
+    etc = os.path.dirname(os.path.abspath(args.config)) if args.config else "/etc/drongo"
+    envf = os.path.join(etc, "drongo.env")
+    obsf = os.path.join(etc, "observer.env")
+
+    def set_env(path, key, value):
+        lines = []
+        if os.path.exists(path):
+            lines = open(path, encoding="utf-8").read().splitlines()
+        out, done = [], False
+        for ln in lines:
+            if ln.startswith(key + "="):
+                out.append(f"{key}={value}"); done = True
+            else:
+                out.append(ln)
+        if not done:
+            out.append(f"{key}={value}")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(out) + "\n")
+
+    def ask(prompt, default=""):
+        try:
+            return input(prompt).strip() or default
+        except EOFError:
+            return default
+
+    print("\n=== DRONGO quick setup ===   (press Enter to skip anything)\n")
+
+    wh = ask("Discord webhook URL (Enter to skip): ")
+    if wh:
+        set_env(envf, "DISCORD_WEBHOOK_URL", wh)
+        set_env(obsf, "DRONGO_DISCORD_WEBHOOK", wh)
+        print("  -> Discord alerts ON.\n")
+
+    if ask("Set up an LED on a GPIO pin? [y/N]: ").lower().startswith("y"):
+        print("\n  Your GPIO chips (each has its own line offsets - see `gpioinfo`):")
+        if shutil.which("gpiodetect"):
+            subprocess.run("gpiodetect", shell=True)
+        chip = ask("  gpiochip [/dev/gpiochip0]: ", "/dev/gpiochip0")
+        line = ask("  line offset (a number): ")
+        if line.isdigit():
+            ah = ask("  is the LED active-high? [Y/n]: ", "y").lower().startswith("y")
+            set_env(envf, "DRONGO_LED_CHIP", chip)
+            set_env(envf, "DRONGO_LED_LINE", line)
+            set_env(envf, "DRONGO_LED_ACTIVE_HIGH", "true" if ah else "false")
+            print("  -> LED alerts ON.\n")
+        else:
+            print("  (not a number — skipping the LED)\n")
+
+    print("Optional free LLM API keys (Enter to skip each; it works without them):")
+    for var, where in [("CEREBRAS_API_KEY", "cloud.cerebras.ai"),
+                       ("GROQ_API_KEY", "console.groq.com"),
+                       ("GEMINI_API_KEY", "aistudio.google.com/apikey"),
+                       ("MISTRAL_API_KEY", "console.mistral.ai"),
+                       ("OPENROUTER_API_KEY", "openrouter.ai/keys"),
+                       ("ANTHROPIC_API_KEY", "console.anthropic.com  (PAID)")]:
+        v = ask(f"  {var}  [{where}]: ")
+        if v:
+            set_env(envf, var, v)
+
+    os.chmod(envf, 0o600)
+    if os.path.exists(obsf):
+        os.chmod(obsf, 0o600)
+
+    if shutil.which("systemctl"):
+        print("\nApplying (restarting DRONGO)...")
+        subprocess.run("systemctl restart drongo drongo-web", shell=True)
+    print("\nDone. Re-run anytime:  sudo /opt/drongo/configure.sh\n")
+
+
 def cmd_seal(args):
     # No config/logging needed; just (re)write the sidecar next to safeguard.py.
     digest = safeguard.self_seal()
@@ -175,6 +255,7 @@ def main(argv=None):
         ("once", cmd_once, "run a single cycle"),
         ("web", cmd_web, "serve the dashboard"),
         ("discover", cmd_discover, "scan hardware"),
+        ("configure", cmd_configure, "interactive setup (alerts + API keys)"),
         ("doctor", cmd_doctor, "diagnostics + READY/NOT-READY verdict"),
         ("verify", cmd_verify, "check safeguard integrity"),
         ("seal", cmd_seal, "write safeguard hash sidecar (root)"),

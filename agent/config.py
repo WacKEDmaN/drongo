@@ -36,10 +36,11 @@ DEFAULTS = {
         "short research notes on things it just learned",
     ],
     "loop": {
-        "interval_seconds": 1800,
-        "jitter_seconds": 300,
-        "max_steps": 14,
+        "interval_seconds": 450,     # ~7.5 min between projects...
+        "jitter_seconds": 150,       # ...-> 5-10 min once jitter is applied
+        "max_steps": 14,             # tool calls per cycle (a project resumes across cycles)
         "max_recent_tasks": 12,
+        "max_resume_attempts": 8,    # keep working ONE project this many cycles before giving up
     },
     "llm": {
         "prefer": "cloud_first",   # cloud_first | local_first

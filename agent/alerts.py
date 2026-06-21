@@ -57,10 +57,15 @@ class LedChannel:
     name = "led"
 
     def __init__(self, cfg):
-        chip = str(cfg.get("alerts", "led", "chip", default="/dev/gpiochip0"))
+        # Env vars win over config so the (zero-YAML-edit) configurator can set
+        # the LED entirely via drongo.env.
+        chip = os.environ.get("DRONGO_LED_CHIP") or str(cfg.get("alerts", "led", "chip", default="/dev/gpiochip0"))
         self.chip = chip if chip.startswith("/") else f"/dev/{chip}"
-        self.line = int(cfg.get("alerts", "led", "line", default=17))
-        self.active_high = bool(cfg.get("alerts", "led", "active_high", default=True))
+        line_env = os.environ.get("DRONGO_LED_LINE", "")
+        self.line = int(line_env) if line_env.strip() else int(cfg.get("alerts", "led", "line", default=17))
+        ah_env = os.environ.get("DRONGO_LED_ACTIVE_HIGH", "")
+        self.active_high = (ah_env.strip().lower() in ("1", "true", "yes", "y", "on")) \
+            if ah_env.strip() else bool(cfg.get("alerts", "led", "active_high", default=True))
         self.blinks = int(cfg.get("alerts", "led", "blinks", default=3))
         self.on_ms = int(cfg.get("alerts", "led", "on_ms", default=150))
         self.off_ms = int(cfg.get("alerts", "led", "off_ms", default=150))
@@ -149,13 +154,23 @@ _CHANNELS = {"discord": DiscordChannel, "led": LedChannel,
              "ntfy": NtfyChannel, "command": CommandChannel}
 
 
+def _auto_enabled(key, cfg) -> bool:
+    """Turn a channel on just by setting its env var — no config edit needed."""
+    if key == "discord":
+        env = cfg.get("alerts", "discord", "webhook_env", default="DISCORD_WEBHOOK_URL")
+        return bool(os.environ.get(env, "").strip())
+    if key == "led":
+        return bool(os.environ.get("DRONGO_LED_LINE", "").strip())
+    return False
+
+
 class Alerter:
     def __init__(self, cfg):
         self.cfg = cfg
         self.notify_every_cycle = cfg.get("alerts", "notify_every_cycle", default=False)
         self.channels = []
         for key, cls in _CHANNELS.items():
-            if cfg.get("alerts", key, "enabled", default=False):
+            if cfg.get("alerts", key, "enabled", default=False) or _auto_enabled(key, cfg):
                 try:
                     self.channels.append(cls(cfg))
                 except Exception as e:
