@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""DRONGO external observer — the independent "Dead Man's Switch".
+"""DRONGO external observer - the independent "Dead Man's Switch".
 
 Runs as ROOT on a short systemd timer (every ~60s), completely outside the
 agent process and the agent's user. Because it is root-owned and root-run, the
 agent cannot disable or edit it. Deliberately uses only the Python standard
 library so it keeps working even if the agent's virtualenv is broken.
 
-Responsibilities (CLAUDE.md §4.2 "Self-Preservation"):
+Responsibilities (CLAUDE.md 4.2 "Self-Preservation"):
   * Liveness  : if the service is active but the heartbeat is stale -> restart.
   * Crash-loop: if systemd has given up (failed) or restarts spiked -> roll the
                 code back to the last-known-good git commit, then restart.
@@ -38,6 +38,7 @@ CFG = {
     "load_crit":      float(os.environ.get("DRONGO_LOAD_CRIT", str(os.cpu_count() * 4))),
     "disk_crit":      float(os.environ.get("DRONGO_DISK_CRIT", "96")),
     "allow_reboot":   os.environ.get("DRONGO_ALLOW_REBOOT", "0") == "1",
+    "discord":        os.environ.get("DRONGO_DISCORD_WEBHOOK", ""),
     "ntfy_server":    os.environ.get("DRONGO_NTFY_SERVER", "https://ntfy.sh"),
     "ntfy_topic":     os.environ.get("DRONGO_NTFY_TOPIC", ""),
     "min_healthy_secs": int(os.environ.get("DRONGO_MIN_HEALTHY_SECS", "1200")),
@@ -49,19 +50,29 @@ def log(msg):
 
 
 def alert(message, title="DRONGO observer", priority="high"):
-    topic = CFG["ntfy_topic"]
-    if not topic:
-        log(f"(no ntfy topic) {title}: {message}")
-        return
-    try:
-        req = urllib.request.Request(
-            f"{CFG['ntfy_server'].rstrip('/')}/{topic}",
-            data=message.encode("utf-8"),
-            headers={"Title": title, "Priority": priority},
-        )
-        urllib.request.urlopen(req, timeout=15)
-    except Exception as e:
-        log(f"alert failed: {e}")
+    sent = False
+    if CFG["discord"]:
+        try:
+            body = json.dumps({"username": "DRONGO",
+                               "content": f"**{title}**\n{message}"[:1900]}).encode()
+            urllib.request.urlopen(urllib.request.Request(
+                CFG["discord"], data=body,
+                headers={"Content-Type": "application/json"}), timeout=15)
+            sent = True
+        except Exception as e:
+            log(f"discord alert failed: {e}")
+    if CFG["ntfy_topic"]:
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"{CFG['ntfy_server'].rstrip('/')}/{CFG['ntfy_topic']}",
+                data=message.encode("utf-8"),
+                headers={"Title": title.encode('ascii', 'replace').decode(),
+                         "Priority": priority}), timeout=15)
+            sent = True
+        except Exception as e:
+            log(f"ntfy alert failed: {e}")
+    if not sent:
+        log(f"(no alert channel configured) {title}: {message}")
 
 
 def sh(cmd, timeout=60):
@@ -227,7 +238,7 @@ def main():
     # 5) system health: alert (debounced 30 min) and last-resort reboot.
     problems = []
     if cpu_temp() >= CFG["temp_crit"]:
-        problems.append(f"CPU {cpu_temp():.0f}°C")
+        problems.append(f"CPU {cpu_temp():.0f}C")
     if loadavg() >= CFG["load_crit"]:
         problems.append(f"load {loadavg():.1f}")
     if disk_pct() >= CFG["disk_crit"]:
@@ -244,7 +255,7 @@ def main():
         state["bad_streak"] = bad_streak
         if (CFG["allow_reboot"] and bad_streak >= 5
                 and now - state.get("last_reboot", 0) > 3600):
-            alert("Sustained critical load — rebooting host as last resort.",
+            alert("Sustained critical load - rebooting host as last resort.",
                   title="DRONGO host reboot", priority="urgent")
             state["last_reboot"] = now
             save_state(state)

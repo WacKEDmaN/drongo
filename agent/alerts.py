@@ -1,67 +1,175 @@
-"""Outbound notifications so the agent can ping you about notable results.
+"""Outbound notifications - how DRONGO tells you it did something.
 
-Default is ntfy.sh: install the ntfy app on your phone, subscribe to a
-private topic, and the agent POSTs to it. No account or key required.
-Telegram is also supported if you'd rather use a bot.
+Channels are independent and fire together; enable any combination in the
+config. No phone required:
+
+  * discord  - POST to a channel webhook (no bot, no account API). Easiest.
+  * led      - blink an LED wired to a GPIO pin (ambient, glanceable).
+  * ntfy     - optional; has a desktop/web client too.
+  * command  - run any command on an alert (power-user escape hatch).
+
+Each channel implements .send(message, title, priority, link) -> bool and is
+best-effort: a failure in one never breaks the others or the agent.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import subprocess
+import threading
+import time
 
 import requests
 
 log = logging.getLogger("agent.alerts")
 
 
-class Alerter:
+def _ascii(s: str) -> str:
+    # HTTP headers must be latin-1; keep titles safe for ntfy.
+    return (s or "").encode("ascii", "replace").decode("ascii")
+
+
+# ---------------------------------------------------------------------------
+class DiscordChannel:
+    name = "discord"
+
     def __init__(self, cfg):
-        self.cfg = cfg
-        self.provider = (cfg.get("alerts", "provider", default="none") or "none").lower()
-        self.notify_every_cycle = cfg.get("alerts", "notify_every_cycle", default=False)
+        env = cfg.get("alerts", "discord", "webhook_env", default="DISCORD_WEBHOOK_URL")
+        self.webhook = os.environ.get(env, "")
+        self.usable = bool(self.webhook)
 
-    def enabled(self) -> bool:
-        return self.provider in ("ntfy", "telegram")
-
-    def send(self, message: str, title: str = "Agent", priority: str = "default",
-             link: str | None = None) -> bool:
-        try:
-            if self.provider == "ntfy":
-                return self._ntfy(message, title, priority, link)
-            if self.provider == "telegram":
-                return self._telegram(message, title, link)
-        except Exception as e:
-            log.warning("alert failed: %s", e)
-        return False
-
-    def _ntfy(self, message, title, priority, link):
-        server = self.cfg.get("alerts", "ntfy", "server", default="https://ntfy.sh")
-        topic = self.cfg.get("alerts", "ntfy", "topic", default="")
-        if not topic:
+    def send(self, message, title, priority, link):
+        if not self.usable:
             return False
-        # HTTP headers must be latin-1; the body (below) keeps full UTF-8.
-        safe_title = title.encode("ascii", "replace").decode("ascii")
-        headers = {"Title": safe_title, "Priority": priority}
+        content = f"**{title}**\n{message}"
+        if link:
+            content += f"\n{link}"
+        r = requests.post(self.webhook, json={"username": "DRONGO",
+                                              "content": content[:1900]}, timeout=20)
+        return r.ok
+
+
+# ---------------------------------------------------------------------------
+class LedChannel:
+    """Blink an LED on a GPIO line. Uses python-periphery (one stable API across
+    kernels); imported lazily so it's only needed if you enable the LED."""
+    name = "led"
+
+    def __init__(self, cfg):
+        chip = str(cfg.get("alerts", "led", "chip", default="/dev/gpiochip0"))
+        self.chip = chip if chip.startswith("/") else f"/dev/{chip}"
+        self.line = int(cfg.get("alerts", "led", "line", default=17))
+        self.active_high = bool(cfg.get("alerts", "led", "active_high", default=True))
+        self.blinks = int(cfg.get("alerts", "led", "blinks", default=3))
+        self.on_ms = int(cfg.get("alerts", "led", "on_ms", default=150))
+        self.off_ms = int(cfg.get("alerts", "led", "off_ms", default=150))
+        self._lock = threading.Lock()
+        self._warned = False
+        self.usable = os.path.exists(self.chip)
+        if not self.usable:
+            log.warning("LED channel: %s not found - is the LED's gpiochip right?", self.chip)
+
+    def send(self, message, title, priority, link):
+        if not self.usable:
+            return False
+        # Non-blocking: blink in a background thread so the agent never waits on it.
+        threading.Thread(target=self._blink, args=(priority,), daemon=True).start()
+        return True
+
+    def _blink(self, priority):
+        if not self._lock.acquire(blocking=False):
+            return  # a blink is already running; don't stack them
+        try:
+            try:
+                from periphery import GPIO
+            except ImportError:
+                if not self._warned:
+                    log.warning("LED channel needs python-periphery (pip install python-periphery)")
+                    self._warned = True
+                return
+            n = self.blinks * (2 if priority in ("high", "urgent") else 1)
+            gpio = GPIO(self.chip, self.line, "out")
+            try:
+                for _ in range(n):
+                    gpio.write(self.active_high)
+                    time.sleep(self.on_ms / 1000.0)
+                    gpio.write(not self.active_high)
+                    time.sleep(self.off_ms / 1000.0)
+            finally:
+                gpio.write(not self.active_high)   # leave it off
+                gpio.close()
+        except Exception as e:
+            log.warning("LED blink failed: %s", e)
+        finally:
+            self._lock.release()
+
+
+# ---------------------------------------------------------------------------
+class NtfyChannel:
+    name = "ntfy"
+
+    def __init__(self, cfg):
+        self.server = cfg.get("alerts", "ntfy", "server", default="https://ntfy.sh")
+        self.topic = cfg.get("alerts", "ntfy", "topic", default="")
+        self.usable = bool(self.topic)
+
+    def send(self, message, title, priority, link):
+        if not self.usable:
+            return False
+        headers = {"Title": _ascii(title), "Priority": priority}
         if link:
             headers["Click"] = link
-        r = requests.post(f"{server.rstrip('/')}/{topic}",
+        r = requests.post(f"{self.server.rstrip('/')}/{self.topic}",
                           data=message.encode("utf-8"), headers=headers, timeout=20)
         return r.ok
 
-    def _telegram(self, message, title, link):
-        token_env = self.cfg.get("alerts", "telegram", "bot_token_env",
-                                 default="TELEGRAM_BOT_TOKEN")
-        token = os.environ.get(token_env, "")
-        chat_id = self.cfg.get("alerts", "telegram", "chat_id", default="")
-        if not token or not chat_id:
+
+# ---------------------------------------------------------------------------
+class CommandChannel:
+    """Run an operator-defined command on each alert. The command is set in the
+    root-owned config (not by the agent), and receives the alert in env vars."""
+    name = "command"
+
+    def __init__(self, cfg):
+        self.run = cfg.get("alerts", "command", "run", default="")
+        self.usable = bool(self.run)
+
+    def send(self, message, title, priority, link):
+        if not self.usable:
             return False
-        text = f"*{title}*\n{message}"
-        if link:
-            text += f"\n{link}"
-        r = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-            timeout=20,
-        )
-        return r.ok
+        env = dict(os.environ, DRONGO_ALERT_TITLE=title, DRONGO_ALERT_MESSAGE=message,
+                   DRONGO_ALERT_PRIORITY=priority, DRONGO_ALERT_LINK=link or "")
+        subprocess.run(self.run, shell=True, env=env, timeout=20,
+                       capture_output=True)
+        return True
+
+
+_CHANNELS = {"discord": DiscordChannel, "led": LedChannel,
+             "ntfy": NtfyChannel, "command": CommandChannel}
+
+
+class Alerter:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.notify_every_cycle = cfg.get("alerts", "notify_every_cycle", default=False)
+        self.channels = []
+        for key, cls in _CHANNELS.items():
+            if cfg.get("alerts", key, "enabled", default=False):
+                try:
+                    self.channels.append(cls(cfg))
+                except Exception as e:
+                    log.warning("alert channel '%s' failed to init: %s", key, e)
+
+    def enabled(self) -> bool:
+        return any(getattr(c, "usable", False) for c in self.channels)
+
+    def send(self, message: str, title: str = "DRONGO", priority: str = "default",
+             link: str | None = None) -> bool:
+        sent = False
+        for ch in self.channels:
+            try:
+                sent = bool(ch.send(message, title, priority, link)) or sent
+            except Exception as e:
+                log.warning("alert channel '%s' failed: %s", ch.name, e)
+        return sent

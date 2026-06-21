@@ -6,3 +6,7 @@ Flask>=3.0
 # Optional: only needed if you enable the Claude (Anthropic) provider.
 # The router imports it lazily, so it's safe to leave installed or omit.
 anthropic>=0.49
+
+# Optional: only needed if you enable the LED alert channel (GPIO blinking).
+# One stable GPIO API across kernels; imported lazily.
+python-periphery>=2.4

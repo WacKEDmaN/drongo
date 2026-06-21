@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DRONGO privileged updater — the ONLY thing allowed to change the code.
+"""DRONGO privileged updater - the ONLY thing allowed to change the code.
 
 Runs as ROOT from a systemd timer (and on demand). The agent can REQUEST an
 update (it drops a marker file) but can never write its own code, because its
@@ -26,6 +26,7 @@ REPO = os.environ.get("DRONGO_REPO", "/opt/drongo")
 RUNTIME = os.environ.get("DRONGO_RUNTIME", "/var/lib/drongo/runtime")
 SERVICE = os.environ.get("DRONGO_SERVICE", "drongo.service")
 VENV_PY = os.environ.get("DRONGO_PYTHON", f"{REPO}/.venv/bin/python")
+DISCORD = os.environ.get("DRONGO_DISCORD_WEBHOOK", "")
 NTFY_SERVER = os.environ.get("DRONGO_NTFY_SERVER", "https://ntfy.sh")
 NTFY_TOPIC = os.environ.get("DRONGO_NTFY_TOPIC", "")
 # How often to do a routine pull even without an explicit request (seconds).
@@ -39,14 +40,22 @@ def log(m):
 
 
 def alert(message, title="DRONGO updater", priority="default"):
-    if not NTFY_TOPIC:
-        return
-    try:
-        urllib.request.urlopen(urllib.request.Request(
-            f"{NTFY_SERVER.rstrip('/')}/{NTFY_TOPIC}", data=message.encode(),
-            headers={"Title": title, "Priority": priority}), timeout=15)
-    except Exception:
-        pass
+    if DISCORD:
+        try:
+            body = json.dumps({"username": "DRONGO",
+                               "content": f"**{title}**\n{message}"[:1900]}).encode()
+            urllib.request.urlopen(urllib.request.Request(
+                DISCORD, data=body, headers={"Content-Type": "application/json"}), timeout=15)
+        except Exception:
+            pass
+    if NTFY_TOPIC:
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"{NTFY_SERVER.rstrip('/')}/{NTFY_TOPIC}", data=message.encode(),
+                headers={"Title": title.encode('ascii', 'replace').decode(),
+                         "Priority": priority}), timeout=15)
+        except Exception:
+            pass
 
 
 def sh(cmd, timeout=180):
@@ -114,12 +123,12 @@ def main():
         lock_safeguard()                      # keep perms/hash correct anyway
         return
 
-    log(f"updated {before[:7]} -> {after[:7]}; syntax-checking…")
+    log(f"updated {before[:7]} -> {after[:7]}; syntax-checking...")
     chk_rc, chk_out, chk_err = sh(f"cd {REPO} && {VENV_PY} -m compileall -q agent"
                                   if Path(VENV_PY).exists()
                                   else f"cd {REPO} && python3 -m compileall -q agent")
     if chk_rc != 0:
-        log("syntax check FAILED — rolling back.")
+        log("syntax check FAILED - rolling back.")
         git(f"reset --hard {before}")
         lock_safeguard()
         alert(f"Update {after[:7]} failed syntax check; rolled back to {before[:7]}.",

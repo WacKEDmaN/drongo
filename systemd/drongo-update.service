@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=oneshot
 User=root
 EnvironmentFile=-/etc/drongo/observer.env
+Environment=PYTHONUTF8=1
 # Acts on an agent update-request immediately, and does a routine pull at most
 # once a day (self-throttled). Always re-locks the safeguard permissions.
 ExecStart=/usr/bin/python3 /opt/drongo/system/updater.py

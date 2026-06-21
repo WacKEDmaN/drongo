@@ -209,11 +209,13 @@ cat <<EOF
 
     1. Edit your keys:        sudo nano $ETC/drongo.env
          (CEREBRAS / GROQ / GEMINI / MISTRAL / OPENROUTER - ANTHROPIC_API_KEY is optional/paid)
-    2. Want phone alerts? pick a long random word and put the SAME one in both:
-         sudo nano $ETC/config.yaml      ->  alerts.ntfy.topic
-         sudo nano $ETC/observer.env     ->  DRONGO_NTFY_TOPIC
-         then install the "ntfy" app and subscribe to that word.
-    3. Apply changes:         sudo systemctl restart drongo
+    2. Want alerts? Two easy options (Discord is on by default):
+         Discord: make a channel webhook (Server Settings -> Integrations ->
+           Webhooks -> Copy URL), then  sudo nano $ETC/drongo.env  -> DISCORD_WEBHOOK_URL
+           (paste the same URL into $ETC/observer.env -> DRONGO_DISCORD_WEBHOOK too).
+         LED:     wire an LED to a GPIO pin, find it with 'gpioinfo', then set
+           alerts.led (enabled/chip/line) in $ETC/config.yaml.
+    3. Apply changes:         sudo systemctl restart drongo drongo-web
 
   HOW DO I KNOW IT'S WORKING?
     sudo $INSTALL/.venv/bin/python -m agent -c $ETC/config.yaml doctor   # should say READY

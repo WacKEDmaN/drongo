@@ -164,14 +164,38 @@ safe_mode:                   # crash-loop self-defence
 # subscribe to a long random topic, put it here. No account needed.
 # ---------------------------------------------------------------------------
 alerts:
-  provider: ntfy             # ntfy | telegram | none
-  notify_every_cycle: false  # true = ping on every project, not just notable ones
+  notify_every_cycle: false   # true = ping on every project, not just notable ones
+
+  # --- Discord: easiest, no phone/bot needed -------------------------------
+  # In Discord: Server Settings -> Integrations -> Webhooks -> New Webhook ->
+  # pick a channel -> Copy URL. Put that URL in DISCORD_WEBHOOK_URL (drongo.env).
+  discord:
+    enabled: true
+    webhook_env: DISCORD_WEBHOOK_URL
+
+  # --- LED on a GPIO pin: ambient, glanceable ------------------------------
+  # Find the chip + line with `gpioinfo`. Wire it:
+  #   GPIO line --> ~330ohm resistor --> LED(+ long leg) --> LED(-) --> GND
+  led:
+    enabled: false
+    chip: /dev/gpiochip0       # which gpiochip (RK3399 has gpiochip0..4)
+    line: 17                   # the LINE OFFSET on that chip (NOT the board pin #)
+    active_high: true          # set false if the LED is wired active-low
+    blinks: 3                  # high/urgent alerts blink twice as many times
+    on_ms: 150
+    off_ms: 150
+
+  # --- ntfy (optional; works on desktop/web too) ---------------------------
   ntfy:
+    enabled: false
     server: https://ntfy.sh
-    topic: "drongo-CHANGE-ME-to-something-long-and-random"
-  telegram:
-    bot_token_env: TELEGRAM_BOT_TOKEN
-    chat_id: ""
+    topic: ""
+
+  # --- Run any command on an alert (drives anything you like) --------------
+  # Receives DRONGO_ALERT_{TITLE,MESSAGE,LINK,PRIORITY} in its environment.
+  command:
+    enabled: false
+    run: ""
 
 web:
   # 0.0.0.0 = reachable on the LAN, but ONLY with a password set (the installer

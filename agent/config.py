@@ -80,10 +80,13 @@ DEFAULTS = {
         "interval_multiplier": 4,      # sleep this much longer while in safe mode
     },
     "alerts": {
-        "provider": "none",      # ntfy | telegram | none
+        # Independent channels — enable any combination; they all fire together.
         "notify_every_cycle": False,
-        "ntfy": {"server": "https://ntfy.sh", "topic": ""},
-        "telegram": {"bot_token_env": "TELEGRAM_BOT_TOKEN", "chat_id": ""},
+        "discord": {"enabled": False, "webhook_env": "DISCORD_WEBHOOK_URL"},
+        "led": {"enabled": False, "chip": "/dev/gpiochip0", "line": 17,
+                "active_high": True, "blinks": 3, "on_ms": 150, "off_ms": 150},
+        "ntfy": {"enabled": False, "server": "https://ntfy.sh", "topic": ""},
+        "command": {"enabled": False, "run": ""},
     },
     "web": {"host": "0.0.0.0", "port": 8080},
     "selfupdate": {"enabled": True, "repo_dir": "."},

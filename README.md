@@ -6,8 +6,9 @@ autonomous maker-agent for the **Rock Pi 4C+ (RK3399)** running headless Debian.
 Set it and forget it. It wakes up on a loop, decides its own little project —
 a browser game, a generative image, a handy script, a live hardware dashboard,
 a short research note — builds it with real tools, and writes a journal entry
-you can read later from a web dashboard. It can ping your phone when it makes
-something good. It runs on **free cloud LLMs first** and **falls back to a local
+you can read later from a web dashboard. It can ping you on **Discord** or
+**blink an LED** you wire to a GPIO when it makes something good. It runs on
+**free cloud LLMs first** and **falls back to a local
 model** so it never fully stops, and it is wrapped in serious, tamper-resistant
 safety rails so you can actually trust it with the keys.
 
@@ -46,8 +47,8 @@ sudo /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml doctor
 You want **`VERDICT: ✓ READY`**. Then open the dashboard in a browser:
 **`http://<your-pi-ip>:8080/`** and watch it build things. Check in whenever you like.
 
-**4. (Optional) Make it smarter + get phone alerts:** add free keys and an alert topic —
-see [Configuration](#manual-install) below — then `sudo systemctl restart drongo`.
+**4. (Optional) Make it smarter + get alerts:** add free keys, and a Discord webhook
+or a GPIO LED — see [Alerts](#alerts--discord-or-an-led) below — then `sudo systemctl restart drongo`.
 
 > **Changed your mind?** `sudo /opt/drongo/uninstall.sh` removes it cleanly (keeps your
 > data unless you add `--purge`). Jump to [Troubleshooting](#troubleshooting) if anything looks off.
@@ -64,7 +65,7 @@ see [Configuration](#manual-install) below — then `sudo systemctl restart dron
 | Builds games / dashboards | HTML/JS written to the workspace, served by the dashboard |
 | Senses its hardware | Scans i2c/spi/1-wire/thermals/USB/cameras, builds dashboards |
 | Updates itself | **Request-based**, applied by a privileged root updater with rollback |
-| Alerts you | ntfy (phone push) or Telegram |
+| Alerts you | Discord webhook, a GPIO LED you wire up, ntfy, or any command — pick any combo |
 | Stays alive | systemd + in-agent watchdog + external observer + SoC hardware watchdog |
 | Can't hurt itself/you | Immutable safeguard, OS sandbox, resource caps, crash-loop safe mode |
 
@@ -175,13 +176,12 @@ The installer (see [`install.sh`](install.sh)) does everything: packages, the
 the venv, Ollama + the model, **locks the safeguard to 0444 and seals its hash**,
 **arms the SoC hardware watchdog**, and installs/enables all the systemd units.
 
-Then add your keys and a private alert topic:
+Then add your keys (and optionally a Discord webhook — see [Alerts](#alerts--discord-or-an-led)):
 
 ```bash
 sudoedit /etc/drongo/drongo.env       # CEREBRAS / GROQ / GEMINI / MISTRAL / OPENROUTER (+ ANTHROPIC_API_KEY for Claude)
-sudoedit /etc/drongo/config.yaml      # alerts.ntfy.topic = something long & random
-sudoedit /etc/drongo/observer.env     # same ntfy topic, thresholds
-sudo systemctl restart drongo
+                                      # and DISCORD_WEBHOOK_URL for alerts
+sudo systemctl restart drongo drongo-web
 ```
 
 > No keys? It still runs — entirely on the **local model**.
@@ -193,8 +193,6 @@ journalctl -u drongo -f                                   # live log
 /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml doctor
 # Dashboard:  http://<pi-ip>:8080/
 ```
-
-Install the **ntfy** app on your phone and subscribe to your topic to get pings.
 
 ---
 
@@ -232,6 +230,44 @@ Install the **ntfy** app on your phone and subscribe to your topic to get pings.
 
 The agent only pushes an alert when it finishes something with artifacts (set
 `alerts.notify_every_cycle: true` for a ping every cycle).
+
+---
+
+## Alerts — Discord or an LED
+
+No phone needed. Enable **any combination** of channels in `/etc/drongo/config.yaml`
+under `alerts:` — they all fire together. The root observer/updater also use Discord
+(and ntfy) to warn you about crash-loops, rollbacks, and host health.
+
+**Discord (easiest):**
+1. In Discord: **Server Settings → Integrations → Webhooks → New Webhook**, pick a
+   channel, **Copy Webhook URL**.
+2. Put it in `/etc/drongo/drongo.env`: `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...`
+   (and the same line in `/etc/drongo/observer.env` as `DRONGO_DISCORD_WEBHOOK=...`).
+3. `alerts.discord.enabled: true` (it already is in the example), then
+   `sudo systemctl restart drongo`.
+
+**LED on a GPIO pin:**
+1. Wire it: **GPIO line → ~330 Ω resistor → LED (long leg / +) → LED (−) → a GND pin.**
+2. Find which `gpiochip` and **line offset** your pin is: `gpioinfo` (from the
+   `gpiod` package the installer adds). The RK3399 exposes `gpiochip0`–`gpiochip4`;
+   the number you want is the **line offset on that chip**, *not* the board pin number.
+3. Set it in `config.yaml`:
+   ```yaml
+   alerts:
+     led:
+       enabled: true
+       chip: /dev/gpiochip0
+       line: 17           # <- your line offset from gpioinfo
+       active_high: true  # false if the LED is wired active-low
+   ```
+4. `sudo systemctl restart drongo`. It blinks 3× on a normal alert, 6× on urgent.
+   (Needs `python-periphery`, already in `requirements.txt`.)
+
+> Quick test: `sudo systemctl restart drongo` and watch — or trigger one cycle with
+> `sudo /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml once`.
+> The **`command`** channel can run any script on an alert (it gets `DRONGO_ALERT_*`
+> env vars) if you want to drive something more exotic.
 
 ---
 
@@ -295,7 +331,8 @@ sudo /opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml doctor
 | Agent keeps restarting / `systemctl status drongo` shows **failed** | Read `journalctl -u drongo -n 50`. If it's a safeguard error, the installer's seal step didn't finish — just re-run `sudo ./install.sh`. |
 | **SAFE MODE** in the logs | It restarted too many times and threw the handbrake on. Fix the underlying error (logs), then `sudo systemctl restart drongo`; two clean cycles and it exits safe mode on its own. |
 | Whole board feels sluggish / OOM | Model too big for the RAM. `sudo ./install.sh --model qwen2.5:1.5b-instruct` (or `0.5b`), and add zram (see Tuning). |
-| No phone alerts | The ntfy **topic must match** in `/etc/drongo/config.yaml` *and* `/etc/drongo/observer.env`, and you must subscribe to that exact topic in the ntfy app. |
+| No Discord alerts | Check `DISCORD_WEBHOOK_URL` is set in `/etc/drongo/drongo.env` and `alerts.discord.enabled: true`. Test the webhook with `curl -d '{"content":"test"}' -H "Content-Type: application/json" <url>`. |
+| LED never blinks | Wrong `chip`/`line` (check `gpioinfo`), LED wired backwards (try `active_high: false`), or `python-periphery` missing. Confirm the `drongo` user is in the `gpio` group (`id drongo`). |
 | Cloud provider ignored | Its key is blank/invalid in `/etc/drongo/drongo.env`, or it's rate-limited (the dashboard's *usage* table shows cooldowns). Blank keys are skipped on purpose. |
 | `self_update` does nothing | You installed from a ZIP (no git remote). Self-update needs a real remote — `git clone` instead. Rollback still works either way. |
 | Want to start over | `sudo /opt/drongo/uninstall.sh --purge` then re-install. |
@@ -337,7 +374,7 @@ agent/
   safeguard.py    ★ tamper-resistant safety core (install root:root 0444)
   watchdog.py     heartbeats, systemd notify, crash-loop self-defence
   memory.py       SQLite journal / kv / provider usage
-  alerts.py       ntfy / Telegram
+  alerts.py       multi-channel: Discord / LED (GPIO) / ntfy / command
   server.py       read-only web dashboard
 system/
   observer.py     external root "Dead Man's Switch" (liveness, rollback, health)

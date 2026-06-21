@@ -6,6 +6,7 @@ Description=DRONGO external observer (Dead Man's Switch)
 Type=oneshot
 User=root
 EnvironmentFile=-/etc/drongo/observer.env
+Environment=PYTHONUTF8=1
 ExecStart=/usr/bin/python3 /opt/drongo/system/observer.py
 # Keep it cheap and bounded.
 TimeoutStartSec=120
