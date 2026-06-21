@@ -1,0 +1,14 @@
+[Unit]
+Description=DRONGO privileged self-updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/drongo/observer.env
+# Acts on an agent update-request immediately, and does a routine pull at most
+# once a day (self-throttled). Always re-locks the safeguard permissions.
+ExecStart=/usr/bin/python3 /opt/drongo/system/updater.py
+TimeoutStartSec=600
+Nice=10

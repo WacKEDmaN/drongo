@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the DRONGO observer every minute
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=10s
+Unit=drongo-observer.service
+
+[Install]
+WantedBy=timers.target

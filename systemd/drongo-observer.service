@@ -1,0 +1,12 @@
+[Unit]
+Description=DRONGO external observer (Dead Man's Switch)
+# Runs as ROOT, outside the agent, so it can restart/roll back/reboot.
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/drongo/observer.env
+ExecStart=/usr/bin/python3 /opt/drongo/system/observer.py
+# Keep it cheap and bounded.
+TimeoutStartSec=120
+Nice=5

@@ -1,0 +1,34 @@
+[Unit]
+Description=DRONGO dashboard (read-only web UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=drongo
+Group=drongo
+WorkingDirectory=/opt/drongo
+EnvironmentFile=-/etc/drongo/drongo.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONUTF8=1
+ExecStart=/opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml web
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/drongo
+PrivateTmp=true
+TasksMax=64
+MemoryMax=256M
+
+# --- Network: the dashboard may ONLY be reached from loopback + private LAN.
+#     Public/internet source addresses are dropped by the kernel (BPF), so even
+#     an accidental port-forward can't expose it. (Belt-and-suspenders with the
+#     in-app password.) Requires a systemd built with BPF firewalling.
+IPAddressDeny=any
+IPAddressAllow=localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
+
+[Install]
+WantedBy=multi-user.target

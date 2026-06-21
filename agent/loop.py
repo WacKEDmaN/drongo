@@ -1,0 +1,323 @@
+"""The autonomous loop: ideate -> act (ReAct) -> reflect -> sleep.
+
+Each cycle the agent looks at what it has done recently and its interests,
+proposes one concrete project, then drives the tools in a JSON tool-calling
+loop until it declares the project finished. A short reflection is written to
+the journal so you can see what it got up to.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import random
+import re
+import socket
+import sys
+import time
+from pathlib import Path
+
+from . import safeguard, tools, watchdog
+from .llm import AllProvidersFailed
+
+log = logging.getLogger("agent.loop")
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+TASK_TYPES = [
+    "browser_game", "creative_image", "utility_script", "sensor_dashboard",
+    "web_research_note", "self_maintenance", "experiment",
+]
+
+EXEC_SYSTEM = """{persona}
+
+You are working on ONE concrete project. Use tools to actually build it —
+write real files into the workspace, run them, fix errors, and verify.
+
+Respond with EXACTLY ONE JSON object and nothing else. Two shapes are allowed:
+
+  {{"thought": "<brief reasoning>", "tool": "<tool_name>", "args": {{...}}}}
+  {{"thought": "<brief reasoning>", "final": "<2-4 sentence summary of what you built and where it lives>"}}
+
+Rules:
+- Output raw JSON only. No markdown, no code fences, no prose around it.
+- Build something real and finished, not a stub. Test it when you can.
+- Save games/scripts under projects/, images go to the gallery via generate_image,
+  dashboards via make_dashboard. Keep everything inside the workspace.
+- When the project is genuinely done and verified, return the "final" form.
+- Be efficient: you have a limited number of steps.
+
+Available tools:
+{tools}
+"""
+
+IDEATE_SYSTEM = """{persona}
+
+Decide your next self-directed project. It should be small enough to finish in
+a handful of steps on a low-power Rock Pi, but genuinely useful or delightful.
+Avoid repeating recent projects. Prefer variety across games, images, scripts,
+hardware dashboards, and short research notes.
+
+Reply with ONE JSON object only:
+  {{"task_type": "<one of: {types}>", "title": "<short title>", "description": "<what to build and why, 1-3 sentences>"}}
+"""
+
+
+def extract_json(text: str):
+    """Pull the first balanced JSON object out of a model response."""
+    if not text:
+        return None
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.M).strip()
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    blob = text[start:i + 1]
+                    try:
+                        return json.loads(blob)
+                    except Exception:
+                        try:
+                            return json.loads(blob.replace("\n", " "))
+                        except Exception:
+                            return None
+    return None
+
+
+class AgentLoop:
+    def __init__(self, cfg, mem, router, alerter):
+        self.cfg = cfg
+        self.mem = mem
+        self.router = router
+        self.alerter = alerter
+        self.persona = cfg.get("identity", "persona", default="You are a helpful maker agent.")
+        self.name = cfg.get("identity", "name", default="Agent")
+        self.max_steps = cfg.get("loop", "max_steps", default=14)
+        self.safe_mode = False
+        self.safe_reason = ""
+
+    # ---- ideation ------------------------------------------------------
+    def ideate(self) -> dict:
+        recent = self.mem.recent_task_titles(self.cfg.get("loop", "max_recent_tasks", default=12))
+        interests = self.cfg.get("interests", default=[])
+        hw = self.mem.recall("hardware")
+        hw_hint = ""
+        if hw:
+            hw_hint = (f"\nKnown hardware: model={hw.get('model')}, "
+                       f"i2c={hw.get('i2c_buses')}, 1-wire={hw.get('onewire')}, "
+                       f"cameras={hw.get('video_devices')}, "
+                       f"thermals={[t.get('type') for t in hw.get('thermals', [])]}.")
+        else:
+            hw_hint = "\nYou have not scanned the hardware yet — a sensor dashboard could start with discover_sensors."
+        user = (f"Your interests: {interests}\n"
+                f"Recent projects (don't repeat): {recent}{hw_hint}\n\n"
+                "Propose your next project now.")
+        system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
+        text, provider = self.router.complete(system, user, temperature=0.9)
+        obj = extract_json(text) or {}
+        return {
+            "task_type": obj.get("task_type", "experiment"),
+            "title": obj.get("title") or "Untitled project",
+            "description": obj.get("description", text[:300]),
+            "provider": provider,
+        }
+
+    # ---- execution (ReAct) --------------------------------------------
+    def execute(self, task: dict, ctx: tools.ToolContext) -> tuple[str, str]:
+        registry = tools.build_registry(ctx)
+        system = EXEC_SYSTEM.format(persona=self.persona,
+                                    tools=tools.tools_prompt(registry))
+        task_msg = (f"Project type: {task['task_type']}\n"
+                    f"Title: {task['title']}\n"
+                    f"Goal: {task['description']}\n\nBegin.")
+        messages = [{"role": "system", "content": system},
+                    {"role": "user", "content": task_msg}]
+        last_provider = task.get("provider", "")
+        for step in range(self.max_steps):
+            watchdog.heartbeat(self.cfg)   # prove we're alive between steps
+            try:
+                text, last_provider = self.router.chat(messages)
+            except AllProvidersFailed as e:
+                return f"LLM unavailable: {e}", last_provider
+            obj = extract_json(text)
+            if obj is None:
+                messages.append({"role": "assistant", "content": text[:500]})
+                messages.append({"role": "user",
+                                 "content": "That was not valid JSON. Reply with ONE JSON object only."})
+                continue
+            if "final" in obj:
+                return str(obj["final"]), last_provider
+            name = obj.get("tool", "")
+            args = obj.get("args", {}) or {}
+            thought = obj.get("thought", "")
+            log.info("[step %d/%d] %s -> %s", step + 1, self.max_steps, thought[:80], name)
+            if name not in registry:
+                observation = f"ERROR: unknown tool '{name}'. Available: {list(registry)}"
+            else:
+                try:
+                    observation = registry[name].func(ctx, **args)
+                except TypeError as e:
+                    observation = f"ERROR: bad args for {name}: {e}"
+                except Exception as e:
+                    observation = f"ERROR: {name} raised {e}"
+            messages.append({"role": "assistant", "content": text[:1200]})
+            messages.append({"role": "user", "content": f"Observation:\n{observation}"})
+            messages = self._trim(messages)
+        return "Reached the step limit before finishing. Partial work saved in the workspace.", last_provider
+
+    @staticmethod
+    def _trim(messages, keep=14):
+        if len(messages) <= keep + 2:
+            return messages
+        return messages[:2] + messages[-keep:]
+
+    # ---- reflection ----------------------------------------------------
+    def reflect(self, task, outcome, ctx) -> str:
+        arts = "\n".join(f"- {a['label']} ({a['path']})" for a in ctx.artifacts) or "(none)"
+        system = self.persona + "\nWrite a short, friendly journal note (2-4 sentences) about what you just made, for your human to read later."
+        user = (f"Project: {task['title']}\nOutcome: {outcome}\nArtifacts:\n{arts}\n\n"
+                "Write the note.")
+        try:
+            text, _ = self.router.complete(system, user, temperature=0.6, max_tokens=300)
+            return text.strip()
+        except AllProvidersFailed:
+            return outcome
+
+    # ---- one full cycle -----------------------------------------------
+    def run_cycle(self) -> dict:
+        t0 = time.time()
+        ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
+                                alerter=self.alerter, log=log, safe_mode=self.safe_mode)
+        try:
+            task = self.ideate()
+        except AllProvidersFailed as e:
+            self.mem.add_journal("error", "Could not ideate", str(e), ok=False)
+            log.error("ideation failed: %s", e)
+            return {"ok": False, "error": str(e)}
+
+        log.info("New project: %s [%s]", task["title"], task["task_type"])
+        outcome, provider = self.execute(task, ctx)
+        note = self.reflect(task, outcome, ctx)
+        ok = not outcome.lower().startswith(("llm unavailable", "reached the step"))
+
+        jid = self.mem.add_journal(
+            "cycle", task["title"], note, task_type=task["task_type"],
+            artifacts=ctx.artifacts, provider=provider, ok=ok,
+        )
+        elapsed = int(time.time() - t0)
+        log.info("Cycle done in %ds: %s", elapsed, task["title"])
+
+        if self.alerter.enabled() and (self.cfg.get("alerts", "notify_every_cycle", default=False) or ctx.artifacts):
+            host = socket.gethostname()
+            port = self.cfg.get("web", "port", default=8080)
+            link = f"http://{host}:{port}/" if host else None
+            self.alerter.send(f"{task['title']}\n{note[:300]}",
+                              title=f"{self.name} finished a project", link=link)
+        return {"ok": ok, "id": jid, "task": task, "artifacts": ctx.artifacts}
+
+    # ---- forever -------------------------------------------------------
+    def run_forever(self):
+        interval = self.cfg.get("loop", "interval_seconds", default=1800)
+        jitter = self.cfg.get("loop", "jitter_seconds", default=300)
+        pause_file = Path(self.cfg.workspace) / "PAUSE"
+        stop_file = Path(self.cfg.workspace) / "STOP"
+
+        # 1) The guard checks itself BEFORE anything else runs. In strict mode a
+        #    compromised guard aborts the process here (fail closed).
+        strict = self.cfg.get("safety", "strict", default=False)
+        safeguard.enforce_or_die(strict=strict, logger=log, alerter=self.alerter)
+
+        # 2) Crash-loop self-defence: how many times have we restarted lately?
+        start = watchdog.register_start(self.cfg)
+        self.safe_mode = start["safe_mode"]
+        self.safe_reason = start["reason"]
+        self.mem.remember("safe_mode", self.safe_mode)
+        watchdog.notify_ready()
+        watchdog.heartbeat(self.cfg, force=True)
+
+        banner = "SAFE MODE — " + self.safe_reason if self.safe_mode else "normal"
+        log.info("%s is awake (%s). Providers: %s",
+                 self.name, banner, self.router.provider_names())
+        self.mem.add_journal("note", f"{self.name} started ({'safe mode' if self.safe_mode else 'normal'})",
+                             self.safe_reason or f"Providers: {self.router.provider_names()}",
+                             ok=not self.safe_mode)
+        if self.safe_mode:
+            self.alerter.send(
+                f"DRONGO came up in SAFE MODE.\n{self.safe_reason}\n"
+                "Shell + self-update are disabled until I've been stable for a while. "
+                "Touch the STOP file in the workspace if you want me to fully stand down.",
+                title="DRONGO safe mode", priority="high")
+        elif start["crashed_last"]:
+            self.mem.add_journal("note", "Recovered from an unclean shutdown",
+                                 start["reason"])
+
+        try:
+            self._main_loop(interval, jitter, pause_file, stop_file)
+        finally:
+            # Whatever happens, if we got here via a planned path, record it.
+            watchdog.mark_clean_exit(self.cfg)
+
+    def _main_loop(self, interval, jitter, pause_file, stop_file):
+        # Successful cycles in a row let us leave safe mode.
+        good_streak = 0
+        while True:
+            watchdog.heartbeat(self.cfg, force=True)
+
+            if stop_file.exists():
+                log.warning("STOP file present — standing down (clean exit).")
+                self.mem.add_journal("note", "Stood down via STOP file", "")
+                return
+            if pause_file.exists():
+                log.info("PAUSE file present — idling.")
+                watchdog.sleep_with_heartbeat(self.cfg, min(interval, 120))
+                continue
+
+            try:
+                result = self.run_cycle()
+                if result.get("ok"):
+                    good_streak += 1
+                    if self.safe_mode and good_streak >= 2:
+                        self.safe_mode = False
+                        self.mem.remember("safe_mode", False)
+                        log.info("Two clean cycles — leaving safe mode.")
+                        self.alerter.send("Stable again — leaving safe mode, mate.",
+                                          title="DRONGO recovered")
+                else:
+                    good_streak = 0
+            except Exception as e:
+                good_streak = 0
+                log.exception("cycle crashed")
+                self.mem.add_journal("error", "Cycle crashed", str(e), ok=False)
+
+            # Self-update asked for a relaunch: exit cleanly for systemd.
+            if self.mem.recall("restart_requested"):
+                self.mem.remember("restart_requested", False)
+                log.info("Restart requested by self-update; exiting (42) for systemd.")
+                watchdog.mark_clean_exit(self.cfg)
+                sys.exit(42)
+
+            nap = interval + random.randint(-jitter, jitter)
+            if self.safe_mode:
+                nap *= self.cfg.get("safe_mode", "interval_multiplier", default=4)
+            nap = max(60, nap)
+            log.info("Sleeping %ds%s.", nap, " (safe mode)" if self.safe_mode else "")
+            watchdog.sleep_with_heartbeat(self.cfg, nap)

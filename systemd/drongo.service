@@ -1,0 +1,58 @@
+[Unit]
+Description=DRONGO autonomous agent
+After=network-online.target ollama.service
+Wants=network-online.target
+# systemd-level crash-loop containment: if it restarts 6 times in 10 min,
+# systemd gives up and the observer takes over (rollback).
+StartLimitIntervalSec=600
+StartLimitBurst=6
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=drongo
+Group=drongo
+WorkingDirectory=/opt/drongo
+EnvironmentFile=-/etc/drongo/drongo.env
+Environment=PYTHONUNBUFFERED=1
+# Force UTF-8 I/O so an LLM-generated emoji/accent in a log line never crashes us,
+# whatever the system locale is.
+Environment=PYTHONUTF8=1
+# Make the safeguard FAIL CLOSED if its integrity/permissions are ever wrong.
+Environment=DRONGO_SAFEGUARD_STRICT=1
+ExecStart=/opt/drongo/.venv/bin/python -m agent -c /etc/drongo/config.yaml run
+
+Restart=always
+RestartSec=10
+# Exit code 42 == "self-update wants a clean relaunch", treat as success.
+SuccessExitStatus=42
+
+# --- Hardware/software watchdog: agent must ping within 600s or it's killed
+#     and restarted. (agent pings every 60s via sd_notify WATCHDOG=1)
+WatchdogSec=600
+
+# --- Resource caps (cgroups). 4GB box: leave headroom for the OS + Ollama. ---
+MemoryHigh=900M
+MemoryMax=1200M
+CPUQuota=180%
+TasksMax=256
+
+# --- Sandbox: the agent CANNOT write its own code or the system. -------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/drongo
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

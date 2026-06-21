@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for DRONGO self-update requests (and daily routine pull)
+
+[Timer]
+OnBootSec=180
+OnUnitActiveSec=15min
+AccuracySec=1min
+Unit=drongo-update.service
+
+[Install]
+WantedBy=timers.target

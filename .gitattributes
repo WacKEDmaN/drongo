@@ -1,0 +1,10 @@
+# This project runs on Linux (the Rock Pi). Force LF endings so shell scripts
+# and units never break with Windows CRLF, no matter where they were edited.
+* text=auto eol=lf
+*.sh       text eol=lf
+*.py       text eol=lf
+*.yaml     text eol=lf
+*.service  text eol=lf
+*.timer    text eol=lf
+*.md       text eol=lf
+*.txt      text eol=lf

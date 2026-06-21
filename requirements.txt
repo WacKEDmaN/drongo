@@ -1,0 +1,8 @@
+# Core runtime deps — deliberately minimal so they install fast on ARM.
+requests>=2.31
+PyYAML>=6.0
+Flask>=3.0
+
+# Optional: only needed if you enable the Claude (Anthropic) provider.
+# The router imports it lazily, so it's safe to leave installed or omit.
+anthropic>=0.49

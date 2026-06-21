@@ -1,0 +1,179 @@
+"""DRONGO command-line entry point.
+
+    python -m agent run        # the autonomous loop (what systemd runs)
+    python -m agent web        # the dashboard
+    python -m agent once       # run a single cycle and print the result
+    python -m agent discover   # scan + print the hardware inventory
+    python -m agent doctor     # check providers, paths and guard integrity
+    python -m agent verify     # check safeguard integrity (exit 0 = ok)
+    python -m agent seal       # (run as ROOT) write the safeguard .sha256 sidecar
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import sys
+
+from . import safeguard, watchdog
+from .alerts import Alerter
+from .config import load_config
+from .llm import Router
+from .loop import AgentLoop
+from .memory import Memory
+
+
+def _setup_logging(cfg, level=logging.INFO):
+    handlers = [logging.StreamHandler(sys.stdout)]
+    try:
+        handlers.append(logging.FileHandler(cfg.logs_dir / "agent.log", encoding="utf-8"))
+    except Exception:
+        pass
+    logging.basicConfig(
+        level=level, handlers=handlers,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
+def _build(args):
+    cfg = load_config(args.config)
+    _setup_logging(cfg, logging.DEBUG if args.verbose else logging.INFO)
+    mem = Memory(cfg.db_path)
+    router = Router(cfg, mem)
+    alerter = Alerter(cfg)
+    return cfg, mem, router, alerter
+
+
+def cmd_run(args):
+    cfg, mem, router, alerter = _build(args)
+    AgentLoop(cfg, mem, router, alerter).run_forever()
+
+
+def cmd_once(args):
+    cfg, mem, router, alerter = _build(args)
+    safeguard.enforce_or_die(strict=cfg.get("safety", "strict", default=False),
+                             logger=logging.getLogger("agent"), alerter=alerter)
+    result = AgentLoop(cfg, mem, router, alerter).run_cycle()
+    print(json.dumps({k: v for k, v in result.items() if k != "task"}, indent=2, default=str))
+
+
+def cmd_web(args):
+    cfg, mem, _, _ = _build(args)
+    from .server import serve
+    print(f"Dashboard on http://{cfg.get('web','host')}:{cfg.get('web','port')}/")
+    serve(cfg, mem)
+
+
+def cmd_discover(args):
+    cfg, mem, _, _ = _build(args)
+    from .tools import collect_hardware
+    info = collect_hardware()
+    mem.remember("hardware", info)
+    print(json.dumps(info, indent=2))
+
+
+def cmd_doctor(args):
+    from .llm import AllProvidersFailed
+    cfg, mem, router, alerter = _build(args)
+    strict = cfg.get("safety", "strict", default=False)
+    issues = []   # plain-English things a human must fix
+
+    print(f"Config:      {cfg.source_path or '(defaults only)'}")
+    print(f"Base dir:    {cfg.base_dir}")
+    print(f"DB:          {cfg.db_path}")
+
+    provs = router.provider_names()
+    print(f"Providers:   {provs or 'NONE'}")
+    if not provs:
+        issues.append("No usable LLM providers. Add API keys to /etc/drongo/drongo.env, "
+                      "or make sure Ollama is running with a model pulled.")
+
+    print(f"Alerts:      {alerter.provider} (phone notifications {'ON' if alerter.enabled() else 'OFF'})")
+    age = watchdog.heartbeat_age(cfg)
+    print(f"Heartbeat:   {('%ds ago' % age) if age is not None else 'none yet (agent may not have run)'}")
+
+    ok, problems = safeguard.verify_self(strict=strict)
+    st = safeguard.integrity_status()
+    print(f"Safeguard:   {st['mode']} owner_uid={st['owner_uid']} "
+          f"hash_ok={st['hash_ok']} sidecar={st['sidecar_present']}")
+    print(f"  integrity: {'OK' if ok else 'PROBLEMS: ' + '; '.join(problems)}")
+    if not ok and strict:
+        issues.append("Safeguard integrity check failed (see above). On the Pi this should be "
+                      "0444 root-owned + sealed; re-run the installer if it isn't.")
+
+    if not getattr(args, "quick", False):
+        print("LLM check:   testing - first run loads the model, can take ~a minute...")
+        try:
+            text, who = router.complete("You are a connectivity test.",
+                                        "Reply with exactly: OK", max_tokens=5)
+            print(f"             OK - a model replied via '{who}'")
+        except AllProvidersFailed as e:
+            print(f"             FAILED - no model answered ({e})")
+            issues.append("No LLM answered. Cloud? check keys/network. "
+                          "Local? run 'ollama pull <model>' then 'systemctl restart ollama'.")
+
+    print()
+    if issues:
+        print("VERDICT: NOT READY - fix these:")
+        for i in issues:
+            print(f"  - {i}")
+        sys.exit(1)
+    print("VERDICT: READY - DRONGO is good to go.")
+
+
+def cmd_verify(args):
+    cfg, *_ = _build(args)
+    ok, problems = safeguard.verify_self(strict=cfg.get("safety", "strict", default=False))
+    if ok:
+        print("safeguard integrity: OK")
+        sys.exit(0)
+    print("safeguard integrity: FAILED")
+    for p in problems:
+        print(f"  - {p}")
+    sys.exit(1)
+
+
+def cmd_seal(args):
+    # No config/logging needed; just (re)write the sidecar next to safeguard.py.
+    digest = safeguard.self_seal()
+    print(f"Wrote safeguard.py.sha256 = {digest}")
+    print("Now lock it down (run as root):")
+    print("  chown root:root agent/safeguard.py agent/safeguard.py.sha256")
+    print("  chmod 0444 agent/safeguard.py agent/safeguard.py.sha256")
+
+
+def main(argv=None):
+    # Never let an odd locale (C/POSIX) crash us when printing unicode the LLM
+    # produced. Render what we can, replace the rest.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    p = argparse.ArgumentParser(prog="agent", description="DRONGO autonomous agent")
+    p.add_argument("-c", "--config", help="path to config.yaml")
+    p.add_argument("-v", "--verbose", action="store_true")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    parsers = {}
+    for name, fn, help_ in [
+        ("run", cmd_run, "run the autonomous loop"),
+        ("once", cmd_once, "run a single cycle"),
+        ("web", cmd_web, "serve the dashboard"),
+        ("discover", cmd_discover, "scan hardware"),
+        ("doctor", cmd_doctor, "diagnostics + READY/NOT-READY verdict"),
+        ("verify", cmd_verify, "check safeguard integrity"),
+        ("seal", cmd_seal, "write safeguard hash sidecar (root)"),
+    ]:
+        sp = sub.add_parser(name, help=help_)
+        sp.set_defaults(func=fn)
+        parsers[name] = sp
+    parsers["doctor"].add_argument("--quick", action="store_true",
+                                   help="skip the live LLM connectivity test")
+    args = p.parse_args(argv)
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

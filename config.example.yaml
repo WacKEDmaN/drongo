@@ -1,0 +1,186 @@
+# ===========================================================================
+#  DRONGO configuration.  Copy to config.yaml and edit.
+#      cp config.example.yaml config.yaml
+#  Secrets (API keys) do NOT go here — they live in environment variables
+#  (see /etc/drongo/drongo.env and the systemd unit). This file only names
+#  which env var holds each key.
+# ===========================================================================
+
+# Where the agent keeps its workspace, state DB, logs and generated artifacts.
+# On the Pi the systemd unit overrides this to /var/lib/drongo/runtime.
+base_dir: "~/agent-runtime"
+
+identity:
+  name: "DRONGO"
+  # Leave persona empty to use the built-in DRONGO personality, or override it.
+  # persona: "You are ..."
+
+interests:
+  - "small playable browser games (HTML5/canvas)"
+  - "generative / creative images"
+  - "tidy shell and python utilities that improve the box"
+  - "sensing and visualising its own hardware"
+  - "retro-computing experiments (Amstrad CPC / Z80)"
+  - "short research notes on things it just learned"
+
+loop:
+  interval_seconds: 1800     # ~30 min between projects. Raise for less activity.
+  jitter_seconds: 300        # randomise so it's not robotic
+  max_steps: 14              # tool calls allowed per project
+  max_recent_tasks: 12       # how many past titles to avoid repeating
+
+# ---------------------------------------------------------------------------
+# LLM routing. Providers are tried TOP-TO-BOTTOM. Cloud free tiers first
+# (fast + capable), local Ollama last as the always-available fallback.
+# A cloud provider with no API key set is automatically skipped.
+# ---------------------------------------------------------------------------
+llm:
+  prefer: cloud_first        # cloud_first | local_first
+  temperature: 0.7           # ignored by the Claude provider (4.x rejects it)
+  max_tokens: 2048
+  request_timeout: 120
+  # Providers are tried TOP-TO-BOTTOM. Free tiers first; paid Claude is a capped
+  # last resort reached only when every free provider is rate-limited; the local
+  # model is the never-fail floor below it. A provider with no API key is skipped.
+  providers:
+    # ---- Cerebras: extremely fast, generous free tier --------------------
+    - name: cerebras
+      base_url: https://api.cerebras.ai/v1
+      api_key_env: CEREBRAS_API_KEY
+      model: llama-3.3-70b
+      rpm_limit: 28
+      daily_limit: 13000
+      enabled: true
+
+    # ---- Groq: very fast, generous free tier -----------------------------
+    - name: groq
+      base_url: https://api.groq.com/openai/v1
+      api_key_env: GROQ_API_KEY
+      model: llama-3.3-70b-versatile
+      rpm_limit: 28
+      daily_limit: 13000
+      enabled: true
+
+    # ---- Google Gemini (OpenAI-compatible endpoint) ----------------------
+    - name: gemini
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      api_key_env: GEMINI_API_KEY
+      model: gemini-2.0-flash
+      rpm_limit: 14
+      daily_limit: 1400
+      enabled: true
+
+    # ---- Mistral: free tier (La Plateforme) ------------------------------
+    - name: mistral
+      base_url: https://api.mistral.ai/v1
+      api_key_env: MISTRAL_API_KEY
+      model: mistral-small-latest
+      rpm_limit: 20
+      daily_limit: 1000
+      enabled: true
+
+    # ---- OpenRouter free models ------------------------------------------
+    - name: openrouter
+      base_url: https://openrouter.ai/api/v1
+      api_key_env: OPENROUTER_API_KEY
+      model: "meta-llama/llama-3.3-70b-instruct:free"
+      rpm_limit: 18
+      daily_limit: 900
+      enabled: true
+      headers:
+        HTTP-Referer: "http://localhost"
+        X-Title: "DRONGO"
+
+    # ---- Claude (Anthropic) — PAID, last-resort. Native API, not OpenAI. --
+    #   Reached only when all the free providers above are rate-limited.
+    #   daily_limit is a hard cost guard. Needs:  pip install anthropic
+    - name: claude
+      type: anthropic
+      api_key_env: ANTHROPIC_API_KEY
+      model: claude-haiku-4-5      # cheapest; swap to claude-sonnet-4-6 / claude-opus-4-8 for more grunt
+      rpm_limit: 20
+      daily_limit: 200             # cap paid calls/day — raise/lower to taste
+      thinking: null               # set "adaptive" for higher quality (more tokens/cost)
+      enabled: true
+
+    # ---- Local Ollama: the guaranteed never-fail fallback (no limits) ----
+    - name: local
+      base_url: http://localhost:11434/v1
+      api_key_env: null
+      model: "qwen2.5:3b-instruct"
+      local: true
+      enabled: true
+
+    # ---- More free options you can enable (add the key, flip enabled) ----
+    # - name: github          # GitHub Models — free with a GitHub PAT
+    #   base_url: https://models.github.ai/inference
+    #   api_key_env: GITHUB_TOKEN
+    #   model: openai/gpt-4o-mini
+    #   rpm_limit: 10
+    #   daily_limit: 150
+    #   enabled: false
+    # - name: nvidia          # NVIDIA NIM — free credits
+    #   base_url: https://integrate.api.nvidia.com/v1
+    #   api_key_env: NVIDIA_API_KEY
+    #   model: meta/llama-3.3-70b-instruct
+    #   enabled: false
+
+# ---------------------------------------------------------------------------
+# Tools. Disable anything you don't want the agent to have.
+# ---------------------------------------------------------------------------
+tools:
+  shell:
+    enabled: true
+    allow_sudo: false        # KEEP FALSE. The agent must never need root.
+    timeout: 120
+    max_output_chars: 6000
+  files:    {enabled: true, max_file_chars: 60000}
+  web:      {enabled: true, timeout: 30, max_chars: 8000}
+  images:   {enabled: true, provider: pollinations}   # keyless, free
+  sensors:  {enabled: true}
+  dashboard: {enabled: true}
+  alerts:   {enabled: true}
+
+# ---------------------------------------------------------------------------
+# Safety / tamper-resistance.
+# ---------------------------------------------------------------------------
+safety:
+  strict: true               # fail closed if safeguard integrity check fails
+  deny_patterns: []          # extra regexes appended to the built-in denylist
+  workspace_only: true
+
+watchdog:
+  enabled: true
+  ping_interval_seconds: 60  # must be < systemd WatchdogSec (we use 600)
+
+safe_mode:                   # crash-loop self-defence
+  enabled: true
+  crash_window_seconds: 600
+  max_starts_in_window: 5
+  interval_multiplier: 4
+
+# ---------------------------------------------------------------------------
+# Alerts — how DRONGO pings you. ntfy is easiest: install the ntfy app,
+# subscribe to a long random topic, put it here. No account needed.
+# ---------------------------------------------------------------------------
+alerts:
+  provider: ntfy             # ntfy | telegram | none
+  notify_every_cycle: false  # true = ping on every project, not just notable ones
+  ntfy:
+    server: https://ntfy.sh
+    topic: "drongo-CHANGE-ME-to-something-long-and-random"
+  telegram:
+    bot_token_env: TELEGRAM_BOT_TOKEN
+    chat_id: ""
+
+web:
+  # 0.0.0.0 = reachable on the LAN, but ONLY with a password set (the installer
+  # generates DRONGO_WEB_PASSWORD in /etc/drongo/drongo.env). With no password it
+  # automatically falls back to localhost-only. The web service is also locked to
+  # private LAN ranges at the kernel level (see drongo-web.service IPAddressAllow).
+  host: 0.0.0.0
+  port: 8080
+
+selfupdate:
+  enabled: true
+  repo_dir: "."              # "." = the agent's own install dir (must be a git repo)
