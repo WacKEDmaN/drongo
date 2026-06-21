@@ -155,6 +155,41 @@ def find_config_path(explicit: str | None = None) -> str | None:
     return None
 
 
+def apply_overrides(cfg: "Config", settings: dict) -> None:
+    """Layer dashboard-saved settings (stored in the DB) onto a loaded Config.
+    Called once at startup, so changes take effect on the next restart:
+      settings['env']            -> os.environ (API keys, Discord webhook, LED)
+      settings['loop']           -> cfg loop values (cooldowns etc.)
+      settings['llm'] scalars    -> prefer / min_call_interval_seconds / ...
+      settings['llm']['providers'] {name:{enabled,model}} -> matching providers
+      settings['alerts']         -> deep-merged into cfg alerts
+    """
+    if not isinstance(settings, dict):
+        return
+    for k, v in (settings.get("env") or {}).items():
+        if v not in (None, ""):
+            os.environ[str(k)] = str(v)
+    for k, v in (settings.get("loop") or {}).items():
+        cfg.data.setdefault("loop", {})[k] = v
+    llm = settings.get("llm") or {}
+    for k in ("min_call_interval_seconds", "prefer", "temperature", "max_tokens", "request_timeout"):
+        if k in llm:
+            cfg.data.setdefault("llm", {})[k] = llm[k]
+    pov = llm.get("providers") or {}
+    for p in cfg.data.get("llm", {}).get("providers", []) or []:
+        o = pov.get(p.get("name"))
+        if isinstance(o, dict):
+            if "enabled" in o:
+                p["enabled"] = bool(o["enabled"])
+            if o.get("model"):
+                p["model"] = o["model"]
+    for k, v in (settings.get("alerts") or {}).items():
+        if isinstance(v, dict):
+            cfg.data.setdefault("alerts", {}).setdefault(k, {}).update(v)
+        else:
+            cfg.data.setdefault("alerts", {})[k] = v
+
+
 def load_config(path: str | None = None) -> Config:
     resolved = find_config_path(path)
     user = {}

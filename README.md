@@ -231,7 +231,16 @@ LAN-only) — four tabs:
 - **Projects** — everything it built (HTML games/dashboards open in a click), each with
   **tags** and a **🔧 Fix this** button — flag a broken one and the agent works it *before*
   starting anything new.
-- **Control** — Run-now / Pause / Resume / Stop / Restart buttons (no SSH needed).
+- **Control** — Run-now / Pause / Resume / Stop / Restart buttons, **plus a full
+  Settings panel**: API keys, Discord webhook, ntfy topic, LED pin, per-provider
+  enable/model, and all the cooldown/loop timers. Saved settings live in the agent's
+  DB and apply on the next restart ("Save & Restart" does both).
+
+> Note: the dashboard is plain HTTP on your LAN (behind the password), so keys you
+> type into Settings cross the LAN in clear — same as the login itself. Fine for a
+> trusted home network; if you don't want keys in the browser at all, keep using
+> `/etc/drongo/drongo.env` + `sudo drongo configure`. Keys are stripped from the
+> agent's own shell so a prompt-injected script can't read them.
 
 | You want to… | Do this |
 |---|---|

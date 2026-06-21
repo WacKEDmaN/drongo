@@ -90,11 +90,21 @@ def tools_prompt(tools: dict[str, Tool]) -> str:
     return "\n".join(lines)
 
 
+# Secrets the agent's shell must never see (so a prompt-injected command can't
+# exfiltrate them). The agent's projects don't need any of these.
+_SECRET_ENV = ("GROQ_API_KEY", "CEREBRAS_API_KEY", "GEMINI_API_KEY", "MISTRAL_API_KEY",
+               "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "NVIDIA_API_KEY",
+               "DISCORD_WEBHOOK_URL", "DRONGO_DISCORD_WEBHOOK", "TELEGRAM_BOT_TOKEN",
+               "DRONGO_WEB_PASSWORD")
+
+
 def _project_env(cfg):
     """Subprocess env with the agent's writable project venv activated, so
     `pip install X` and `python`/`python3` work (the system ones are read-only
-    and Debian blocks system-wide pip)."""
+    and Debian blocks system-wide pip). Secrets are stripped."""
     env = dict(os.environ)
+    for k in _SECRET_ENV:
+        env.pop(k, None)
     binp = os.path.join(str(cfg.project_venv), "bin")
     env["PATH"] = binp + os.pathsep + env.get("PATH", "")
     env["VIRTUAL_ENV"] = str(cfg.project_venv)

@@ -64,6 +64,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  button.act:hover{border-color:var(--ac)} button.danger:hover{border-color:var(--bad)}
  .big{font-size:15px;padding:10px 18px;margin:6px 10px 6px 0}
  .runbtn{font-size:11px;padding:1px 7px;margin-left:4px;background:#0a0d12;color:var(--ok);border:1px solid #1c3;border-radius:6px;cursor:pointer}
+ .set h3{margin:16px 0 4px;font-size:14px}
+ .set label{display:block;margin:7px 0;font-size:13px;color:var(--mut)}
+ .set input,.set select{display:block;width:100%;max-width:360px;background:#0a0d12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:13px;margin-top:2px}
+ .set .prow input{max-width:none}
+ .set input[type=checkbox]{display:inline-block;width:auto;margin-right:6px}
+ .prow{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
+ .prow input{flex:1;min-width:120px}
  .homewrap{display:flex;gap:16px;align-items:flex-start}
  .homemain{flex:1;min-width:0} .homeside{width:240px;flex:none;position:sticky;top:14px}
  .homeside .row{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--bd);font-size:13px}
@@ -149,6 +156,41 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      Flagged fixes are worked before new projects.</p>
    <p class="meta" id=fixq></p>
   </div>
+
+  <h2>Settings <span class="meta">— stored on the agent; “Save &amp; Restart” to apply</span></h2>
+  <div class="card set">
+   <h3>Cooldowns &amp; loop</h3>
+   <label>Seconds between projects (cycle gap)<input id=s_interval value="{{ sv.loop.interval_seconds }}"></label>
+   <label>Jitter (± seconds)<input id=s_jitter value="{{ sv.loop.jitter_seconds }}"></label>
+   <label>Tool steps per cycle<input id=s_steps value="{{ sv.loop.max_steps }}"></label>
+   <label>Resume attempts before giving up on a project<input id=s_attempts value="{{ sv.loop.max_resume_attempts }}"></label>
+   <label>Min seconds between LLM calls (throttle)<input id=s_minc value="{{ sv.min_call }}"></label>
+   <label>Provider order<select id=s_prefer>
+     <option value=cloud_first {{ 'selected' if sv.prefer=='cloud_first' }}>cloud first</option>
+     <option value=local_first {{ 'selected' if sv.prefer=='local_first' }}>local first</option></select></label>
+
+   <h3>Providers &amp; API keys</h3>
+   {% for p in sv.providers %}
+    <div class=prow data-name="{{ p.name }}">
+      <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}</label>
+      <input id="pm_{{ p.name }}" value="{{ p.model }}" placeholder="model">
+      {% if p.key_env %}<input id="pk_{{ p.name }}" type=password autocomplete=off placeholder="{{ 'key set — blank keeps it' if p.key_set else 'paste '+p.key_env }}">{% endif %}
+    </div>
+   {% endfor %}
+
+   <h3>Alerts</h3>
+   <label><input type=checkbox id=s_notify {{ 'checked' if sv.notify }}> Alert on every cycle (not just completions)</label>
+   <label>Discord webhook URL<input id=s_discord type=password autocomplete=off placeholder="{{ 'set — blank keeps it' if sv.discord_set else 'paste webhook URL' }}"></label>
+   <label>ntfy topic (optional)<input id=s_ntfy value="{{ sv.ntfy }}"></label>
+   <label>LED gpiochip<input id=s_ledchip value="{{ sv.led_chip }}"></label>
+   <label>LED line offset (blank = LED off)<input id=s_ledline value="{{ sv.led_line }}"></label>
+
+   <div style="margin-top:12px">
+     <button class="act big" onclick="saveSettings(false)">Save</button>
+     <button class="act big danger" onclick="saveSettings(true)">Save &amp; Restart</button>
+   </div>
+  </div>
+
   <h2>LLM usage today</h2>
   <table style="width:100%;border-collapse:collapse;font-size:13px">
    <tr style="color:var(--mut);text-align:left"><th>provider</th><th>today</th><th>min</th><th>total</th><th>cooldown</th></tr>
@@ -185,6 +227,27 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    $('#modaltitle').textContent='▶ '+path; $('#modalout').textContent='running…'; $('#modal').classList.add('show');
    fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})})
    .then(r=>r.json()).then(d=>{$('#modalout').textContent=d.ok?('(exit '+d.rc+')\\n'+(d.out||'(no output)')):('ERROR: '+(d.error||'failed'));});}
+ const PKEY={{ pkey_json|safe }};
+ const gv=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+ const gc=id=>{const e=document.getElementById(id);return e?e.checked:false;};
+ const gn=id=>{const v=parseInt(gv(id),10);return isNaN(v)?null:v;};
+ function saveSettings(restart){
+   const provs={},env={};
+   document.querySelectorAll('.prow').forEach(r=>{const n=r.dataset.name;
+     provs[n]={enabled:gc('pe_'+n)}; const m=gv('pm_'+n); if(m)provs[n].model=m;
+     const k=gv('pk_'+n); if(k&&PKEY[n])env[PKEY[n]]=k;});
+   const dw=gv('s_discord'); if(dw)env.DISCORD_WEBHOOK_URL=dw;
+   const ll=gv('s_ledline'); env.DRONGO_LED_CHIP=gv('s_ledchip'); if(ll)env.DRONGO_LED_LINE=ll;
+   const loop={};[['interval_seconds','s_interval'],['jitter_seconds','s_jitter'],
+     ['max_steps','s_steps'],['max_resume_attempts','s_attempts']].forEach(([k,id])=>{
+     const v=gn(id); if(v!=null)loop[k]=v;});
+   const llm={prefer:gv('s_prefer'),providers:provs}; const mc=gn('s_minc'); if(mc!=null)llm.min_call_interval_seconds=mc;
+   const s={loop,llm,alerts:{notify_every_cycle:gc('s_notify'),
+     ntfy:{topic:gv('s_ntfy'),enabled:!!gv('s_ntfy')},led:{enabled:!!ll}},env};
+   fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({settings:s,restart})}).then(r=>r.json())
+     .then(d=>toast(d.ok?(restart?'Saved — restarting…':'Saved ✓ (restart to apply)'):('failed: '+(d.error||''))));
+ }
  function pct(v){return v==null?'—':v+'%';}
  function refresh(){fetch('/api/system').then(r=>r.json()).then(d=>{
    const s=d.stats||{};
@@ -277,16 +340,33 @@ def create_app(cfg, mem: Memory) -> Flask:
         integ = integrity_status()
         running_root = getattr(os, "geteuid", lambda: -1)() == 0
         integ_ok = integ["hash_ok"] and (running_root or not integ["writable_by_me"])
+        sv, pkey = _settings_view(cfg, mem)
         return render_template_string(
             PAGE, name=name, journal=rows,
             projects=[r for r in rows if r["kind"] == "cycle"],
             images=_ls(cfg.images, (".png", ".jpg", ".jpeg")),
-            usage=usage, allow_run=allow_run,
+            usage=usage, allow_run=allow_run, sv=sv, pkey_json=json.dumps(pkey),
             alive=age is not None and age < 1800,
             hb=(f"{int(age)}s ago" if age is not None else ""),
             safe=bool(mem.recall("safe_mode")),
             working_on=mem.recall("working_on"),
             integ_ok=integ_ok)
+
+    @app.route("/settings", methods=["POST"])
+    def save_settings():
+        d = request.get_json(silent=True) or {}
+        s = d.get("settings")
+        if not isinstance(s, dict):
+            return {"ok": False, "error": "bad settings"}, 400
+        cur = mem.recall("settings") or {}
+        env = dict(cur.get("env") or {})
+        env.update({k: v for k, v in (s.get("env") or {}).items() if v})
+        s["env"] = env                       # keep existing keys when fields left blank
+        mem.remember("settings", s)
+        if d.get("restart"):
+            mem.remember("restart_requested", True)
+        log.info("settings saved via dashboard (restart=%s)", bool(d.get("restart")))
+        return {"ok": True}
 
     @app.route("/api/system")
     def api_system():
@@ -401,6 +481,43 @@ def create_app(cfg, mem: Memory) -> Flask:
         return send_from_directory(root, relpath)
 
     return app
+
+
+def _settings_view(cfg, mem):
+    """Current effective settings for the form (DB overrides over config.yaml).
+    Keys are never sent to the browser — only whether each is set."""
+    s = mem.recall("settings") or {}
+    loop_db, llm_db, al_db = s.get("loop") or {}, s.get("llm") or {}, s.get("alerts") or {}
+    env_db, pov = s.get("env") or {}, (s.get("llm") or {}).get("providers") or {}
+
+    def keyset(name):
+        return bool(name and (env_db.get(name) or os.environ.get(name)))
+
+    sv = {
+        "loop": {k: loop_db.get(k, cfg.get("loop", k, default="")) for k in
+                 ("interval_seconds", "jitter_seconds", "max_steps", "max_resume_attempts")},
+        "min_call": llm_db.get("min_call_interval_seconds", cfg.get("llm", "min_call_interval_seconds", default=3)),
+        "prefer": llm_db.get("prefer", cfg.get("llm", "prefer", default="cloud_first")),
+        "notify": al_db.get("notify_every_cycle", cfg.get("alerts", "notify_every_cycle", default=False)),
+        "ntfy": (al_db.get("ntfy") or {}).get("topic", cfg.get("alerts", "ntfy", "topic", default="")),
+        "discord_set": keyset("DISCORD_WEBHOOK_URL"),
+        "led_chip": env_db.get("DRONGO_LED_CHIP") or os.environ.get("DRONGO_LED_CHIP") or cfg.get("alerts", "led", "chip", default="/dev/gpiochip0"),
+        "led_line": env_db.get("DRONGO_LED_LINE") or os.environ.get("DRONGO_LED_LINE") or "",
+        "providers": [],
+    }
+    pkey = {}
+    for p in cfg.get("llm", "providers", default=[]) or []:
+        name, o = p.get("name"), pov.get(p.get("name")) or {}
+        sv["providers"].append({
+            "name": name,
+            "enabled": o.get("enabled", p.get("enabled", True)),
+            "model": o.get("model") or p.get("model", ""),
+            "key_env": p.get("api_key_env"),
+            "key_set": keyset(p.get("api_key_env")),
+        })
+        if p.get("api_key_env"):
+            pkey[name] = p["api_key_env"]
+    return sv, pkey
 
 
 def _ls(directory, exts):

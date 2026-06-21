@@ -76,8 +76,9 @@ say "1/10  Base packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --no-install-recommends \
-  python3 python3-venv python3-pip git curl ca-certificates rsync \
-  i2c-tools gpiod usbutils lm-sensors util-linux
+  python3 python3-venv python3-pip python3-dev git curl ca-certificates rsync \
+  i2c-tools gpiod usbutils lm-sensors util-linux \
+  build-essential libffi-dev libssl-dev pkg-config   # lets the agent pip-compile native deps
 
 if [ "$STRIP_DESKTOP" -eq 1 ]; then
   say "1b/10 Disabling the desktop (frees RAM; nothing is uninstalled)"

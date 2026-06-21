@@ -42,6 +42,8 @@ def _build(args):
     cfg = load_config(args.config)
     _setup_logging(cfg, logging.DEBUG if args.verbose else logging.INFO)
     mem = Memory(cfg.db_path)
+    from .config import apply_overrides
+    apply_overrides(cfg, mem.recall("settings") or {})   # dashboard-saved settings
     router = Router(cfg, mem)
     alerter = Alerter(cfg)
     return cfg, mem, router, alerter
