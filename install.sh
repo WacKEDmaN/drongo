@@ -16,7 +16,8 @@
 #    * SoC hardware watchdog armed (reboots the board if the kernel wedges)
 #    * external root observer + privileged updater (the "Dead Man's Switch")
 #
-#  Flags:  --strip-desktop   remove the GUI to free RAM (recommended, headless)
+#  Flags:  --strip-desktop   stop the GUI to free RAM (reversible; nothing is
+#                            uninstalled — just disables the graphical target)
 #          --model NAME       force a specific Ollama model (default: auto by RAM)
 # ===========================================================================
 set -euo pipefail
@@ -79,10 +80,15 @@ apt-get install -y --no-install-recommends \
   i2c-tools gpiod usbutils lm-sensors util-linux
 
 if [ "$STRIP_DESKTOP" -eq 1 ]; then
-  say "1b/10 Removing desktop environment (freeing RAM)"
+  say "1b/10 Disabling the desktop (frees RAM; nothing is uninstalled)"
+  # IMPORTANT: we do NOT purge/autoremove packages. On a vendor SBC image that
+  # can drag out hardware/firmware/overlay packages you actually need. Instead
+  # we just stop the GUI from starting — it frees the same RAM and is fully
+  # reversible. Sensors/GPIO/I2C come from the kernel + device tree, not the DE.
   systemctl set-default multi-user.target || true
-  apt-get purge -y 'task-*-desktop' lightdm gdm3 'xserver-xorg*' 2>/dev/null || true
-  apt-get autoremove -y || true
+  systemctl stop display-manager 2>/dev/null || true   # free the RAM now, no reboot needed
+  warn "Desktop is OFF (still installed). Re-enable any time:"
+  warn "  sudo systemctl set-default graphical.target && sudo reboot"
 fi
 
 # ---------------------------------------------------------------------------

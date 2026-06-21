@@ -168,7 +168,8 @@ outward**; each outer layer is owned by root and recovers the one inside it.
 # 1. Flash Debian (Armbian/Radxa) to eMMC/NVMe, boot headless, SSH in.
 # 2. Get the code and run the installer as root:
 git clone <your-fork-url> drongo && cd drongo
-sudo ./install.sh --strip-desktop          # drop --strip-desktop to keep the GUI
+sudo ./install.sh --strip-desktop          # disables the GUI to free RAM (reversible, nothing uninstalled)
+                                           # omit the flag to leave the desktop running
 ```
 
 The installer (see [`install.sh`](install.sh)) does everything: packages, the
@@ -198,8 +199,11 @@ journalctl -u drongo -f                                   # live log
 
 ## What the manual steps actually are (if you prefer not to use `install.sh`)
 
-1. **OS:** flash Debian, `systemctl set-default multi-user.target`, remove the
-   desktop packages to free RAM.
+1. **OS:** flash Debian, then free RAM by *disabling* (not removing) the GUI:
+   `sudo systemctl set-default multi-user.target` + `sudo systemctl stop display-manager`.
+   Don't `apt purge`/`autoremove` the desktop on a vendor SBC image — it can pull
+   out hardware/firmware packages. (Sensors/GPIO/I2C come from the kernel + device
+   tree, so a headless box still has full hardware access.)
 2. **User:** create a system user `drongo` with `nologin`; add it to `i2c`,
    `gpio`, `spi`, `video` groups so it can read sensors.
 3. **Layout:** code → `/opt/drongo` (**chown root:root**), runtime →
