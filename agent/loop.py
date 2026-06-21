@@ -259,14 +259,30 @@ class AgentLoop:
         else:
             if saved:
                 self.mem.remember("current_project", None)
-            try:
-                task = self.ideate()
-            except AllProvidersFailed as e:
-                self.mem.add_journal("error", "Could not plan a project", str(e), ok=False)
-                self._alert_problem(f"Couldn't reach any LLM to plan a project: {e}")
-                return {"ok": False}
             messages, attempt, prior_artifacts = None, 1, []
-            log.info("New project: %s [%s]", task["title"], task["task_type"])
+            fix = self.mem.pop_fix()      # flagged-broken projects jump the queue
+            if fix:
+                arts = fix.get("artifacts") or []
+                task = {
+                    "task_type": "fix",
+                    "title": f"Fix: {fix.get('title', 'a previous project')}",
+                    "description": (
+                        f"A previous project, '{fix.get('title')}', was flagged for "
+                        f"fixing. Human's note: \"{fix.get('note') or 'broken / needs work'}\". "
+                        f"Its files are already in the workspace: {arts or 'look under projects/'}. "
+                        "Read them, find what is wrong, fix it properly, verify it works, "
+                        "then finish. Do not start a different project."),
+                    "provider": "",
+                }
+                log.info("Working a flagged fix: %s", fix.get("title"))
+            else:
+                try:
+                    task = self.ideate()
+                except AllProvidersFailed as e:
+                    self.mem.add_journal("error", "Could not plan a project", str(e), ok=False)
+                    self._alert_problem(f"Couldn't reach any LLM to plan a project: {e}")
+                    return {"ok": False}
+                log.info("New project: %s [%s]", task["title"], task["task_type"])
 
         self.mem.remember("working_on", {"title": task["title"], "attempt": attempt,
                                          "type": task["task_type"]})
@@ -372,21 +388,41 @@ class AgentLoop:
             # Whatever happens, if we got here via a planned path, record it.
             watchdog.mark_clean_exit(self.cfg)
 
+    def _should_wake(self):
+        """Cut a nap/idle short when a dashboard control (or restart) arrives."""
+        if self.mem.recall("run_now") or self.mem.recall("restart_requested"):
+            return True
+        ws = Path(self.cfg.workspace)
+        return (ws / "STOP").exists() or (ws / "PAUSE").exists()
+
+    def _restart_if_requested(self):
+        if self.mem.recall("restart_requested"):
+            self.mem.remember("restart_requested", False)
+            log.info("Restart requested; exiting (42) for systemd to relaunch.")
+            watchdog.mark_clean_exit(self.cfg)
+            sys.exit(42)
+
     def _main_loop(self, interval, jitter, pause_file, stop_file):
-        # Successful cycles in a row let us leave safe mode.
         good_streak = 0
+        self.mem.remember("run_now", False)
         while True:
             watchdog.heartbeat(self.cfg, force=True)
+            self._restart_if_requested()
 
+            # STOP / PAUSE just go dormant — they do NOT exit (systemd would only
+            # relaunch us). Remove the file (or hit Resume) to carry on.
             if stop_file.exists():
-                log.warning("STOP file present — standing down (clean exit).")
-                self.mem.add_journal("note", "Stood down via STOP file", "")
-                return
+                self.mem.remember("status", "stopped")
+                self.mem.remember("working_on", None)
+                watchdog.sleep_with_heartbeat(self.cfg, 15, self._should_wake)
+                continue
             if pause_file.exists():
-                log.info("PAUSE file present — idling.")
-                watchdog.sleep_with_heartbeat(self.cfg, min(interval, 120))
+                self.mem.remember("status", "paused")
+                watchdog.sleep_with_heartbeat(self.cfg, min(interval, 60), self._should_wake)
                 continue
 
+            self.mem.remember("status", "running")
+            self.mem.remember("run_now", False)   # consume any pending run-now
             try:
                 result = self.run_cycle()
                 if result.get("ok"):
@@ -395,7 +431,7 @@ class AgentLoop:
                         self.safe_mode = False
                         self.mem.remember("safe_mode", False)
                         log.info("Two clean cycles — leaving safe mode.")
-                        self.alerter.send("Stable again — leaving safe mode, mate.",
+                        self.alerter.send("Stable again — leaving safe mode.",
                                           title="DRONGO recovered")
                 else:
                     good_streak = 0
@@ -404,16 +440,13 @@ class AgentLoop:
                 log.exception("cycle crashed")
                 self.mem.add_journal("error", "Cycle crashed", str(e), ok=False)
 
-            # Self-update asked for a relaunch: exit cleanly for systemd.
-            if self.mem.recall("restart_requested"):
-                self.mem.remember("restart_requested", False)
-                log.info("Restart requested by self-update; exiting (42) for systemd.")
-                watchdog.mark_clean_exit(self.cfg)
-                sys.exit(42)
+            self._restart_if_requested()
 
             nap = interval + random.randint(-jitter, jitter)
             if self.safe_mode:
                 nap *= self.cfg.get("safe_mode", "interval_multiplier", default=4)
             nap = max(60, nap)
+            self.mem.remember("status", "sleeping")
+            self.mem.remember("next_cycle_ts", time.time() + nap)
             log.info("Sleeping %ds%s.", nap, " (safe mode)" if self.safe_mode else "")
-            watchdog.sleep_with_heartbeat(self.cfg, nap)
+            watchdog.sleep_with_heartbeat(self.cfg, nap, self._should_wake)

@@ -223,16 +223,26 @@ sudo drongo doctor
 
 ## Operating it
 
+Most of this is now in the **dashboard** at `http://<pi-ip>:8080/` (password-protected,
+LAN-only) — four tabs:
+
+- **Home** — current activity, what it's working on, image gallery.
+- **System** — live host stats (time, uptime, CPU, RAM, disk, load, temps), auto-refreshing.
+- **Projects** — everything it built (HTML games/dashboards open in a click), each with
+  **tags** and a **🔧 Fix this** button — flag a broken one and the agent works it *before*
+  starting anything new.
+- **Control** — Run-now / Pause / Resume / Stop / Restart buttons (no SSH needed).
+
 | You want to… | Do this |
 |---|---|
-| See what it's made | Open the dashboard `http://<pi-ip>:8080/` |
+| See/launch what it built | Dashboard → Projects (HTML opens in a new tab) |
+| Pause / resume / restart | Dashboard → Control (or `touch …/workspace/PAUSE`, remove to resume) |
+| Send a broken project back for fixing | Dashboard → Projects → **🔧 Fix this** |
+| Run a cycle right now | Dashboard → Control → **▶ Run a cycle now** |
 | Watch it live | `journalctl -u drongo -f` |
-| Pause after current job | `touch /var/lib/drongo/runtime/workspace/PAUSE` (remove to resume) |
-| Stop it cleanly | `touch /var/lib/drongo/runtime/workspace/STOP` |
 | Steer its interests | edit `interests:` in `/etc/drongo/config.yaml`, restart |
-| Make it quieter/busier | raise/lower `loop.interval_seconds` |
-| Force an update now | `sudo systemctl start drongo-update` |
-| Check health/guard | `python -m agent ... doctor` / `... verify` |
+| Force a code update | `sudo systemctl start drongo-update` |
+| Check health/guard | `sudo drongo doctor` |
 
 The agent only pushes an alert when it finishes something with artifacts (set
 `alerts.notify_every_cycle: true` for a ping every cycle).

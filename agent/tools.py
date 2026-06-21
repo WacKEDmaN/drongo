@@ -380,6 +380,60 @@ def hardware_summary() -> dict:
     }
 
 
+def system_stats() -> dict:
+    """Live host stats for the dashboard (stdlib only; Linux, safe elsewhere)."""
+    import shutil
+    out = {"time": time.strftime("%H:%M:%S"), "date": time.strftime("%a %d %b %Y")}
+    try:
+        with open("/proc/uptime") as fh:
+            up = int(float(fh.read().split()[0]))
+        dd, r = divmod(up, 86400); hh, r = divmod(r, 3600); mm = r // 60
+        out["uptime"] = (f"{dd}d " if dd else "") + f"{hh}h {mm}m"
+    except Exception:
+        out["uptime"] = "?"
+    try:
+        def _snap():
+            with open("/proc/stat") as fh:
+                v = list(map(int, fh.readline().split()[1:8]))
+            return sum(v), v[3] + v[4]            # total, idle+iowait
+        a, ai = _snap(); time.sleep(0.2); b, bi = _snap()
+        out["cpu_pct"] = round(100 * (1 - (bi - ai) / (b - a)), 1) if b > a else 0.0
+    except Exception:
+        out["cpu_pct"] = None
+    try:
+        out["load"] = [round(x, 2) for x in os.getloadavg()]
+    except Exception:
+        out["load"] = None
+    try:
+        mi = {}
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                p = line.split()
+                mi[p[0].rstrip(":")] = int(p[1])  # kB
+        tot, avail = mi.get("MemTotal", 0), mi.get("MemAvailable", 0)
+        out["mem_used_mb"] = round((tot - avail) / 1024)
+        out["mem_total_mb"] = round(tot / 1024)
+        out["mem_pct"] = round(100 * (tot - avail) / tot, 1) if tot else None
+    except Exception:
+        out["mem_used_mb"] = out["mem_total_mb"] = out["mem_pct"] = None
+    try:
+        t, u, _ = shutil.disk_usage("/")
+        out["disk_used_gb"] = round(u / 1e9, 1)
+        out["disk_total_gb"] = round(t / 1e9, 1)
+        out["disk_pct"] = round(100 * u / t, 1)
+    except Exception:
+        out["disk_used_gb"] = out["disk_total_gb"] = out["disk_pct"] = None
+    temps = []
+    for z in sorted(glob.glob("/sys/class/thermal/thermal_zone*")):
+        tv = _read_first(f"{z}/temp")
+        if tv and tv.lstrip("-").isdigit():
+            temps.append({"label": _read_first(f"{z}/type") or os.path.basename(z),
+                          "c": round(int(tv) / 1000.0, 1)})
+    out["temps"] = temps
+    out["model"] = _read_first("/proc/device-tree/model") or "unknown"
+    return out
+
+
 @tool("discover_sensors",
       "Scan the machine for sensors, buses (i2c/spi/1-wire), cameras, thermals and USB devices.",
       "")

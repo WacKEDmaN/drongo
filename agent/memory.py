@@ -62,6 +62,11 @@ class Memory:
         except Exception:
             pass
         self._conn.executescript(SCHEMA)
+        # Migration: add the tags column to journals created before tagging existed.
+        try:
+            self._conn.execute("ALTER TABLE journal ADD COLUMN tags TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass   # already there
         self._conn.commit()
 
     # ---- journal -------------------------------------------------------
@@ -88,6 +93,44 @@ class Memory:
             (limit,),
         ).fetchall()
         return [r["title"] for r in rows if r["title"]]
+
+    # ---- tags & the fix queue -----------------------------------------
+    def set_tags(self, journal_id, tags):
+        self._conn.execute("UPDATE journal SET tags=? WHERE id=?",
+                           (json.dumps(tags), journal_id))
+        self._conn.commit()
+
+    def tag_entry(self, journal_id, tag, on=True):
+        row = self._conn.execute("SELECT tags FROM journal WHERE id=?",
+                                 (journal_id,)).fetchone()
+        if not row:
+            return []
+        try:
+            tags = json.loads(row["tags"] or "[]")
+        except Exception:
+            tags = []
+        if on and tag not in tags:
+            tags.append(tag)
+        if not on and tag in tags:
+            tags.remove(tag)
+        self.set_tags(journal_id, tags)
+        return tags
+
+    def add_fix(self, entry: dict):
+        q = self.recall("fix_queue") or []
+        q.append(entry)
+        self.remember("fix_queue", q)
+
+    def pop_fix(self):
+        q = self.recall("fix_queue") or []
+        if not q:
+            return None
+        item = q.pop(0)
+        self.remember("fix_queue", q)
+        return item
+
+    def fix_queue(self):
+        return self.recall("fix_queue") or []
 
     # ---- key/value -----------------------------------------------------
     def remember(self, key, value):

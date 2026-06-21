@@ -149,9 +149,12 @@ def mark_clean_exit(cfg) -> None:
         pass
 
 
-def sleep_with_heartbeat(cfg, seconds: float) -> None:
-    """Sleep in small slices, pinging the watchdog so a long nap isn't a hang."""
+def sleep_with_heartbeat(cfg, seconds: float, should_wake=None) -> None:
+    """Sleep in small slices, pinging the watchdog so a long nap isn't a hang.
+    If `should_wake()` returns True (e.g. a dashboard control), return early."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         heartbeat(cfg, force=True)
-        time.sleep(min(30, max(1, deadline - time.time())))
+        if should_wake is not None and should_wake():
+            return
+        time.sleep(min(15, max(1, deadline - time.time())))
