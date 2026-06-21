@@ -321,6 +321,24 @@ exposed on the LAN at all.
 
 ---
 
+## Updating
+
+The agent runs from **`/opt/drongo`** (root-owned), *not* from your clone — so
+`git pull` alone won't reach it. Deploy your pulled changes with:
+
+```bash
+cd ~/drongo
+git pull
+sudo ./update.sh      # syncs code to /opt/drongo, re-seals the safeguard, restarts
+```
+
+`update.sh` is the fast path (no apt / no model re-pull). Re-running
+`sudo ./install.sh` also deploys, but does the full setup. *(The root auto-updater
+only works if `/opt/drongo`'s git remote is reachable as root — with a private
+SSH-key repo that's usually not the case, so `update.sh` is the reliable path.)*
+
+---
+
 ## Troubleshooting
 
 **First move, always:** run the doctor — it tells you in plain English what's wrong.
