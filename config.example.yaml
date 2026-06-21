@@ -45,6 +45,8 @@ llm:
   # model is the never-fail floor below it. A provider with no API key is skipped.
   providers:
     # ---- Cerebras: extremely fast, generous free tier --------------------
+    #   404 "model not found"? Model ids change — list yours and update below:
+    #   curl -s https://api.cerebras.ai/v1/models -H "Authorization: Bearer $CEREBRAS_API_KEY"
     - name: cerebras
       base_url: https://api.cerebras.ai/v1
       api_key_env: CEREBRAS_API_KEY

@@ -59,14 +59,24 @@ class Provider:
         }
         resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
         if resp.status_code == 429:
-            raise RateLimited(resp.text[:200])
-        resp.raise_for_status()
+            raise RateLimited(resp.text[:300])
+        if resp.status_code >= 400:
+            # Surface the API's reason (e.g. wrong model id) instead of a bare code.
+            raise ProviderError(resp.status_code, resp.text[:300])
         data = resp.json()
         return data["choices"][0]["message"]["content"]
 
 
 class RateLimited(Exception):
     pass
+
+
+class ProviderError(Exception):
+    """A non-429 HTTP error from a provider (carries the body so you can see why)."""
+    def __init__(self, status, body):
+        self.status = status
+        self.body = body
+        super().__init__(f"HTTP {status}: {body}")
 
 
 class AnthropicProvider:
@@ -177,11 +187,20 @@ class Router:
                     raise ValueError("empty response")
                 self.mem.record_use(p.name)
                 return text, p.name
-            except RateLimited as e:
+            except RateLimited:
                 log.info("%s rate limited; cooling down", p.name)
                 self.mem.set_cooldown(p.name, 90)
                 errors.append(f"{p.name}: 429")
-            except Exception as e:  # network, 5xx, parse, etc.
+            except ProviderError as e:
+                # A 4xx (bad model id, bad key, bad request) won't fix itself on
+                # retry — back off for an hour so it doesn't spam every cycle.
+                # 5xx is transient, short cooldown.
+                cd = 3600 if 400 <= e.status < 500 else 60
+                log.warning("%s HTTP %s (%ds cooldown): %s", p.name, e.status, cd, e.body)
+                if not p.is_local:
+                    self.mem.set_cooldown(p.name, cd)
+                errors.append(f"{p.name}: HTTP {e.status}")
+            except Exception as e:  # network, parse, etc.
                 log.warning("%s failed: %s", p.name, e)
                 if not p.is_local:
                     self.mem.set_cooldown(p.name, 60)
