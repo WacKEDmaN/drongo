@@ -66,7 +66,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .runbtn{font-size:11px;padding:1px 7px;margin-left:4px;background:#0a0d12;color:var(--ok);border:1px solid #1c3;border-radius:6px;cursor:pointer}
  .set h3{margin:16px 0 4px;font-size:14px}
  .set label{display:block;margin:7px 0;font-size:13px;color:var(--mut)}
- .set input,.set select{display:block;width:100%;max-width:360px;background:#0a0d12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:13px;margin-top:2px}
+ .set input,.set select,.set textarea{display:block;width:100%;max-width:560px;background:#0a0d12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:13px;margin-top:2px}
+ .set textarea{font-family:ui-monospace,monospace;line-height:1.5;resize:vertical}
  .set .prow input{max-width:none}
  .set input[type=checkbox]{display:inline-block;width:auto;margin-right:6px}
  .prow{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
@@ -159,6 +160,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
   <h2>Settings <span class="meta">— stored on the agent; “Save &amp; Restart” to apply</span></h2>
   <div class="card set">
+   <h3>Personality &amp; interests</h3>
+   <label>Persona — how it behaves and talks<textarea id=s_persona rows=5>{{ sv.persona }}</textarea></label>
+   <label>Interests — one per line; it picks its projects from these (add / edit / remove freely)<textarea id=s_interests rows=7>{{ sv.interests_text }}</textarea></label>
+
    <h3>Cooldowns &amp; loop</h3>
    <label>Seconds between projects (cycle gap)<input id=s_interval value="{{ sv.loop.interval_seconds }}"></label>
    <label>Jitter (± seconds)<input id=s_jitter value="{{ sv.loop.jitter_seconds }}"></label>
@@ -242,8 +247,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      ['max_steps','s_steps'],['max_resume_attempts','s_attempts']].forEach(([k,id])=>{
      const v=gn(id); if(v!=null)loop[k]=v;});
    const llm={prefer:gv('s_prefer'),providers:provs}; const mc=gn('s_minc'); if(mc!=null)llm.min_call_interval_seconds=mc;
+   const interests=(gv('s_interests')||'').split('\\n').map(x=>x.trim()).filter(Boolean);
    const s={loop,llm,alerts:{notify_every_cycle:gc('s_notify'),
-     ntfy:{topic:gv('s_ntfy'),enabled:!!gv('s_ntfy')},led:{enabled:!!ll}},env};
+     ntfy:{topic:gv('s_ntfy'),enabled:!!gv('s_ntfy')},led:{enabled:!!ll}},env,interests};
+   const persona=gv('s_persona'); if(persona)s.identity={persona};
    fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({settings:s,restart})}).then(r=>r.json())
      .then(d=>toast(d.ok?(restart?'Saved — restarting…':'Saved ✓ (restart to apply)'):('failed: '+(d.error||''))));
@@ -489,6 +496,8 @@ def _settings_view(cfg, mem):
     s = mem.recall("settings") or {}
     loop_db, llm_db, al_db = s.get("loop") or {}, s.get("llm") or {}, s.get("alerts") or {}
     env_db, pov = s.get("env") or {}, (s.get("llm") or {}).get("providers") or {}
+    ident_db = s.get("identity") or {}
+    interests = s.get("interests") if isinstance(s.get("interests"), list) else (cfg.get("interests", default=[]) or [])
 
     def keyset(name):
         return bool(name and (env_db.get(name) or os.environ.get(name)))
@@ -503,6 +512,8 @@ def _settings_view(cfg, mem):
         "discord_set": keyset("DISCORD_WEBHOOK_URL"),
         "led_chip": env_db.get("DRONGO_LED_CHIP") or os.environ.get("DRONGO_LED_CHIP") or cfg.get("alerts", "led", "chip", default="/dev/gpiochip0"),
         "led_line": env_db.get("DRONGO_LED_LINE") or os.environ.get("DRONGO_LED_LINE") or "",
+        "persona": ident_db.get("persona") or cfg.get("identity", "persona", default=""),
+        "interests_text": "\n".join(interests),
         "providers": [],
     }
     pkey = {}

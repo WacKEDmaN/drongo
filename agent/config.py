@@ -166,6 +166,14 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
     """
     if not isinstance(settings, dict):
         return
+    ident = settings.get("identity") or {}
+    for k in ("persona", "name"):
+        if ident.get(k):
+            cfg.data.setdefault("identity", {})[k] = ident[k]
+    if isinstance(settings.get("interests"), list):
+        cleaned = [str(x).strip() for x in settings["interests"] if str(x).strip()]
+        if cleaned:
+            cfg.data["interests"] = cleaned
     for k, v in (settings.get("env") or {}).items():
         if v not in (None, ""):
             os.environ[str(k)] = str(v)
