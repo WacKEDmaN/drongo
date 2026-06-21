@@ -158,6 +158,9 @@ chmod 0444 "$INSTALL/agent/safeguard.py" "$INSTALL/agent/safeguard.py.sha256"
 chown root:root "$INSTALL/agent/safeguard.py" "$INSTALL/agent/safeguard.py.sha256"
 # Baseline "last known good" for the observer to roll back to from day one.
 [ -d "$INSTALL/.git" ] && git -C "$INSTALL" tag -f drongo-lkg HEAD >/dev/null 2>&1 || true
+# A writable venv the agent can pip-install its project deps into (its own code
+# dir is read-only and Debian blocks system-wide pip).
+python3 -m venv "$RUNTIME/venv" 2>/dev/null || true
 # The runtime tree is the ONLY thing the agent may write.
 chown -R "$AGENT_USER:$AGENT_USER" /var/lib/drongo
 chmod 700 "$RUNTIME"

@@ -375,9 +375,13 @@ def create_app(cfg, mem: Memory) -> Flask:
             return {"ok": False, "error": "path escapes the workspace"}, 400
         if not os.path.isfile(full) or "/projects/" not in full.replace(os.sep, "/"):
             return {"ok": False, "error": "only scripts under projects/ can be run"}, 404
+        venv_py = os.path.join(str(cfg.project_venv), "bin", "python")
+        py = venv_py if os.path.exists(venv_py) else "python3"
+        env = dict(os.environ, VIRTUAL_ENV=str(cfg.project_venv),
+                   PATH=os.path.join(str(cfg.project_venv), "bin") + os.pathsep + os.environ.get("PATH", ""))
         try:
-            p = subprocess.run(["python3", full], cwd=str(ws), capture_output=True,
-                               text=True, timeout=30,
+            p = subprocess.run([py, full], cwd=str(ws), capture_output=True,
+                               text=True, timeout=30, env=env,
                                preexec_fn=safeguard.posix_limits(mem_mb=300, cpu_seconds=25))
             out = (p.stdout or "") + (("\n[stderr]\n" + p.stderr) if p.stderr else "")
             return {"ok": True, "rc": p.returncode, "out": out[:4000] or "(no output)"}

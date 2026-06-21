@@ -36,6 +36,9 @@ echo "==> refreshing systemd units"
 cp "$INSTALL"/systemd/*.service "$INSTALL"/systemd/*.timer /etc/systemd/system/
 systemctl daemon-reload
 
+echo "==> ensuring the agent's writable project venv exists"
+[ -x /var/lib/drongo/runtime/venv/bin/python ] || python3 -m venv /var/lib/drongo/runtime/venv 2>/dev/null || true
+
 echo "==> fixing runtime ownership"
 chown -R drongo:drongo /var/lib/drongo
 

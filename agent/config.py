@@ -117,6 +117,9 @@ class Config:
         self.state_dir = base / "state"
         self.logs_dir = base / "logs"
         self.db_path = self.state_dir / "agent.db"
+        # A writable virtualenv the agent CAN pip-install into (its own code dir
+        # is read-only, and Debian blocks system-wide pip). Shell + Run use it.
+        self.project_venv = base / "venv"
 
     def ensure_dirs(self) -> None:
         for d in (self.workspace, self.projects, self.images,

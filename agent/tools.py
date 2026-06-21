@@ -90,6 +90,19 @@ def tools_prompt(tools: dict[str, Tool]) -> str:
     return "\n".join(lines)
 
 
+def _project_env(cfg):
+    """Subprocess env with the agent's writable project venv activated, so
+    `pip install X` and `python`/`python3` work (the system ones are read-only
+    and Debian blocks system-wide pip)."""
+    env = dict(os.environ)
+    binp = os.path.join(str(cfg.project_venv), "bin")
+    env["PATH"] = binp + os.pathsep + env.get("PATH", "")
+    env["VIRTUAL_ENV"] = str(cfg.project_venv)
+    env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
+    env.pop("PYTHONHOME", None)
+    return env
+
+
 def _truncate(text: str, limit: int) -> str:
     if text is None:
         return ""
@@ -120,7 +133,7 @@ def shell(ctx: ToolContext, command: str = "", **_):
     try:
         proc = subprocess.run(
             command, shell=True, cwd=ctx.workspace, capture_output=True,
-            text=True, timeout=timeout,
+            text=True, timeout=timeout, env=_project_env(ctx.cfg),
             preexec_fn=safeguard.posix_limits(cpu_seconds=timeout),
         )
         out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")

@@ -48,6 +48,9 @@ Rules:
 - DOCUMENT every project: alongside the code write a short README.md (in the same
   projects/ folder) covering what it is, how to run it (exact command), what it
   needs (dependencies), and how to use it. Keep code commented where it helps.
+- You have a writable Python environment: install dependencies with
+  `pip install <package>` and run code with `python <file>` (both already point at
+  your project venv). Prefer the standard library, but install what you need.
 - Return "final" ONLY when the artifact actually exists and works and you've
   verified it (e.g. read the file back / ran it). NEVER return "final" just
   because you're stuck, blocked, rate-limited, or out of ideas — that falsely
@@ -366,6 +369,7 @@ class AgentLoop:
         self.safe_reason = start["reason"]
         self.mem.remember("safe_mode", self.safe_mode)
         self.mem.clear_cooldowns()   # fresh start: re-try every provider now
+        self._ensure_project_venv()
         watchdog.notify_ready()
         watchdog.heartbeat(self.cfg, force=True)
 
@@ -390,6 +394,22 @@ class AgentLoop:
         finally:
             # Whatever happens, if we got here via a planned path, record it.
             watchdog.mark_clean_exit(self.cfg)
+
+    def _ensure_project_venv(self):
+        """Create the agent's writable project venv if missing, so it can
+        pip-install dependencies for its projects."""
+        venv = Path(self.cfg.project_venv)
+        if (venv / "bin" / "python").exists() or (venv / "Scripts" / "python.exe").exists():
+            return
+        import subprocess
+        log.info("Creating project venv at %s …", venv)
+        try:
+            r = subprocess.run(["python3", "-m", "venv", str(venv)],
+                               capture_output=True, text=True, timeout=180)
+            if r.returncode != 0:
+                log.warning("project venv creation failed: %s", (r.stderr or "")[:200])
+        except Exception as e:
+            log.warning("could not create project venv: %s", e)
 
     def _should_wake(self):
         """Cut a nap/idle short when a dashboard control (or restart) arrives."""

@@ -366,6 +366,7 @@ sudo drongo doctor
 | **SAFE MODE** in the logs | It restarted too many times and threw the handbrake on. Fix the underlying error (logs), then `sudo systemctl restart drongo`; two clean cycles and it exits safe mode on its own. |
 | Whole board feels sluggish / OOM | Model too big for the RAM. `sudo ./install.sh --model qwen2.5:1.5b-instruct` (or `0.5b`), and add zram (see Tuning). |
 | No Discord alerts | Check `DISCORD_WEBHOOK_URL` is set in `/etc/drongo/drongo.env` and `alerts.discord.enabled: true`. Test the webhook with `curl -d '{"content":"test"}' -H "Content-Type: application/json" <url>`. |
+| "pip: permission denied" / can't install packages | It needs its writable venv at `/var/lib/drongo/runtime/venv`. `sudo ./update.sh` (or a restart) creates it; after that `pip install …` and `python …` in its shell use that venv automatically. Native packages (numpy etc.) need ARM wheels or build tools; pure-Python (Flask, etc.) just works. |
 | LED never blinks | Wrong `chip`/`line` (check `gpioinfo`), LED wired backwards (try `active_high: false`), or `python-periphery` missing. Confirm the `drongo` user is in the `gpio` group (`id drongo`). |
 | Cloud provider ignored | Its key is blank/invalid in `/etc/drongo/drongo.env`, or it's rate-limited (the dashboard's *usage* table shows cooldowns). Blank keys are skipped on purpose. |
 | `self_update` does nothing | You installed from a ZIP (no git remote). Self-update needs a real remote — `git clone` instead. Rollback still works either way. |
