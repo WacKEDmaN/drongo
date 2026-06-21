@@ -12,6 +12,7 @@ import json
 import logging
 import random
 import re
+import signal
 import socket
 import sys
 import time
@@ -322,6 +323,18 @@ class AgentLoop:
         jitter = self.cfg.get("loop", "jitter_seconds", default=300)
         pause_file = Path(self.cfg.workspace) / "PAUSE"
         stop_file = Path(self.cfg.workspace) / "STOP"
+
+        # Shut down cleanly on reboot/stop (SIGTERM) or Ctrl-C (SIGINT) so the
+        # next boot doesn't think we crashed.
+        def _graceful(signum, _frame):
+            log.info("Signal %s received - exiting cleanly.", signum)
+            watchdog.mark_clean_exit(self.cfg)
+            sys.exit(0)
+        for _sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                signal.signal(_sig, _graceful)
+            except (ValueError, OSError):
+                pass
 
         # 1) The guard checks itself BEFORE anything else runs. In strict mode a
         #    compromised guard aborts the process here (fail closed).
