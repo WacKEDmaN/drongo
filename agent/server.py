@@ -105,7 +105,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .set input[type=checkbox]{display:inline-block;width:auto;margin-right:7px;accent-color:var(--ac)}
  .prow{display:flex;gap:8px;align-items:center;margin:7px 0;flex-wrap:wrap}
  .prow input{flex:1;min-width:120px}
- .dash{display:grid;grid-template-columns:repeat(12,1fr);gap:14px;align-items:start}
+ .dash{display:grid;grid-template-columns:repeat(12,1fr);gap:14px;align-items:stretch}
  .dash>#workingon:empty{display:none}
  .tile{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--bd);border-radius:12px;padding:13px 15px;min-width:0}
  .tile .th{font:600 12px var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--ac);margin:0 0 10px;display:flex;gap:9px;align-items:center}
@@ -161,7 +161,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .themes{display:flex;gap:7px;align-items:center}
  .swatch{width:16px;height:16px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
- .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:172px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+ .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:344px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
  .think .tl{padding:1px 0} .think .t-think{color:var(--mut)} .think .t-tool{color:var(--ac2)} .think .t-ok{color:var(--ac)} .think .t-warn{color:var(--warn)} .think .t-info{color:var(--fg)}
 </style></head><body>
 <header>
