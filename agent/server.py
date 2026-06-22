@@ -153,7 +153,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <h3>{{ j.title }} <span class="meta">· {{ j.kind }}{% if j.task_type %} · {{ j.task_type }}{% endif %}</span></h3>
       <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}{% if not j.ok %} · ⚠ unfinished{% endif %}</div>
       <p>{{ j.body }}</p>
-      {% for a in j.arts %}{% if a.view %}<a class="art" href="#" onclick="viewfile('{{ a.path }}');return false">▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% endfor %}
+      {% for a in j.arts %}{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% endfor %}
     </div>
    {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
    </div>
@@ -200,7 +200,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
      <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
      <p>{{ j.body }}</p>
-     {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick="viewfile('{{ a.path }}');return false">▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick="runpy('{{ a.path }}',{{ j.id }})">▶ run</button>{% endif %}</span> {% endfor %}
+     {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
      <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
        {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
      </div>
