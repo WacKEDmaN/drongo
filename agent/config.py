@@ -41,6 +41,7 @@ DEFAULTS = {
         "hw_scan_interval_seconds": 1200,  # re-scan buses for newly-attached hardware this often
         "cleanup_enabled": True,     # janitor: remove build junk + stale empty folders
         "cleanup_interval_seconds": 1800,
+        "self_critique": True,       # one self-review before a project is accepted as done
     },
     "llm": {
         "prefer": "cloud_first",   # cloud_first | local_first

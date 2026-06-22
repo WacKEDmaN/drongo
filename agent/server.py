@@ -116,7 +116,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .usaget th{color:var(--mut);text-align:left;font-weight:500;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
  .usaget td{border-top:1px solid var(--bd);padding:4px 0;color:var(--fg)}
  .usaget th:not(:first-child),.usaget td:not(:first-child){text-align:right}
- #suggbox{width:100%;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:8px 10px;font:13px/1.5 var(--mono);resize:vertical}
+ #suggbox,#missionbox{width:100%;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:8px 10px;font:13px/1.5 var(--mono);resize:vertical}
+ #missionbox:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px rgba(var(--ac-rgb),.13)}
  @media (max-width:760px){ header{padding:10px 14px} main{padding:16px 14px} }
  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:linear-gradient(180deg,#0e1a16,#0a130f);color:var(--ac);border:1px solid var(--ac);padding:10px 18px;border-radius:9px;font:600 12.5px var(--mono);opacity:0;transition:.22s;pointer-events:none;z-index:30;box-shadow:0 0 22px rgba(var(--ac-rgb),.3)}
  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -217,6 +218,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <button class="act big" onclick="sendSuggest()">Send suggestion</button>
       <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span>
     </div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">🎯 Standing mission</h3>
+    <p class="meta">A persistent theme that biases EVERY new project it dreams up (on top of its
+      interests). Unlike a one-off suggestion this sticks until you change it. Blank = no mission.</p>
+    <textarea id=missionbox rows=2 placeholder="e.g. focus on retro Amstrad / Z80 projects this month">{{ mission }}</textarea>
+    <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div>
   </div>
   <h2>Projects it has built — open, run, tag, or flag broken ones for a fix</h2>
   <div id=projlist>
@@ -409,6 +417,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    .then(r=>r.json()).then(d=>{if(d.ok){$('#suggbox').value='';
      $('#suggcur').textContent='Queued: '+t;toast('Suggestion queued for next ✓');}
      else toast(d.error||'failed');});}
+ function saveMission(){const t=$('#missionbox').value;
+   fetch('/control/mission',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})})
+   .then(r=>r.json()).then(d=>toast(d.ok?(t.trim()?'Mission set ✓':'Mission cleared ✓'):'failed'));}
  function toggleAlerts(target,on){
    fetch('/control/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,on})})
    .then(r=>r.json()).then(d=>{toast(d.ok?((target==='agent'?'Agent':'Observer')+' alerts '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
@@ -730,6 +741,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             safe=bool(mem.recall("safe_mode")),
             working_on=mem.recall("working_on"),
             suggestion=mem.get_suggestion(),
+            mission=mem.get_mission(),
             jsig=_journal_sig(rows),
             alerts_agent_on=not (ws / "AGENT_ALERTS_OFF").exists(),
             alerts_observer_on=not (ws / "OBSERVER_ALERTS_OFF").exists(),
@@ -927,6 +939,13 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.set_suggestion(text)
         mem.remember("run_now", True)   # wake it so an idle agent picks this up soon
         log.info("human suggestion queued: %s", text[:120])
+        return {"ok": True}
+
+    @app.route("/control/mission", methods=["POST"])
+    def control_mission():
+        d = request.get_json(silent=True) or {}
+        mem.set_mission((d.get("text") or "")[:400])
+        log.info("standing mission updated")
         return {"ok": True}
 
     @app.route("/control/alerts", methods=["POST"])

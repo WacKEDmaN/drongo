@@ -82,6 +82,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
             "generate_image": "images", "discover_sensors": "sensors",
             "make_dashboard": "dashboard", "send_alert": "alerts",
             "remember": "files", "recall": "files",
+            "save_skill": "files", "recall_skill": "files",
         }.get(nm, nm)
         if t.get(section, {}).get("enabled", True):
             enabled[nm] = tl
@@ -703,6 +704,26 @@ def self_update(ctx: ToolContext, **_):
                 "broken). I can't touch my own code directly — that's the point.")
     except Exception as e:
         return f"ERROR: {e}"
+
+
+@tool("save_skill",
+      "Save a reusable code snippet/pattern you got working, so you (and future "
+      "projects) can reuse it instead of reinventing it.",
+      "name: str, description: str, code: str")
+def save_skill(ctx: ToolContext, name: str = "", description: str = "", code: str = "", **_):
+    return (f"saved skill '{name}'" if ctx.mem.add_skill(name, description, code)
+            else "ERROR: a skill needs a name and some code")
+
+
+@tool("recall_skill",
+      "Get a saved skill's code by name. Call with no name to list what you have.",
+      "name: str = ''")
+def recall_skill(ctx: ToolContext, name: str = "", **_):
+    if not name:
+        names = [s["name"] for s in ctx.mem.skills()]
+        return "saved skills: " + (", ".join(names) if names else "(none yet)")
+    s = ctx.mem.get_skill(name)
+    return f"# {s['name']} — {s['desc']}\n{s['code']}" if s else f"no skill named '{name}'"
 
 
 @tool("remember", "Store a fact in long-term memory.", "key: str, value: str")

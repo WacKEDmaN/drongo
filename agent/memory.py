@@ -191,6 +191,33 @@ class Memory:
         v = v if isinstance(v, list) else []
         return [x["txt"] for x in v[-limit:] if x.get("txt")]
 
+    # ---- skills library + standing mission ----------------------------
+    def add_skill(self, name, desc, code) -> bool:
+        name = str(name or "").strip()[:60]
+        if not name or not str(code or "").strip():
+            return False
+        v = [s for s in self.skills() if s.get("name") != name]   # replace same name
+        v.append({"name": name, "desc": str(desc or "").strip()[:200],
+                  "code": str(code)[:6000], "ts": time.time()})
+        self.remember("skills", v[-30:])
+        return True
+
+    def skills(self) -> list:
+        v = self.recall("skills")
+        return v if isinstance(v, list) else []
+
+    def get_skill(self, name):
+        for s in self.skills():
+            if s.get("name") == name:
+                return s
+        return None
+
+    def set_mission(self, text):
+        self.remember("mission", str(text or "").strip())
+
+    def get_mission(self) -> str:
+        return self.recall("mission") or ""
+
     def push_step(self, kind, text):
         """Append a short entry to the live-thinking ring buffer (last ~40) that
         the dashboard tails, so you can watch the agent work in real time."""

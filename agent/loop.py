@@ -71,6 +71,10 @@ Rules:
 - DOCUMENT every project: alongside the code write a short README.md (in the same
   projects/ folder) covering what it is, how to run it, what it needs, and how to
   use it. Keep code commented where it helps.
+- GROW & REUSE your toolkit. Before building, glance at recall_skill for a pattern
+  you've saved; when you get a non-trivial, reusable snippet working (a canvas game
+  loop, reading a sensor, an API call), save it with save_skill so future projects
+  are faster and more reliable.
 - TIDY UP after yourself. Keep each project in ONE folder under projects/<name>/.
   Delete scratch, temp, downloaded, or experimental files you no longer need with
   delete_path — don't leave half-baked junk or empty folders lying around. A
@@ -260,7 +264,10 @@ class AgentLoop:
                          ". This is genuinely new — your next project SHOULD identify, test or "
                          "use it (e.g. capture from the camera, read the new sensor, document "
                          "what it is). This OVERRIDES the 'avoid sensors' guidance above. ***" + steer)
-            user = (f"Your interests: {interests}\n"
+            mission = self.mem.get_mission()
+            mission_txt = (f"YOUR STANDING MISSION (bias your choice strongly toward this): "
+                           f"{mission}\n" if mission else "")
+            user = (f"{mission_txt}Your interests: {interests}\n"
                     f"Recently built (newest first): {recent_lines}{steer}{hw_hint}\n\n"
                     "Propose your next project now — genuinely different from the list above.")
         system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
@@ -288,13 +295,16 @@ class AgentLoop:
             lessons = self.mem.recent_lessons(6)
             lesson_txt = ("\n\nLessons from past projects — apply them:\n"
                           + "\n".join("- " + l for l in lessons)) if lessons else ""
+            sk = self.mem.skills()
+            skill_txt = ("\n\nYour saved skills (use recall_skill to get the code):\n"
+                         + "\n".join(f"- {s['name']}: {s['desc']}" for s in sk[:12])) if sk else ""
             plan = self.plan(task)
             if plan:
                 self.mem.push_step("info", "📋 planning the build")
             plan_txt = ("\n\nYour plan:\n" + plan + "\nExecute it, adapting as needed.") if plan else ""
             task_msg = (f"Project type: {task['task_type']}\n"
                         f"Title: {task['title']}\n"
-                        f"Goal: {task['description']}{lesson_txt}{plan_txt}\n\nBegin.")
+                        f"Goal: {task['description']}{skill_txt}{lesson_txt}{plan_txt}\n\nBegin.")
             messages = [{"role": "system", "content": system},
                         {"role": "user", "content": task_msg}]
         else:
@@ -303,6 +313,7 @@ class AgentLoop:
                 "is genuinely 100% finished and verified, THEN return the \"final\" form. "
                 "Don't start anything new."}]
         last_provider = task.get("provider", "")
+        prev_err, researched, critiqued = None, set(), False
         for step in range(self.max_steps):
             watchdog.heartbeat(self.cfg)   # prove we're alive between steps
             try:
@@ -317,8 +328,22 @@ class AgentLoop:
                 messages = self._trim(messages)
                 continue
             if "final" in obj:
-                self.mem.push_step("ok", f"✓ finished: {str(obj['final'])[:140]}")
-                return str(obj["final"]), last_provider, messages, True
+                final_text = str(obj["final"])
+                # Self-critique gate: one honest review before we accept "done".
+                if not critiqued and self.cfg.get("loop", "self_critique", default=True):
+                    critiqued = True
+                    verdict = self.critique(task, ctx, final_text)
+                    if not verdict["done"]:
+                        self.mem.push_step("warn", "🔍 self-review: not done — "
+                                           + (verdict["issues"][:120] or "needs more work"))
+                        messages.append({"role": "assistant", "content": text[:600]})
+                        messages.append({"role": "user", "content":
+                            "A self-review says this isn't finished: " + verdict["issues"] +
+                            "\nFix those, verify, THEN return the final form again."})
+                        messages = self._trim(messages)
+                        continue
+                self.mem.push_step("ok", f"✓ finished: {final_text[:140]}")
+                return final_text, last_provider, messages, True
             name = obj.get("tool", "")
             args = obj.get("args", {}) or {}
             thought = obj.get("thought", "")
@@ -335,6 +360,19 @@ class AgentLoop:
                     observation = f"ERROR: bad args for {name}: {e}"
                 except Exception as e:
                     observation = f"ERROR: {name} raised {e}"
+            # Research-when-stuck: the SAME error twice running -> auto web-search it.
+            err = observation.strip() if (observation.startswith("ERROR")
+                  or observation.lstrip().startswith("⚠") or "Traceback" in observation) else ""
+            if err and prev_err and err[:50] == prev_err[:50] and "web_search" in registry \
+                    and err[:50] not in researched:
+                researched.add(err[:50])
+                self.mem.push_step("info", "🔎 stuck — researching that error")
+                try:
+                    res = registry["web_search"].func(ctx, query=err.splitlines()[0][:120])
+                except Exception as e:
+                    res = f"(search failed: {e})"
+                observation += "\n\n[auto-research for that repeated error]\n" + str(res)[:800]
+            prev_err = err or None
             self.mem.push_step("warn" if observation.startswith("ERROR") else "ok",
                                f"  {observation.splitlines()[0][:150] if observation else 'done'}")
             messages.append({"role": "assistant", "content": text[:1200]})
@@ -361,6 +399,22 @@ class AgentLoop:
             return text.strip()
         except AllProvidersFailed:
             return ""
+
+    def critique(self, task, ctx, final_text) -> dict:
+        """One quick honest self-review before a project is accepted as done."""
+        arts = ", ".join(a["path"] for a in ctx.artifacts) or "(none)"
+        system = (self.persona + "\nReview whether a project is genuinely COMPLETE and "
+                  "working — not a stub or half-done. Be honest but not pedantic.")
+        user = (f"Project: {task['title']}\nGoal: {task['description']}\n"
+                f"It claims done: {final_text}\nFiles produced: {arts}\n\n"
+                "Reply ONE JSON: {\"done\": true|false, \"issues\": \"<what's missing "
+                "or broken if not done, else empty>\"}.")
+        try:
+            text, _ = self.router.complete(system, user, temperature=0.3, max_tokens=200)
+        except AllProvidersFailed:
+            return {"done": True, "issues": ""}      # never block on an LLM outage
+        obj = extract_json(text) or {}
+        return {"done": bool(obj.get("done", True)), "issues": str(obj.get("issues", ""))[:300]}
 
     # ---- reflection ----------------------------------------------------
     def reflect(self, task, outcome, ctx):
