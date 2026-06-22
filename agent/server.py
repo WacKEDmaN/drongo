@@ -1033,6 +1033,13 @@ def create_app(cfg, mem: Memory) -> Flask:
         env = dict(cur.get("env") or {})
         env.update({k: v for k, v in (s.get("env") or {}).items() if v})
         s["env"] = env                       # keep existing keys when fields left blank
+        # Preserve settings the form doesn't carry, so a Save & Restart can't wipe
+        # dashboard-added providers or the chosen order.
+        prev_llm = cur.get("llm") or {}
+        s.setdefault("llm", {})
+        for keep in ("custom_providers", "order"):
+            if keep in prev_llm and keep not in s["llm"]:
+                s["llm"][keep] = prev_llm[keep]
         mem.remember("settings", s)
         if d.get("restart"):
             mem.remember("restart_requested", True)
