@@ -20,8 +20,10 @@ import logging
 import os
 import re
 import shutil
+import struct
 import subprocess
 import time
+import zlib
 from pathlib import Path
 
 from flask import Flask, Response, abort, render_template_string, request, send_from_directory
@@ -280,7 +282,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  <section id=gallery class="tab">
   <h2>Gallery — images it has generated <span class=meta id=galcount></span></h2>
   <div id=gallerygrid>
-   {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/file/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
+   {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/img/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
    {% else %}<p class="meta">No images yet — it fills this in as it makes creative_image projects.</p>{% endif %}
   </div>
  </section>
@@ -700,7 +702,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
  const ALLOW_RUN={{ allow_run|tojson }};
  let lastSig={{ jsig|tojson }};
  let _images={{ images|tojson }},_lbi=0;
- const imgURL=n=>'/file/'+String(n).split('/').map(encodeURIComponent).join('/');
+ const imgURL=n=>'/img/'+String(n).split('/').map(encodeURIComponent).join('/');
  function renderGallery(images){_images=images||[];
    const wrap=$('#gallerygrid'); const cnt=$('#galcount'); if(cnt)cnt.textContent=_images.length?('· '+_images.length):'';
    if(!wrap)return; wrap.replaceChildren();
@@ -1055,7 +1057,8 @@ def create_app(cfg, mem: Memory) -> Flask:
             return {"ok": False, "error": "outside workspace"}, 403
         if not os.path.isdir(full):
             return {"ok": False, "error": "not a folder"}, 404
-        img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg")
+        img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
+                    ".ppm", ".pgm", ".pbm")
         entries = []
         for name in sorted(os.listdir(full)):
             p = os.path.join(full, name)
@@ -1422,6 +1425,26 @@ def create_app(cfg, mem: Memory) -> Flask:
             abort(404)
         return send_from_directory(root, relpath)
 
+    @app.route("/img/<path:relpath>")
+    def serve_img(relpath):
+        # Like /file, but transcodes netpbm (.ppm/.pgm/.pbm — what C renderers emit)
+        # to PNG so the browser can show it. Other image types pass straight through.
+        root = os.path.realpath(str(ws))
+        full = os.path.realpath(os.path.join(root, relpath))
+        if full != root and not full.startswith(root + os.sep):
+            abort(403)
+        if not os.path.isfile(full):
+            abort(404)
+        if relpath.lower().endswith(_NETPBM_EXTS):
+            try:
+                with open(full, "rb") as fh:
+                    png = _netpbm_to_png(fh.read(20_000_000))   # read cap (memory)
+                if png:
+                    return Response(png, mimetype="image/png")
+            except Exception as e:
+                log.warning("ppm->png failed for %s: %s", relpath, e)
+        return send_from_directory(root, relpath)
+
     return app
 
 
@@ -1492,7 +1515,79 @@ def _ls(directory, exts):
     return files
 
 
-_IMG_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+_IMG_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".ppm", ".pgm", ".pbm")
+_NETPBM_EXTS = (".ppm", ".pgm", ".pbm")
+
+
+def _png_encode(width, height, rgb):
+    """Minimal stdlib PNG encoder (8-bit RGB). rgb = width*height*3 bytes."""
+    def chunk(typ, body):
+        return (struct.pack(">I", len(body)) + typ + body
+                + struct.pack(">I", zlib.crc32(typ + body) & 0xffffffff))
+    stride = width * 3
+    raw = bytearray()
+    for y in range(height):                 # PNG wants a filter byte per scanline
+        raw.append(0)
+        raw += rgb[y * stride:(y + 1) * stride]
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+            + chunk(b"IEND", b""))
+
+
+def _netpbm_to_png(data):
+    """Convert a P2/P3/P5/P6 netpbm (PPM/PGM) to PNG bytes, or None. Capped at 4MP
+    to bound memory (the dashboard has a small RAM cgroup)."""
+    if data[:1] != b"P" or data[1:2] not in b"2356":
+        return None
+    magic = data[:2]
+    pos = 2
+
+    def tok(pos):
+        while pos < len(data):
+            c = data[pos:pos + 1]
+            if c in b" \t\r\n":
+                pos += 1
+            elif c == b"#":
+                while pos < len(data) and data[pos:pos + 1] != b"\n":
+                    pos += 1
+            else:
+                break
+        start = pos
+        while pos < len(data) and data[pos:pos + 1] not in b" \t\r\n":
+            pos += 1
+        return data[start:pos], pos
+    try:
+        w, pos = tok(pos); h, pos = tok(pos); mx, pos = tok(pos)
+        width, height, maxval = int(w), int(h), int(mx)
+    except Exception:
+        return None
+    if not (0 < width and 0 < height and width * height <= 4_000_000 and 0 < maxval <= 65535):
+        return None
+    gray = magic in (b"P2", b"P5")
+    npix = width * height
+    nsamp = npix if gray else npix * 3
+    if magic in (b"P3", b"P2"):                       # ASCII samples
+        nums = data[pos:].split()
+        if len(nums) < nsamp:
+            return None
+        sc = (lambda v: v) if maxval == 255 else (lambda v: v * 255 // maxval)
+        s = [sc(int(x)) for x in nums[:nsamp]]
+        rgb = bytes(s) if not gray else bytes(v for v in s for _ in range(3))
+    else:                                             # binary (P5/P6)
+        pos += 1                                      # single whitespace after maxval
+        bpp = 1 if maxval < 256 else 2
+        body = data[pos:pos + nsamp * bpp]
+        if len(body) < nsamp * bpp:
+            return None
+        if bpp == 2:
+            body = bytes(((body[2 * k] << 8 | body[2 * k + 1]) * 255 // maxval) for k in range(nsamp))
+        elif maxval != 255:
+            body = bytes(v * 255 // maxval for v in body)
+        rgb = body if not gray else bytes(v for v in body for _ in range(3))
+    if len(rgb) != npix * 3:
+        return None
+    return _png_encode(width, height, rgb)
 
 
 def _gallery_images(cfg):
