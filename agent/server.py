@@ -818,6 +818,15 @@ def create_app(cfg, mem: Memory) -> Flask:
                                 {"WWW-Authenticate": 'Basic realm="DRONGO"'})
         return None
 
+    @app.after_request
+    def _sec_headers(resp):
+        # Cheap defence-in-depth: no MIME sniffing, no clickjacking, no referrer
+        # leakage. (setdefault so a route can still override if it ever needs to.)
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        return resp
+
     def _dedupe_arts(arts):
         # Old journal rows were stored with one entry per write_file call, so a
         # file edited several times shows up repeatedly. Collapse to one per path
@@ -1203,8 +1212,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             return {"ok": False, "error": "only scripts under projects/ can be run"}, 404
         venv_py = os.path.join(str(cfg.project_venv), "bin", "python")
         py = venv_py if os.path.exists(venv_py) else "python3"
-        env = dict(os.environ, VIRTUAL_ENV=str(cfg.project_venv),
-                   PATH=os.path.join(str(cfg.project_venv), "bin") + os.pathsep + os.environ.get("PATH", ""))
+        env = tools._project_env(cfg)   # venv on PATH + SECRETS STRIPPED (no key leak)
         # .sh runs via bash (lets compiled C/C++ projects build+run from a run.sh);
         # .py via the project venv. Both as the unprivileged drongo user, sandboxed.
         cmd = ["bash", full] if rel.endswith(".sh") else [py, full]
@@ -1239,8 +1247,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             abort(404)
         venv_py = os.path.join(str(cfg.project_venv), "bin", "python")
         py = venv_py if os.path.exists(venv_py) else "python3"
-        env = dict(os.environ, VIRTUAL_ENV=str(cfg.project_venv),
-                   PATH=os.path.join(str(cfg.project_venv), "bin") + os.pathsep + os.environ.get("PATH", ""))
+        env = tools._project_env(cfg)   # venv on PATH + SECRETS STRIPPED (no key leak)
         try:
             p = subprocess.run([py, full], cwd=str(ws), capture_output=True,
                                text=True, timeout=20, env=env,
