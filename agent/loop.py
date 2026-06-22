@@ -31,6 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TASK_TYPES = [
     "browser_game", "creative_image", "utility_script", "sensor_dashboard",
     "web_research_note", "self_maintenance", "experiment",
+    "simulation", "generative_art",
 ]
 
 EXEC_SYSTEM = """{persona}
@@ -107,8 +108,15 @@ Available tools:
 
 IDEATE_SYSTEM = """{persona}
 
-Decide your next self-directed project. It should be small enough to finish in
-a handful of steps on a low-power Rock Pi, but genuinely useful or delightful.
+Decide your next self-directed project. Finishable in a handful of steps, but
+genuinely useful or delightful.
+
+USE THE HARDWARE. This box has spare CPU going to waste — when it fits, prefer
+computationally RICH projects that actually exercise it: fractals and Mandelbrot
+zooms, particle systems, cellular automata (Game of Life, reaction-diffusion),
+ray/path tracers, procedural worlds/maps, physics sims, pathfinding visualisers,
+number-crunching. Compute real pixels/data, don't just print a stub. (simulation
+and generative_art task_types are made for this.)
 
 NOVELTY IS THE POINT. Look hard at what you've recently built and deliberately do
 something DIFFERENT — a different task_type AND a different subject. Variety is
@@ -791,6 +799,8 @@ class AgentLoop:
             if self.safe_mode:
                 nap *= self.cfg.get("safe_mode", "interval_multiplier", default=4)
             nap = max(60, nap)
+            if self.mem.recall("turbo") and not self.safe_mode:
+                nap = random.randint(15, 40)   # TURBO: work back-to-back, burn the CPU
             self.mem.remember("status", "sleeping")
             self.mem.remember("next_cycle_ts", time.time() + nap)
             self.mem.push_step("think", f"😴 sleeping {nap}s until the next cycle")

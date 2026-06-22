@@ -267,6 +267,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <p class="meta">Pause/Stop just idle it (removable). Restart relaunches via systemd.
       Flagged fixes are worked before new projects.</p>
     <p class="meta" id=fixq></p>
+    <div class=swrow style="margin-top:10px">
+     <label class=sw><input type=checkbox id=turbo {{ 'checked' if turbo }} onchange="toggleTurbo(this.checked)"><span class=sl></span></label>
+     <div><div class=lbl>⚡ Turbo mode</div><div class=sub>Work back-to-back (~20-40s between projects) instead of the normal gap — keeps it (and the CPU) busy. Cloud limits will fall back to the local model.</div></div>
+    </div>
    </div>
   </div>
 
@@ -426,6 +430,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function toggleProvider(name,on){
    fetch('/control/provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,on})})
    .then(r=>r.json()).then(d=>{toast(d.ok?(name+' '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
+ function toggleTurbo(on){fetch('/control/turbo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on})})
+   .then(r=>r.json()).then(d=>toast(d.ok?('⚡ Turbo '+(on?'ON — going hard':'off')):(d.error||'failed')));}
  function hwRow(k,v){const r=document.createElement('div');r.className='row';
    const a=document.createElement('span');a.textContent=k;const b=document.createElement('b');b.textContent=v;
    r.appendChild(a);r.appendChild(b);return r;}
@@ -742,6 +748,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             working_on=mem.recall("working_on"),
             suggestion=mem.get_suggestion(),
             mission=mem.get_mission(),
+            turbo=bool(mem.recall("turbo")),
             jsig=_journal_sig(rows),
             alerts_agent_on=not (ws / "AGENT_ALERTS_OFF").exists(),
             alerts_observer_on=not (ws / "OBSERVER_ALERTS_OFF").exists(),
@@ -940,6 +947,15 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.remember("run_now", True)   # wake it so an idle agent picks this up soon
         log.info("human suggestion queued: %s", text[:120])
         return {"ok": True}
+
+    @app.route("/control/turbo", methods=["POST"])
+    def control_turbo():
+        on = bool((request.get_json(silent=True) or {}).get("on"))
+        mem.remember("turbo", on)
+        if on:
+            mem.remember("run_now", True)   # start working immediately
+        log.info("turbo mode: %s", "ON" if on else "off")
+        return {"ok": True, "on": on}
 
     @app.route("/control/mission", methods=["POST"])
     def control_mission():

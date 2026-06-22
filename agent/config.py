@@ -27,6 +27,8 @@ DEFAULTS = {
     "interests": [
         "small playable browser games (HTML5/canvas)",
         "generative / creative images",
+        "compute-heavy generative art (fractals, Mandelbrot zooms, ray tracers)",
+        "simulations that exercise the CPU (particle systems, cellular automata, physics)",
         "tidy shell and python utilities that improve the box",
         "sensing and visualising its own hardware (sensors, thermals, buses)",
         "retro-computing experiments (Amstrad CPC / Z80, where toolchains allow)",
