@@ -186,17 +186,17 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <div class=nowtitle>{{ working_on.title }}</div>
      <span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
 
-   <div class="tile c12"><div class=th>System <span class=meta id=sysmodel></span></div>
+   <div class="tile c8"><div class=th>System <span class=meta id=sysmodel></span></div>
      <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div></div>
-
-   <div class="tile c8"><div class=th>Live thinking</div>
-     <div id=think class=think>idle…</div></div>
 
    <div class="tile c4"><div class=th>LLM usage today</div>
      <table class=usaget id=usagetbl>
       <tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>
       {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=4 class=meta>no calls yet</td></tr>{% endfor %}
      </table></div>
+
+   <div class="tile c12"><div class=th>Live thinking</div>
+     <div id=think class=think>idle…</div></div>
 
    <div class="tile c12"><div class=th>Recent activity</div>
      <div id=homelist class=evlist>
