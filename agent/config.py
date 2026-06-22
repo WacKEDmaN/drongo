@@ -64,8 +64,9 @@ DEFAULTS = {
         "files": {"enabled": True, "max_file_chars": 60000},
         "web": {"enabled": True, "timeout": 30, "max_chars": 8000},
         # provider: pollinations (free cloud) | local (run local_cmd). local_cmd is
-        # a template with {prompt} and {out} placeholders, e.g.
-        #   /opt/imggen/sd -m /opt/imggen/model.gguf -p {prompt} -o {out} --steps 4 -W 512 -H 512
+        # a template with {prompt} and {out} placeholders. With OnnxStream (see
+        # system/image-gen.sh), e.g.:
+        #   /opt/imggen/sd --turbo --models-path /opt/imggen/models/<dir> --steps 1 --prompt {prompt} --output {out}
         "images": {"enabled": True, "provider": "pollinations", "local_cmd": "", "timeout": 600},
         "sensors": {"enabled": True},
         "dashboard": {"enabled": True},

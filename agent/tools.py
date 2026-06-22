@@ -102,6 +102,7 @@ def tools_prompt(tools: dict[str, Tool]) -> str:
 # exfiltrate them). The agent's projects don't need any of these.
 _SECRET_ENV = ("GROQ_API_KEY", "CEREBRAS_API_KEY", "GEMINI_API_KEY", "MISTRAL_API_KEY",
                "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "NVIDIA_API_KEY",
+               "OLLAMA_API_KEY", "TOGETHER_API_KEY",
                "DISCORD_WEBHOOK_URL", "DRONGO_DISCORD_WEBHOOK", "TELEGRAM_BOT_TOKEN",
                "DRONGO_WEB_PASSWORD")
 
@@ -387,7 +388,7 @@ def _image_ext(data: bytes):
 
 
 def _generate_image_local(ctx, prompt, filename, out_path):
-    """Run a LOCAL image generator (e.g. stable-diffusion.cpp) via the configured
+    """Run a LOCAL image generator (e.g. OnnxStream) via the configured
     images.local_cmd template. {prompt} and {out} are shell-quoted (injection-safe)."""
     tmpl = ctx.cfg.get("tools", "images", "local_cmd", default="")
     if not tmpl:

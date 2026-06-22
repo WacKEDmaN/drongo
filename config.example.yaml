@@ -118,6 +118,12 @@ llm:
       enabled: true
 
     # ---- More free options you can enable (add the key, flip enabled) ----
+    # Easiest from the dashboard: Control → Settings → Providers → Add (presets).
+    # - name: ollama-cloud    # Ollama Cloud — free tier, big open models
+    #   base_url: https://ollama.com/v1
+    #   api_key_env: OLLAMA_API_KEY    # get a key at ollama.com
+    #   model: gpt-oss:120b            # or qwen3-coder:480b, deepseek-v3.1:671b ...
+    #   enabled: false
     # - name: github          # GitHub Models — free with a GitHub PAT
     #   base_url: https://models.github.ai/inference
     #   api_key_env: GITHUB_TOKEN

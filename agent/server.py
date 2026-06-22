@@ -395,7 +395,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <label>Provider<select id=s_imgprov>
        <option value=pollinations {{ 'selected' if sv.img_provider=='pollinations' }}>pollinations (free cloud — fast)</option>
        <option value=local {{ 'selected' if sv.img_provider=='local' }}>local (offline — slow on this box)</option></select></label>
-     <label>Local command — {prompt} and {out} are filled in (shell-quoted)<input id=s_imgcmd value="{{ sv.img_cmd }}" placeholder="/opt/imggen/sd -m /opt/imggen/model.gguf -p {prompt} -o {out} --steps 4 -W 512 -H 512"></label>
+     <label>Local command — {prompt} and {out} are filled in (shell-quoted)<input id=s_imgcmd value="{{ sv.img_cmd }}" placeholder="/opt/imggen/sd --turbo --models-path /opt/imggen/models/&lt;dir&gt; --steps 1 --prompt {prompt} --output {out}"></label>
      <p class="meta">Run <code>sudo /opt/drongo/system/image-gen.sh</code> to build a local generator, then switch the provider to “local”.</p>
     </div>
    </div>
@@ -414,10 +414,15 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <h3 style="margin-top:14px">Add a provider</h3>
     <label>Preset<select id=ap_preset onchange="apPreset()">
       <option value=custom>Custom (OpenAI-compatible)</option>
-      <option value=github>GitHub Models (free)</option>
-      <option value=nvidia>NVIDIA NIM (free)</option>
-      <option value=together>Together AI</option>
-      <option value=openrouter>OpenRouter</option></select></label>
+      <option value=ollama>Ollama Cloud (free — gpt-oss, qwen, deepseek)</option>
+      <option value=nvidia>NVIDIA NIM (free credits)</option>
+      <option value=github>GitHub Models (free w/ PAT)</option>
+      <option value=cerebras>Cerebras (free)</option>
+      <option value=groq>Groq (free)</option>
+      <option value=gemini>Google Gemini (free)</option>
+      <option value=mistral>Mistral (free)</option>
+      <option value=together>Together AI (free tier)</option>
+      <option value=openrouter>OpenRouter (free models)</option></select></label>
     <label>Name<input id=ap_name placeholder="e.g. github"></label>
     <label>Base URL<input id=ap_url placeholder="https://…/v1"></label>
     <label>Model<input id=ap_model placeholder="provider/model-name"></label>
@@ -525,8 +530,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    fetch('/control/provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,on})})
    .then(r=>r.json()).then(d=>{toast(d.ok?(name+' '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
  const AP_PRESETS={
-   github:{name:'github',url:'https://models.github.ai/inference',model:'openai/gpt-4o-mini',keyenv:'GITHUB_TOKEN'},
+   ollama:{name:'ollama-cloud',url:'https://ollama.com/v1',model:'gpt-oss:120b',keyenv:'OLLAMA_API_KEY'},
    nvidia:{name:'nvidia',url:'https://integrate.api.nvidia.com/v1',model:'meta/llama-3.1-8b-instruct',keyenv:'NVIDIA_API_KEY'},
+   github:{name:'github',url:'https://models.github.ai/inference',model:'openai/gpt-4o-mini',keyenv:'GITHUB_TOKEN'},
+   cerebras:{name:'cerebras2',url:'https://api.cerebras.ai/v1',model:'gpt-oss-120b',keyenv:'CEREBRAS_API_KEY'},
+   groq:{name:'groq2',url:'https://api.groq.com/openai/v1',model:'llama-3.3-70b-versatile',keyenv:'GROQ_API_KEY'},
+   gemini:{name:'gemini2',url:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-2.0-flash',keyenv:'GEMINI_API_KEY'},
+   mistral:{name:'mistral2',url:'https://api.mistral.ai/v1',model:'mistral-small-latest',keyenv:'MISTRAL_API_KEY'},
    together:{name:'together',url:'https://api.together.xyz/v1',model:'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',keyenv:'TOGETHER_API_KEY'},
    openrouter:{name:'openrouter2',url:'https://openrouter.ai/api/v1',model:'meta-llama/llama-3.1-8b-instruct:free',keyenv:'OPENROUTER_API_KEY'}};
  function apPreset(){const p=AP_PRESETS[$('#ap_preset').value];if(!p)return;
