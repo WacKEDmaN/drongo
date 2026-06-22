@@ -974,12 +974,23 @@ def create_app(cfg, mem: Memory) -> Flask:
         return ";".join(f"{r['id']}.{int(r['ok'])}.{len(r['tags'])}" for r in rows)
 
     def _usage_view():
-        out = []
-        for u in mem.usage_summary():
-            cu = u["cooldown_until"]
-            cool = f"{int(cu - time.time())}s" if cu and cu > time.time() else ""
-            out.append({"provider": u["provider"], "day_count": u["day_count"],
-                        "total": u["total"], "cool": cool})
+        used = {u["provider"]: u for u in mem.usage_summary()}
+        # List ALL configured providers (built-in + dashboard-added) so a brand-new
+        # one shows here with 0s, not just providers that have been called.
+        names = [p.get("name") for p in (cfg.get("llm", "providers", default=[]) or []) if p.get("name")]
+        for c in ((mem.recall("settings") or {}).get("llm") or {}).get("custom_providers") or []:
+            if c.get("name") and c["name"] not in names:
+                names.append(c["name"])
+        for n in used:                              # plus any used-but-now-unconfigured ones
+            if n not in names:
+                names.append(n)
+        now, out = time.time(), []
+        for n in names:
+            u = used.get(n, {})
+            cu = u.get("cooldown_until")
+            cool = f"{int(cu - now)}s" if cu and cu > now else ""
+            out.append({"provider": n, "day_count": u.get("day_count", 0),
+                        "total": u.get("total", 0), "cool": cool})
         return out
 
     @app.route("/")
