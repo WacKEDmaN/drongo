@@ -95,6 +95,10 @@ Rules:
   `pip install <package>` and run code with `python <file>` (both already point at
   your project venv). Prefer the standard library, but install what you need —
   and if you install something, list it in the README so it isn't a surprise.
+- NEED A SYSTEM PACKAGE? You can `pip install` Python libs yourself, but you can't
+  apt-install system packages (no sudo). If you need one (a compiler, a C library,
+  a CLI tool), call request_package(name, reason) — your human installs it and it
+  becomes available. Don't keep retrying something that needs a missing system dep.
 - YOU ARE A POLYGLOT — don't default to Python for everything. C and C++ are fully
   available: `gcc`, `g++` and `make` are installed. Write real C/C++ (and shell)
   when it fits — fast native tools, demos, simulations, classic algorithms. Build
@@ -353,6 +357,9 @@ class AgentLoop:
             sk = self.mem.skills()
             skill_txt = ("\n\nYour saved skills (use recall_skill to get the code):\n"
                          + "\n".join(f"- {s['name']}: {s['desc']}" for s in sk[:12])) if sk else ""
+            extras = self.mem.installed_extras()
+            if extras:
+                skill_txt += "\n\nExtra system packages your human installed for you (use freely): " + ", ".join(extras[-20:]) + "."
             plan = self.plan(task)
             if plan:
                 self.mem.push_step("info", "📋 planning the build")

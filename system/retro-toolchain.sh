@@ -40,7 +40,10 @@ apt-get update -y || warn "apt update failed"
 apt-get install -y --no-install-recommends \
   sdcc pasmo build-essential git curl unzip m4 dos2unix \
   libxml2-dev zlib1g-dev libpng-dev bison flex \
+  libboost-dev libboost-graph-dev ragel texinfo \
   || warn "some apt packages failed to install"
+# ^ libboost-* is required to build SDCC from source (CPCtelera bundles its own,
+#   and z88dk's zsdcc needs it too); ragel/texinfo are needed by the z88dk build.
 # CPCtelera's bundled tools need the Mono runtime. Installed on its own so a
 # failure here can't block sdcc/pasmo above. mono-complete is the safe catch-all.
 apt-get install -y mono-complete \
@@ -48,20 +51,32 @@ apt-get install -y mono-complete \
   || warn "mono failed to install — CPCtelera tools that need it won't run"
 
 # --- z88dk -----------------------------------------------------------------
-say "2/4  z88dk (source build — this can take several minutes)"
+say "2/4  z88dk (build from the official release tarball)"
+# IMPORTANT: use the release '-src-' tarball, NOT github's auto-generated "Source
+# code (tar.gz)" — that one is missing generated files and will NOT compile.
+Z88DK_URL="https://github.com/z88dk/z88dk/releases/download/v2.4/z88dk-src-2.4.tgz"
 if [ -x "$OPT/z88dk/bin/zcc" ]; then
   echo "    already built, skipping."
 else
-  rm -rf "$OPT/z88dk"
-  if git clone --depth 1 --recursive https://github.com/z88dk/z88dk.git "$OPT/z88dk"; then
-    if ( cd "$OPT/z88dk" && chmod +x build.sh && ./build.sh ); then
-      echo "    z88dk built."
+  rm -rf "$OPT/z88dk" /tmp/z88dk-src /tmp/z88dk-src.tgz
+  mkdir -p /tmp/z88dk-src
+  if curl -fsSL "$Z88DK_URL" -o /tmp/z88dk-src.tgz && tar xzf /tmp/z88dk-src.tgz -C /tmp/z88dk-src; then
+    SRCDIR="$(dirname "$(find /tmp/z88dk-src -maxdepth 3 -name build.sh 2>/dev/null | head -1)")"
+    if [ -n "$SRCDIR" ] && [ -d "$SRCDIR" ]; then
+      mv "$SRCDIR" "$OPT/z88dk"
+      if ( cd "$OPT/z88dk" && export ZCCCFG="$OPT/z88dk/lib/config" PATH="$OPT/z88dk/bin:$PATH" \
+           && chmod +x build.sh && ./build.sh ); then
+        echo "    z88dk built."
+      else
+        warn "z88dk build failed — re-run later or build manually in $OPT/z88dk"
+      fi
     else
-      warn "z88dk build failed — re-run later or build manually in $OPT/z88dk"
+      warn "couldn't find build.sh inside the z88dk tarball"
     fi
   else
-    warn "z88dk clone failed (network?)"
+    warn "z88dk tarball download/extract failed (network?)"
   fi
+  rm -rf /tmp/z88dk-src /tmp/z88dk-src.tgz
 fi
 
 # --- CPCtelera (Amstrad CPC) ----------------------------------------------

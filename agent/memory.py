@@ -232,6 +232,35 @@ class Memory:
         hits = [n for n in v if q in (n.get("topic", "") + " " + n.get("content", "")).lower()]
         return hits[-limit:]
 
+    def request_package(self, name, reason) -> bool:
+        name = str(name or "").strip()[:60]
+        if not name:
+            return False
+        v = self.pkg_requests()
+        if any(p.get("name") == name for p in v):
+            return True                              # already requested
+        v.append({"name": name, "reason": str(reason or "").strip()[:200], "ts": time.time()})
+        self.remember("pkg_requests", v[-40:])
+        return True
+
+    def pkg_requests(self) -> list:
+        v = self.recall("pkg_requests")
+        return v if isinstance(v, list) else []
+
+    def resolve_package(self, name, installed=True):
+        """Drop a package request. If installed=True, record it as now-available
+        so the agent is told it can use it."""
+        self.remember("pkg_requests", [p for p in self.pkg_requests() if p.get("name") != name])
+        if installed:
+            e = self.installed_extras()
+            if name not in e:
+                e.append(name)
+                self.remember("installed_extras", e[-80:])
+
+    def installed_extras(self) -> list:
+        e = self.recall("installed_extras")
+        return e if isinstance(e, list) else []
+
     def set_mission(self, text):
         self.remember("mission", str(text or "").strip())
 

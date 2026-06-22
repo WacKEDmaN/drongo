@@ -83,7 +83,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
             "make_dashboard": "dashboard", "send_alert": "alerts",
             "remember": "files", "recall": "files",
             "save_skill": "files", "recall_skill": "files",
-            "save_note": "files", "recall_notes": "files",
+            "save_note": "files", "recall_notes": "files", "request_package": "files",
         }.get(nm, nm)
         if t.get(section, {}).get("enabled", True):
             enabled[nm] = tl
@@ -735,6 +735,16 @@ def recall_skill(ctx: ToolContext, name: str = "", **_):
         return "saved skills: " + (", ".join(names) if names else "(none yet)")
     s = ctx.mem.get_skill(name)
     return f"# {s['name']} — {s['desc']}\n{s['code']}" if s else f"no skill named '{name}'"
+
+
+@tool("request_package",
+      "Ask your human to apt-install a SYSTEM package you can't get via pip (a "
+      "compiler, a C library, a CLI tool). You can't sudo; they review it on the "
+      "dashboard. For Python libraries just use `pip install` instead.",
+      "name: str, reason: str")
+def request_package(ctx: ToolContext, name: str = "", reason: str = "", **_):
+    return (f"requested '{name}' — your human will review it on the dashboard's Files tab"
+            if ctx.mem.request_package(name, reason) else "ERROR: need a package name")
 
 
 @tool("save_note",

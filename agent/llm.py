@@ -163,6 +163,7 @@ class Router:
         self.temperature = cfg.get("llm", "temperature", default=0.7)
         self.max_tokens = cfg.get("llm", "max_tokens", default=2048)
         self.timeout = cfg.get("llm", "request_timeout", default=120)
+        self.local_timeout = cfg.get("llm", "local_timeout", default=300)
         # Minimum gap between LLM calls — throttles bursts so free-tier
         # per-minute / token-per-minute limits don't get blown instantly.
         self.min_interval = cfg.get("llm", "min_call_interval_seconds", default=3.0)
@@ -207,7 +208,8 @@ class Router:
             if not p.is_local and not self.mem.can_use(p.name, p.rpm_limit, p.daily_limit):
                 continue                                       # provider-enforced cooldown
             try:
-                text = p.chat(messages, temperature, max_tokens, self.timeout)
+                to = self.local_timeout if p.is_local else self.timeout
+                text = p.chat(messages, temperature, max_tokens, to)
                 if not text or not text.strip():
                     raise ValueError("empty response")
                 self.mem.record_use(p.name)

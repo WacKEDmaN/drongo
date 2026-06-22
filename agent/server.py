@@ -98,6 +98,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .fbbar{font:12.5px var(--mono);margin-bottom:10px;color:var(--mut)} .fbbar a{color:var(--ac2)}
  .fbrow{display:flex;justify-content:space-between;gap:10px;padding:5px 2px;border-bottom:1px solid var(--bd);font:13px var(--mono)}
  .fbrow:last-child{border:0} .fbrow a{color:var(--fg);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .fbrow a:hover{color:var(--ac)} .fbrow .meta{flex:none}
+ .pkgrow{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--bd);font:13px var(--mono)} .pkgrow:last-child{border:0}
+ .pkgrow input[type=checkbox]{accent-color:var(--ac)} .pkgname{color:var(--ac);font-weight:600;flex:none} .pkgrow .meta{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .chip{display:inline-block;font:11px var(--mono);padding:3px 9px;border-radius:20px;border:1px solid var(--bd2);color:var(--mut);margin:0 5px 5px 0;background:rgba(255,255,255,.02)}
  .chip.fix{color:var(--bad);border-color:rgba(255,93,108,.45);background:rgba(255,93,108,.08)}
  .act{display:inline-block;font:600 12px var(--mono);background:rgba(255,255,255,.03);color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:6px 12px;cursor:pointer;margin:6px 6px 0 0;transition:.15s;text-decoration:none}
@@ -266,6 +268,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=files class="tab">
+  <h2>📦 Package requests <span class=meta>— system (apt) packages the agent has asked for</span></h2>
+  <div class="card"><div id=pkgwrap class=meta>loading…</div></div>
   <h2>Files — browse the agent's workspace</h2>
   <div class="card"><div id=fbwrap class=meta>loading…</div></div>
  </section>
@@ -380,7 +384,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <div class=pbody>
      <label>Temperature (0–1.5)<input id=s_temp value="{{ sv.temperature }}"></label>
      <label>Max tokens per reply<input id=s_maxtok value="{{ sv.max_tokens }}"></label>
-     <label>Request timeout (seconds)<input id=s_timeout value="{{ sv.req_timeout }}"></label>
+     <label>Cloud request timeout (seconds)<input id=s_timeout value="{{ sv.req_timeout }}"></label>
+     <label>Local model timeout (seconds) — raise if local replies time out<input id=s_localtimeout value="{{ sv.local_timeout }}"></label>
     </div>
    </div>
 
@@ -440,7 +445,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    history.replaceState(null,'','#'+t);
    if(t==='control')loadHW();
-   if(t==='files')loadFiles('');
+   if(t==='files'){loadFiles('');loadPkgs();}
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
@@ -541,6 +546,30 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    w.appendChild(list);}
  function openFile(e){const url='/file/'+e.path.split('/').map(encodeURIComponent).join('/');
    if(e.view)viewfile(e.path); else window.open(url,'_blank');}
+ function loadPkgs(){const w=$('#pkgwrap');if(!w)return;
+   fetch('/api/pkgs').then(r=>r.json()).then(d=>renderPkgs(d.requests||[],d.installed||[])).catch(()=>{});}
+ function renderPkgs(reqs,installed){const w=$('#pkgwrap');w.replaceChildren();
+   if(!reqs.length){const p=document.createElement('div');p.className='meta';p.textContent='Nothing requested — the agent calls request_package when it needs an apt package.';w.appendChild(p);}
+   else{reqs.forEach(p=>{const r=document.createElement('div');r.className='pkgrow';
+       const cb=document.createElement('input');cb.type='checkbox';cb.className='pkgck';cb.value=p.name;
+       const nm=document.createElement('span');nm.className='pkgname';nm.textContent=p.name;
+       const wy=document.createElement('span');wy.className='meta';wy.textContent=p.reason||'';
+       const ins=document.createElement('button');ins.className='act';ins.textContent='installed ✓';ins.onclick=()=>pkgResolve(p.name,'installed');
+       const dis=document.createElement('button');dis.className='act danger';dis.textContent='dismiss';dis.onclick=()=>pkgResolve(p.name,'dismiss');
+       r.append(cb,nm,wy,ins,dis);w.appendChild(r);});
+     const gen=document.createElement('button');gen.className='act big';gen.style.marginTop='10px';
+     gen.textContent='⬇ Generate pkg-installer.sh (checked)';gen.onclick=genInstaller;w.appendChild(gen);}
+   if(installed.length){const e=document.createElement('div');e.className='meta';e.style.marginTop='10px';
+     e.textContent='Installed & available to the agent: '+installed.join(', ');w.appendChild(e);}}
+ function pkgResolve(name,action){fetch('/control/pkg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,name})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?(action==='installed'?name+' marked installed ✓':name+' dismissed'):'failed');loadPkgs();});}
+ function genInstaller(){const names=[...document.querySelectorAll('.pkgck:checked')].map(c=>c.value);
+   if(!names.length){toast('tick some packages first');return;}
+   fetch('/control/pkg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'installer',names})})
+   .then(r=>r.json()).then(d=>{if(!d.ok){toast(d.error||'failed');return;}
+     $('#modaltitle').textContent='📦 pkg-installer.sh ('+d.count+' package'+(d.count>1?'s':'')+')';
+     $('#modalout').textContent='Run this on the Pi:\\n\\n  sudo bash '+d.path+'\\n\\n--- script ---\\n'+d.script;
+     $('#fixbtn').style.display='none';$('#modal').classList.add('show');});}
  function viewfile(path){$('#modaltitle').textContent='📄 '+path;$('#modalout').textContent='loading…';
    $('#fixbtn').style.display='none';$('#modal').classList.add('show');
    fetch('/file/'+path.split('/').map(encodeURIComponent).join('/'))
@@ -669,6 +698,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    const tp=gf('s_temp'); if(tp!=null)llm.temperature=tp;
    const mt=gn('s_maxtok'); if(mt!=null)llm.max_tokens=mt;
    const rt=gn('s_timeout'); if(rt!=null)llm.request_timeout=rt;
+   const lt=gn('s_localtimeout'); if(lt!=null)llm.local_timeout=lt;
    const interests=(gv('s_interests')||'').split('\\n').map(x=>x.trim()).filter(Boolean);
    const s={loop,llm,alerts:{notify_every_cycle:gc('s_notify'),
      ntfy:{topic:gv('s_ntfy'),enabled:!!gv('s_ntfy')},led:{enabled:!!ll}},env,interests};
@@ -924,6 +954,41 @@ def create_app(cfg, mem: Memory) -> Flask:
                             "img": (not isd) and low.endswith(img_exts)})
         entries.sort(key=lambda e: (not e["dir"], e["name"].lower()))
         return {"ok": True, "path": rel, "entries": entries}
+
+    @app.route("/api/pkgs")
+    def api_pkgs():
+        return {"ok": True, "requests": mem.pkg_requests(), "installed": mem.installed_extras()}
+
+    @app.route("/control/pkg", methods=["POST"])
+    def control_pkg():
+        d = request.get_json(silent=True) or {}
+        action = d.get("action")
+        if action == "installed":
+            mem.resolve_package((d.get("name") or "").strip(), installed=True)
+            return {"ok": True}
+        if action == "dismiss":
+            mem.resolve_package((d.get("name") or "").strip(), installed=False)
+            return {"ok": True}
+        if action == "installer":
+            # Sanitise to valid apt package names so the generated script can't be
+            # injected into (the agent proposes these; a crafted name must not run).
+            names = [n for n in (d.get("names") or [])
+                     if isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+._:-]*", n)]
+            if not names:
+                return {"ok": False, "error": "no valid package names selected"}, 400
+            script = ("#!/usr/bin/env bash\n"
+                      "# Generated by the DRONGO dashboard. Review, then run:\n"
+                      "#   sudo bash " + str(cfg.base_dir / "pkg-installer.sh") + "\n"
+                      "set -e\nsudo apt-get update\nsudo apt-get install -y " + " ".join(names) + "\n")
+            path = cfg.base_dir / "pkg-installer.sh"
+            try:
+                path.write_text(script, encoding="utf-8")
+                os.chmod(path, 0o755)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}, 500
+            log.info("wrote pkg-installer.sh for: %s", " ".join(names))
+            return {"ok": True, "path": str(path), "count": len(names), "script": script}
+        return {"ok": False, "error": "unknown action"}, 400
 
     @app.route("/control/scan", methods=["POST"])
     def control_scan():
@@ -1234,6 +1299,7 @@ def _settings_view(cfg, mem):
         "temperature": llm_db.get("temperature", cfg.get("llm", "temperature", default=0.7)),
         "max_tokens": llm_db.get("max_tokens", cfg.get("llm", "max_tokens", default=2048)),
         "req_timeout": llm_db.get("request_timeout", cfg.get("llm", "request_timeout", default=120)),
+        "local_timeout": llm_db.get("local_timeout", cfg.get("llm", "local_timeout", default=300)),
         "min_call": llm_db.get("min_call_interval_seconds", cfg.get("llm", "min_call_interval_seconds", default=3)),
         "prefer": llm_db.get("prefer", cfg.get("llm", "prefer", default="cloud_first")),
         "notify": al_db.get("notify_every_cycle", cfg.get("alerts", "notify_every_cycle", default=False)),

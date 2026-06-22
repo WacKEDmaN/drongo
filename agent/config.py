@@ -52,7 +52,8 @@ DEFAULTS = {
         "prefer": "cloud_first",   # cloud_first | local_first
         "temperature": 0.7,
         "max_tokens": 2048,
-        "request_timeout": 120,
+        "request_timeout": 120,             # per cloud call
+        "local_timeout": 300,               # local (Ollama) inference is slow — give it longer
         "min_call_interval_seconds": 3.0,   # throttle bursts to spare free-tier rate limits
         "providers": [],
     },
@@ -189,7 +190,8 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
     for k, v in (settings.get("loop") or {}).items():
         cfg.data.setdefault("loop", {})[k] = v
     llm = settings.get("llm") or {}
-    for k in ("min_call_interval_seconds", "prefer", "temperature", "max_tokens", "request_timeout"):
+    for k in ("min_call_interval_seconds", "prefer", "temperature", "max_tokens",
+              "request_timeout", "local_timeout"):
         if k in llm:
             cfg.data.setdefault("llm", {})[k] = llm[k]
     pov = llm.get("providers") or {}
