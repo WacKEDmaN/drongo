@@ -413,6 +413,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
        <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}{% if p.custom %} <span class=meta>(custom)</span>{% endif %}</label>
        <input id="pm_{{ p.name }}" value="{{ p.model }}" placeholder="model">
        {% if p.key_env %}<input id="pk_{{ p.name }}" type=password autocomplete=off placeholder="{{ 'key set — blank keeps it' if p.key_set else 'paste '+p.key_env }}">{% endif %}
+       <button class="act" onclick="moveProvider(this,-1)" title="try earlier">▲</button>
+       <button class="act" onclick="moveProvider(this,1)" title="try later">▼</button>
        {% if p.custom %}<button class="act danger" onclick="removeProvider('{{ p.name }}')" title="remove this provider">✕</button>{% endif %}
      </div>
     {% endfor %}
@@ -591,6 +593,14 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
  function removeProvider(name){if(!confirm('Remove provider '+name+'?'))return;
    fetch('/control/remove_provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
    .then(r=>r.json()).then(d=>{if(d.ok){toast('removed — restart to apply');setTimeout(()=>location.reload(),700);}else toast(d.error||'failed');});}
+ function moveProvider(btn,dir){const row=btn.closest('.prow');if(!row)return;
+   const sib=dir<0?row.previousElementSibling:row.nextElementSibling;
+   if(sib&&sib.classList.contains('prow')){
+     if(dir<0)row.parentNode.insertBefore(row,sib);else row.parentNode.insertBefore(sib,row);
+     saveProviderOrder();}}
+ function saveProviderOrder(){const order=[...document.querySelectorAll('.prow')].map(r=>r.dataset.name);
+   fetch('/control/provider_order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order})})
+   .then(r=>r.json()).then(d=>toast(d.ok?'order saved — restart to apply':(d.error||'failed')));}
  function toggleTurbo(on){fetch('/control/turbo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on})})
    .then(r=>r.json()).then(d=>toast(d.ok?('⚡ Turbo '+(on?'ON — going hard':'off')):(d.error||'failed')));}
  function hwRow(k,v){const r=document.createElement('div');r.className='row';
@@ -1322,6 +1332,17 @@ def create_app(cfg, mem: Memory) -> Flask:
         log.info("added custom provider '%s' (%s)", name, base_url)
         return {"ok": True, "name": name}
 
+    @app.route("/control/provider_order", methods=["POST"])
+    def control_provider_order():
+        order = (request.get_json(silent=True) or {}).get("order")
+        if not isinstance(order, list):
+            return {"ok": False, "error": "bad order"}, 400
+        cur = mem.recall("settings") or {}
+        cur.setdefault("llm", {})["order"] = [str(n) for n in order if n]
+        mem.remember("settings", cur)
+        log.info("provider order set: %s", " > ".join(str(n) for n in order))
+        return {"ok": True}
+
     @app.route("/control/remove_provider", methods=["POST"])
     def control_remove_provider():
         name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
@@ -1523,6 +1544,10 @@ def _settings_view(cfg, mem):
         })
         if c.get("api_key_env"):
             pkey[nm] = c["api_key_env"]
+    order = llm_db.get("order")
+    if isinstance(order, list) and order:                 # reflect chosen try-order
+        idx = {n: i for i, n in enumerate(order)}
+        sv["providers"].sort(key=lambda p: idx.get(p["name"], len(idx) + 1))
     return sv, pkey
 
 

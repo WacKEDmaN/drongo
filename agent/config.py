@@ -212,6 +212,12 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
                 and spec["name"] not in existing:
             provs.append(dict(spec))
             existing.add(spec["name"])
+    # Dashboard-chosen try-order (names first-to-last). Unlisted providers keep
+    # their relative order at the end. (Applies in cloud_first mode — the default.)
+    order = llm.get("order")
+    if isinstance(order, list) and order:
+        idx = {n: i for i, n in enumerate(order)}
+        provs.sort(key=lambda p: idx.get(p.get("name"), len(idx) + 1))
     cfg.data["llm"]["providers"] = provs
     pov = llm.get("providers") or {}
     for p in cfg.data.get("llm", {}).get("providers", []) or []:
