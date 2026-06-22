@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import time
@@ -77,7 +78,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
             continue
         section = {
             "shell": "shell", "write_file": "files", "read_file": "files",
-            "list_dir": "files", "web_search": "web", "web_fetch": "web",
+            "list_dir": "files", "delete_path": "files", "web_search": "web", "web_fetch": "web",
             "generate_image": "images", "discover_sensors": "sensors",
             "make_dashboard": "dashboard", "send_alert": "alerts",
             "remember": "files", "recall": "files",
@@ -195,6 +196,30 @@ def list_dir(ctx: ToolContext, path: str = ".", **_):
             entries.append(f"{name} ({kind})")
         return "\n".join(entries) or "(empty)"
     except Exception as e:
+        return f"ERROR: {e}"
+
+
+@tool("delete_path",
+      "Delete a file or folder you no longer need (only under projects/, "
+      "dashboards/ or images/). Use to tidy up scratch/temp files.", "path: str")
+def delete_path(ctx: ToolContext, path: str = "", **_):
+    try:
+        full = os.path.realpath(safeguard.safe_join(ctx.workspace, path))
+    except Exception:
+        return "ERROR: path escapes the workspace"
+    ws = os.path.realpath(ctx.workspace)
+    allowed = tuple(os.path.join(ws, d) + os.sep for d in ("projects", "dashboards", "images"))
+    if not full.startswith(allowed):
+        return "ERROR: can only delete things under projects/, dashboards/ or images/"
+    if not os.path.exists(full):
+        return f"already gone: {path}"
+    try:
+        if os.path.isdir(full) and not os.path.islink(full):
+            shutil.rmtree(full)
+            return f"deleted folder {path}"
+        os.remove(full)
+        return f"deleted {path}"
+    except OSError as e:
         return f"ERROR: {e}"
 
 
@@ -457,6 +482,49 @@ def scan_and_diff_hardware(mem, cfg, force=False):
         mem.remember("new_hardware", {"items": new, "ts": time.time()})
         mem.add_journal("note", "New hardware detected", ", ".join(new), ok=True)
     return info, new
+
+
+_JUNK_NAMES = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ipynb_checkpoints",
+               ".DS_Store", "Thumbs.db"}
+_JUNK_EXTS = (".pyc", ".pyo", ".tmp", ".temp", ".swp", ".swo", ".bak", ".orig")
+
+
+def housekeep(cfg, empty_dir_age=3600) -> str:
+    """Janitor: remove build junk (__pycache__ / *.pyc / editor temp files) and
+    stale EMPTY folders under the generated dirs. Deliberately conservative —
+    only touches projects/, dashboards/ and images/, never the workspace root
+    (control markers), state, logs or the venv, and only deletes empty dirs that
+    have sat unchanged for a while (so it won't nuke a project mid-build).
+    Returns a one-line summary of what was removed, or ''."""
+    removed = []
+    for root in (cfg.projects, cfg.dashboards, cfg.images):
+        root = str(root)
+        if not os.path.isdir(root):
+            continue
+        for base, dirs, files in os.walk(root, topdown=False):
+            for f in files:
+                if f in _JUNK_NAMES or f.lower().endswith(_JUNK_EXTS):
+                    try:
+                        os.remove(os.path.join(base, f)); removed.append(f)
+                    except OSError:
+                        pass
+            for dname in dirs:
+                if dname in _JUNK_NAMES:
+                    p = os.path.join(base, dname)
+                    if not os.path.islink(p):
+                        try:
+                            shutil.rmtree(p); removed.append(dname + "/")
+                        except OSError:
+                            pass
+            if base != root:                       # never remove the root dirs themselves
+                try:
+                    if not os.listdir(base) and (time.time() - os.path.getmtime(base)) > empty_dir_age:
+                        os.rmdir(base); removed.append(os.path.basename(base) + "/")
+                except OSError:
+                    pass
+    if not removed:
+        return ""
+    return f"cleaned {len(removed)} item(s): " + ", ".join(removed[:8]) + ("…" if len(removed) > 8 else "")
 
 
 def hardware_summary() -> dict:

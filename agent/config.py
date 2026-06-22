@@ -39,6 +39,8 @@ DEFAULTS = {
         "max_recent_tasks": 12,
         "max_resume_attempts": 8,    # keep working ONE project this many cycles before giving up
         "hw_scan_interval_seconds": 1200,  # re-scan buses for newly-attached hardware this often
+        "cleanup_enabled": True,     # janitor: remove build junk + stale empty folders
+        "cleanup_interval_seconds": 1800,
     },
     "llm": {
         "prefer": "cloud_first",   # cloud_first | local_first

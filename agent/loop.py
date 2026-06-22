@@ -71,6 +71,10 @@ Rules:
 - DOCUMENT every project: alongside the code write a short README.md (in the same
   projects/ folder) covering what it is, how to run it, what it needs, and how to
   use it. Keep code commented where it helps.
+- TIDY UP after yourself. Keep each project in ONE folder under projects/<name>/.
+  Delete scratch, temp, downloaded, or experimental files you no longer need with
+  delete_path — don't leave half-baked junk or empty folders lying around. A
+  finished project folder should contain just its working files + README.
 - IT MUST WORK FOR YOUR HUMAN, not just for you. Two ways they run things:
     * From the dashboard: .py files have a "▶ run" button; HTML pages and live
       dashboards open from the Projects/Home file links. Make sure those work.
@@ -385,12 +389,30 @@ class AgentLoop:
         if new:
             log.info("new hardware detected: %s", new)
 
+    def _janitor(self):
+        """Throttled cleanup of build junk + stale empty folders it left behind."""
+        if not self.cfg.get("loop", "cleanup_enabled", default=True):
+            return
+        interval = self.cfg.get("loop", "cleanup_interval_seconds", default=1800)
+        if time.time() - (self.mem.recall("last_cleanup") or 0) < interval:
+            return
+        self.mem.remember("last_cleanup", time.time())
+        try:
+            summary = tools.housekeep(self.cfg)
+        except Exception as e:
+            log.warning("housekeep failed: %s", e)
+            return
+        if summary:
+            log.info(summary)
+            self.mem.push_step("info", "🧹 " + summary)
+
     def run_cycle(self) -> dict:
         t0 = time.time()
         ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
                                 alerter=self.alerter, log=log, safe_mode=self.safe_mode)
         max_attempts = self.cfg.get("loop", "max_resume_attempts", default=8)
         self._scan_hardware()                           # react to anything newly plugged in
+        self._janitor()                                 # tidy up junk + empty folders
         saved = self.mem.recall("current_project")
         saved = saved if isinstance(saved, dict) else None
 
