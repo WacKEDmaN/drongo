@@ -71,7 +71,11 @@ llm:
     - name: gemini
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
       api_key_env: GEMINI_API_KEY
-      model: gemini-2.0-flash
+      # 'gemini-flash-latest' tracks the current Flash model so it won't 404 when
+      # Google retires a numbered version (gemini-2.0-flash was shut down
+      # 2026-06-01). Pin a specific id (gemini-2.5-flash / gemini-3.5-flash) if
+      # you prefer stable behaviour over always-newest.
+      model: gemini-flash-latest
       rpm_limit: 14
       daily_limit: 1400
       enabled: true

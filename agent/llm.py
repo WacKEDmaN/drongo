@@ -181,12 +181,25 @@ class Router:
             providers.sort(key=lambda p: 0 if p.is_local else 1)
         # cloud_first keeps the configured order (locals usually listed last).
         self.providers = providers
-        self._disabled = set()   # providers skipped this session (config errors)
         if not providers:
             log.warning("No usable LLM providers configured!")
 
     def provider_names(self):
         return [p.name for p in self.providers]
+
+    @staticmethod
+    def _cooldown_for(status: int) -> int:
+        """How long to rest a provider after an HTTP error, chosen by how likely
+        the error is to clear on its own. Always bounded so the provider gets
+        retried later — we NEVER disable one for the whole session, because that
+        wedges the agent until a manual restart when it's the only provider."""
+        if status in (401, 403):
+            return 1800        # auth/key problem: won't self-heal soon, retry rarely
+        if status == 404:
+            return 900         # retired/wrong model id: needs a config fix
+        if 400 <= status < 500 and status not in (408, 409, 425, 429):
+            return 300         # other client error: may clear as context shrinks
+        return 60              # 5xx / transient
 
     def chat(self, messages, *, temperature=None, max_tokens=None):
         """Return (text, provider_name). Raises AllProvidersFailed."""
@@ -201,8 +214,6 @@ class Router:
         errors = []
         manual_off = set(self.mem.providers_off())             # dashboard kill-switches (live)
         for p in self.providers:
-            if p.name in self._disabled:                       # config error this session
-                continue
             if p.name in manual_off:                           # turned off from the dashboard
                 continue
             if not p.is_local and not self.mem.can_use(p.name, p.rpm_limit, p.daily_limit):
@@ -221,17 +232,22 @@ class Router:
                     self.mem.set_cooldown(p.name, e.seconds)
                 errors.append(f"{p.name}: 429")
             except ProviderError as e:
-                if 400 <= e.status < 500 and e.status not in (408, 409, 425):
-                    # Bad model id / key / request won't fix itself on retry, and
-                    # a long cooldown feels "stuck". Just skip it for THIS run; a
-                    # restart (after you fix the config) re-enables it.
-                    self._disabled.add(p.name)
-                    log.warning("%s disabled this session (HTTP %s) - fix config & "
-                                "restart to re-enable: %s", p.name, e.status, e.body)
-                else:                                          # 5xx etc - transient
-                    if not p.is_local:
-                        self.mem.set_cooldown(p.name, 60)
-                    log.warning("%s HTTP %s: %s", p.name, e.status, e.body)
+                # NEVER disable a provider for the whole session — that wedged the
+                # agent until a manual restart when it was the only/primary one.
+                # Always back off with a (bounded) cooldown so it auto-retries.
+                cool = self._cooldown_for(e.status)
+                if e.status == 404:
+                    log.warning("%s HTTP 404 — model id likely retired/wrong; cooling "
+                                "%ds (update the model on the dashboard): %s",
+                                p.name, cool, e.body)
+                elif e.status in (401, 403):
+                    log.warning("%s auth error HTTP %s — check the API key; cooling "
+                                "%ds: %s", p.name, e.status, cool, e.body)
+                else:                                          # other 4xx / 5xx
+                    log.warning("%s HTTP %s; cooling %ds: %s",
+                                p.name, e.status, cool, e.body)
+                if not p.is_local:
+                    self.mem.set_cooldown(p.name, cool)
                 errors.append(f"{p.name}: HTTP {e.status}")
             except Exception as e:  # network, parse, etc.
                 log.warning("%s failed: %s", p.name, e)
