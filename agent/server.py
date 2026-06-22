@@ -157,11 +157,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .panel{border:1px solid var(--bd);border-radius:12px;margin:12px 0;background:linear-gradient(180deg,var(--card2),var(--card))}
  .phead{width:100%;text-align:left;background:transparent;border:0;color:var(--fg);font:600 13px var(--mono);text-transform:uppercase;letter-spacing:.08em;padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
  .phead:hover{color:var(--ac)} .phead .chev{color:var(--mut);transition:transform .2s}
- .panel.open .phead .chev{transform:rotate(180deg);color:var(--ac)}
- .pbody{display:none;padding:0 16px 16px} .panel.open .pbody{display:block}
+ .panel.open > .phead .chev{transform:rotate(180deg);color:var(--ac)}
+ .pbody{display:none;padding:0 16px 16px} .panel.open > .pbody{display:block}
  .panel .panel{background:rgba(255,255,255,.018);border-color:var(--bd);border-radius:9px;margin:8px 0}
  .panel .panel .phead{font-size:12px;padding:11px 13px;letter-spacing:.06em;color:var(--mut)}
- .panel .panel.open .phead{color:var(--ac)} .panel .panel .pbody{padding:0 13px 12px}
+ .panel .panel.open > .phead{color:var(--ac)} .panel .panel .pbody{padding:0 13px 12px}
  .themes{display:flex;gap:7px;align-items:center}
  .swatch{width:16px;height:16px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
