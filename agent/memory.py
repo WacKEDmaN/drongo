@@ -115,13 +115,21 @@ class Memory:
         return [r["title"] for r in rows if r["title"]]
 
     def recent_projects(self, limit=12):
-        """Recently FINISHED/attempted projects with their type — richer than
-        titles alone so ideation can steer away from what it keeps building."""
+        """Recently FINISHED/attempted projects with type + tags — so ideation can
+        steer away from repeats AND toward what the human rated highly."""
         rows = self._conn.execute(
-            "SELECT title, task_type FROM journal WHERE kind='cycle' ORDER BY id DESC LIMIT ?",
+            "SELECT title, task_type, tags FROM journal WHERE kind='cycle' ORDER BY id DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return [{"title": r["title"] or "", "task_type": r["task_type"] or ""} for r in rows]
+        out = []
+        for r in rows:
+            try:
+                tags = json.loads(r["tags"] or "[]")
+            except Exception:
+                tags = []
+            out.append({"title": r["title"] or "", "task_type": r["task_type"] or "",
+                        "tags": tags if isinstance(tags, list) else []})
+        return out
 
     # ---- tags & the fix queue -----------------------------------------
     def set_tags(self, journal_id, tags):
@@ -162,6 +170,14 @@ class Memory:
         if s:
             self.remember("suggestion", "")
         return s
+
+    def push_step(self, kind, text):
+        """Append a short entry to the live-thinking ring buffer (last ~40) that
+        the dashboard tails, so you can watch the agent work in real time."""
+        v = self.recall("live_steps")
+        v = v if isinstance(v, list) else []
+        v.append({"k": kind, "txt": str(text)[:220], "ts": time.time()})
+        self.remember("live_steps", v[-40:])
 
     def providers_off(self) -> list:
         """Provider names the human has manually switched off from the dashboard

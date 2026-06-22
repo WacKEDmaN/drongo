@@ -122,6 +122,19 @@ _THEME_STOP = {
 }
 
 
+def _brief_args(args):
+    """Short, non-spammy one-liner of tool args for the live-thinking stream."""
+    if not isinstance(args, dict) or not args:
+        return ""
+    parts = []
+    for k, v in args.items():
+        s = str(v).replace("\n", " ").strip()
+        if len(s) > 38:
+            s = s[:38] + "…"
+        parts.append(f"{k}={s}")
+    return ", ".join(parts)[:110]
+
+
 def _recurring_themes(titles):
     """Subject words that appear across 2+ recent titles — what it keeps reusing
     (e.g. 'temp', 'cpu', 'sensor'), so ideation can be told to steer away."""
@@ -190,6 +203,7 @@ class AgentLoop:
 
     # ---- ideation ------------------------------------------------------
     def ideate(self, suggestion: str = "") -> dict:
+        self.mem.push_step("info", "🧠 deciding what to build next…")
         recent = self.mem.recent_projects(self.cfg.get("loop", "max_recent_tasks", default=12))
         interests = self.cfg.get("interests", default=[])
         hw = self.mem.recall("hardware")
@@ -223,6 +237,16 @@ class AgentLoop:
             last_type = recent[0]["task_type"] if recent else ""
             if last_type:
                 steer += f"\nYour LAST project was a {last_type}; make this a different type."
+            # Taste feedback: what your human rated on the dashboard.
+            loved = [r for r in recent if any(t in ("loved", "favourite", "favorite") for t in r["tags"])]
+            disliked = [r for r in recent if any(t in ("meh", "needs-fix", "disliked") for t in r["tags"])]
+            if loved:
+                lt = ", ".join(sorted({r["task_type"] for r in loved if r["task_type"]}))
+                steer += (f"\nYour human LOVED these — lean into that spirit"
+                          f"{' (' + lt + ')' if lt else ''}: " + ", ".join(r["title"] for r in loved[:4]) + ".")
+            if disliked:
+                steer += ("\nThey were unimpressed by / flagged these — steer away from that direction: "
+                          + ", ".join(r["title"] for r in disliked[:4]) + ".")
             # New hardware is the ONE thing that overrides "stop doing sensors":
             # reacting to something just plugged in is novel and exactly wanted.
             new_hw = self.mem.recall("new_hardware")
@@ -282,11 +306,15 @@ class AgentLoop:
                 messages = self._trim(messages)
                 continue
             if "final" in obj:
+                self.mem.push_step("ok", f"✓ finished: {str(obj['final'])[:140]}")
                 return str(obj["final"]), last_provider, messages, True
             name = obj.get("tool", "")
             args = obj.get("args", {}) or {}
             thought = obj.get("thought", "")
             log.info("[step %d/%d] %s -> %s", step + 1, self.max_steps, thought[:80], name)
+            if thought:
+                self.mem.push_step("think", f"… {thought[:160]}")
+            self.mem.push_step("tool", f"→ {name}({_brief_args(args)})")
             if name not in registry:
                 observation = f"ERROR: unknown tool '{name}'. Available: {list(registry)}"
             else:
@@ -296,6 +324,8 @@ class AgentLoop:
                     observation = f"ERROR: bad args for {name}: {e}"
                 except Exception as e:
                     observation = f"ERROR: {name} raised {e}"
+            self.mem.push_step("warn" if observation.startswith("ERROR") else "ok",
+                               f"  {observation.splitlines()[0][:150] if observation else 'done'}")
             messages.append({"role": "assistant", "content": text[:1200]})
             messages.append({"role": "user", "content": f"Observation:\n{observation}"})
             messages = self._trim(messages)
@@ -371,6 +401,7 @@ class AgentLoop:
             attempt = saved.get("attempts", 0) + 1
             prior_artifacts = saved.get("artifacts", [])
             log.info("Resuming '%s' (attempt %d/%d)", task["title"], attempt, max_attempts)
+            self.mem.push_step("info", f"↻ resuming: {task['title']} (attempt {attempt})")
         else:
             if saved:
                 self.mem.remember("current_project", None)
@@ -387,6 +418,7 @@ class AgentLoop:
                     return {"ok": False}
                 log.info("New project from your suggestion: %s [%s]",
                          task["title"], task["task_type"])
+                self.mem.push_step("info", f"💡 your suggestion → {task['title']} [{task['task_type']}]")
             elif fix:
                 arts = fix.get("artifacts") or []
                 task = {
@@ -401,6 +433,7 @@ class AgentLoop:
                     "provider": "",
                 }
                 log.info("Working a flagged fix: %s", fix.get("title"))
+                self.mem.push_step("info", f"🔧 fixing: {fix.get('title')}")
             else:
                 try:
                     task = self.ideate()
@@ -409,6 +442,7 @@ class AgentLoop:
                     self._alert_problem(f"Couldn't reach any LLM to plan a project: {e}")
                     return {"ok": False}
                 log.info("New project: %s [%s]", task["title"], task["task_type"])
+                self.mem.push_step("info", f"🆕 new project: {task['title']} [{task['task_type']}]")
 
         self.mem.remember("working_on", {"title": task["title"], "attempt": attempt,
                                          "type": task["task_type"]})
@@ -596,5 +630,6 @@ class AgentLoop:
             nap = max(60, nap)
             self.mem.remember("status", "sleeping")
             self.mem.remember("next_cycle_ts", time.time() + nap)
+            self.mem.push_step("think", f"😴 sleeping {nap}s until the next cycle")
             log.info("Sleeping %ds%s.", nap, " (safe mode)" if self.safe_mode else "")
             watchdog.sleep_with_heartbeat(self.cfg, nap, self._should_wake)
