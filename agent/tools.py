@@ -437,6 +437,28 @@ def hardware_devices(info: dict) -> list:
     return sorted(out)
 
 
+def scan_and_diff_hardware(mem, cfg, force=False):
+    """Shared by the agent loop and the dashboard's Scan button: run a hardware
+    scan (skipped if within the throttle window unless force=True), store the
+    inventory + device fingerprint, and if a device appeared since last time,
+    record a 'new_hardware' nudge for ideation + a journal note. Returns
+    (info, new_devices)."""
+    interval = cfg.get("loop", "hw_scan_interval_seconds", default=1200)
+    if not force and time.time() - (mem.recall("hw_last_scan") or 0) < interval:
+        return mem.recall("hardware"), []
+    info = collect_hardware()
+    mem.remember("hw_last_scan", time.time())
+    mem.remember("hardware", info)
+    devices = hardware_devices(info)
+    prev = mem.recall("hw_devices")
+    mem.remember("hw_devices", devices)
+    new = [] if not isinstance(prev, list) else [d for d in devices if d not in set(prev)]
+    if new:
+        mem.remember("new_hardware", {"items": new, "ts": time.time()})
+        mem.add_journal("note", "New hardware detected", ", ".join(new), ok=True)
+    return info, new
+
+
 def hardware_summary() -> dict:
     """Fast, non-intrusive snapshot of what's wired up — lists buses/devices and
     reads thermals, but does NOT probe i2c (so it never disturbs a device).

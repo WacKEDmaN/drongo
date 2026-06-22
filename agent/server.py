@@ -18,6 +18,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -140,6 +141,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .sw .sl::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;border-radius:50%;background:var(--mut);transition:.2s}
  .sw input:checked + .sl{border-color:var(--ac);box-shadow:0 0 10px rgba(51,230,164,.25)}
  .sw input:checked + .sl::before{transform:translateX(20px);background:var(--ac);box-shadow:0 0 8px var(--ac)}
+ #hwbody .row{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--bd);font:12.5px var(--mono)}
+ #hwbody .row span{color:var(--mut);flex:none} #hwbody .row b{color:var(--fg);text-align:right;word-break:break-all}
+ #hwbody .hd{color:var(--ac);font:11px var(--mono);text-transform:uppercase;letter-spacing:.1em;margin:10px 0 2px}
 </style></head><body>
 <header>
  <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
@@ -193,6 +197,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <h2>Host</h2>
   <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div>
   <p class="meta" id=sysmodel></p>
+
+  <h2>Hardware <span class=meta id=hwts></span></h2>
+  <div class="card">
+   <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
+   <p class="meta">Probes USB, I²C (addresses), SPI, 1-wire, cameras &amp; GPIO. Anything newly attached becomes the agent's next project idea.</p>
+   <div id=hwbody class=meta>loading…</div>
+  </div>
  </section>
 
  <section id=projects class="tab">
@@ -349,6 +360,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    history.replaceState(null,'','#'+t);
    if(t==='terminal'){const i=$('#terminput');if(i)setTimeout(()=>i.focus(),0);}
+   if(t==='system')loadHW();
  }
  document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
  if(location.hash){const t=location.hash.slice(1); if($('#'+t)) showTab(t);}
@@ -374,6 +386,32 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function toggleProvider(name,on){
    fetch('/control/provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,on})})
    .then(r=>r.json()).then(d=>{toast(d.ok?(name+' '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
+ function hwRow(k,v){const r=document.createElement('div');r.className='row';
+   const a=document.createElement('span');a.textContent=k;const b=document.createElement('b');b.textContent=v;
+   r.appendChild(a);r.appendChild(b);return r;}
+ function hwHead(t){const d=document.createElement('div');d.className='hd';d.textContent=t;return d;}
+ function hwRel(ts){const s=Math.max(0,Math.round(Date.now()/1000-ts));
+   return s<60?s+'s ago':s<3600?Math.round(s/60)+'m ago':Math.round(s/3600)+'h ago';}
+ function renderHW(info){const el=$('#hwbody');if(!el)return;el.replaceChildren();
+   if(!info||!info.model){el.textContent='No scan yet — hit “Scan for hardware”.';return;}
+   el.appendChild(hwRow('model',info.model||'—'));
+   el.appendChild(hwRow('cameras',(info.cameras||[]).join(', ')||'none'));
+   el.appendChild(hwRow('SPI',(info.spi||[]).join(', ')||'none'));
+   el.appendChild(hwRow('1-wire',(info.onewire||[]).join(', ')||'none'));
+   el.appendChild(hwRow('GPIO',(info.gpiochips||[]).join('  ')||'none'));
+   el.appendChild(hwRow('thermals',(info.thermals||[]).join('   ')||'none'));
+   if((info.i2c||[]).length){el.appendChild(hwHead('I²C buses'));
+     info.i2c.forEach(b=>el.appendChild(hwRow(b.bus,(b.addrs||[]).join('  ')||'(no devices)')));}
+   if((info.usb||[]).length){el.appendChild(hwHead('USB'));
+     info.usb.forEach(u=>el.appendChild(hwRow(u.id,u.name)));}
+   const ts=$('#hwts'); if(ts)ts.textContent=info.ts?('· scanned '+hwRel(info.ts)):'';}
+ function loadHW(){fetch('/api/hardware').then(r=>r.json()).then(d=>renderHW(d.info)).catch(()=>{});}
+ function scanHW(){const b=$('#hwbtn');if(b){b.disabled=true;b.textContent='⟳ scanning…';}
+   toast('scanning hardware…');
+   fetch('/control/scan',{method:'POST'}).then(r=>r.json()).then(d=>{
+     if(d.ok){renderHW(d.info);toast(d.new&&d.new.length?('found '+d.new.length+' new device(s) ✓'):'scan complete ✓');}
+     else toast(d.error||'scan failed');})
+   .catch(e=>toast('scan failed')).finally(()=>{if(b){b.disabled=false;b.textContent='⟳ Scan for hardware';}});}
  let _thist=[],_thi=0;
  function termAppend(t){const o=$('#termout');if(!o)return;o.textContent+=t;o.scrollTop=o.scrollHeight;}
  function termRun(){const i=$('#terminput');if(!i)return;const cmd=i.value;if(!cmd.trim())return;
@@ -530,7 +568,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
        renderHome(jd.journal||[]); renderProjects(jd.journal||[]); renderGallery(jd.images||[]);}).catch(()=>{});
    }
  }).catch(()=>{});}
- renderGallery(_images); refresh(); setInterval(refresh,4000);
+ renderGallery(_images); loadHW(); refresh(); setInterval(refresh,4000);
  (function(){const i=$('#terminput');if(i)i.addEventListener('keydown',e=>{
      if(e.key==='Enter'){e.preventDefault();termRun();}
      else if(e.key==='ArrowUp'){if(_thi>0){_thi--;i.value=_thist[_thi]||'';}e.preventDefault();}
@@ -557,6 +595,27 @@ def _parse_tags(raw):
         return json.loads(raw or "[]")
     except Exception:
         return []
+
+
+def _hw_view(info):
+    """Tidy the raw collect_hardware() dict into something the dashboard renders."""
+    info = info or {}
+    i2c = []
+    for bus in info.get("i2c_buses", []) or []:
+        addrs = sorted(tools._i2c_addresses((info.get("i2c_scan") or {}).get(bus, "")))
+        i2c.append({"bus": bus, "addrs": ["0x" + a for a in addrs]})
+    usb = []
+    for line in (info.get("usb") or "").splitlines():
+        m = re.search(r"\bID\s+([0-9a-fA-F]{4}:[0-9a-fA-F]{4})\s*(.*)$", line.strip())
+        if m:
+            usb.append({"id": m.group(1), "name": m.group(2).strip() or "device"})
+    thermals = [f"{t.get('type') or t.get('zone')} {t.get('celsius')}°C"
+                for t in info.get("thermals", []) or []]
+    gpio = [l for l in (info.get("gpiochips") or "").splitlines() if l.strip()]
+    return {"model": info.get("model") or "unknown", "usb": usb,
+            "cameras": info.get("video_devices", []) or [], "i2c": i2c,
+            "spi": info.get("spi_devices", []) or [], "onewire": info.get("onewire", []) or [],
+            "gpiochips": gpio, "thermals": thermals, "ts": info.get("ts")}
 
 
 def create_app(cfg, mem: Memory) -> Flask:
@@ -693,6 +752,22 @@ def create_app(cfg, mem: Memory) -> Flask:
         # when journal_sig from /api/system changes, so new projects pop in live.
         return {"journal": _journal(60),
                 "images": _ls(cfg.images, (".png", ".jpg", ".jpeg"))}
+
+    @app.route("/api/hardware")
+    def api_hardware():
+        return {"ok": True, "info": _hw_view(mem.recall("hardware"))}
+
+    @app.route("/control/scan", methods=["POST"])
+    def control_scan():
+        # Run a full hardware scan on demand (probes i2c etc.), store it, and
+        # surface any newly-attached devices to ideation — same path the agent
+        # uses on its timer, just forced now.
+        try:
+            info, new = tools.scan_and_diff_hardware(mem, cfg, force=True)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}, 500
+        log.info("dashboard hardware scan: %d new", len(new))
+        return {"ok": True, "new": new, "info": _hw_view(info or {})}
 
     @app.route("/api/status")
     def api_status():

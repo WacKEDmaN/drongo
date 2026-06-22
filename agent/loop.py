@@ -347,26 +347,13 @@ class AgentLoop:
         appeared since last time (USB camera, I2C/SPI/1-wire sensor, ...), records
         a 'new_hardware' nudge that ideation treats as a high-priority project
         idea — so the agent actually reacts to hardware you plug in."""
-        interval = self.cfg.get("loop", "hw_scan_interval_seconds", default=1200)
-        if time.time() - (self.mem.recall("hw_last_scan") or 0) < interval:
-            return
         try:
-            info = tools.collect_hardware()
+            _, new = tools.scan_and_diff_hardware(self.mem, self.cfg)
         except Exception as e:
             log.warning("hardware scan failed: %s", e)
             return
-        self.mem.remember("hw_last_scan", time.time())
-        self.mem.remember("hardware", info)            # keep the inventory fresh
-        devices = tools.hardware_devices(info)
-        prev = self.mem.recall("hw_devices")
-        self.mem.remember("hw_devices", devices)
-        if not isinstance(prev, list):
-            return                                      # first scan = baseline only
-        new = [d for d in devices if d not in set(prev)]
         if new:
             log.info("new hardware detected: %s", new)
-            self.mem.remember("new_hardware", {"items": new, "ts": time.time()})
-            self.mem.add_journal("note", "New hardware detected", ", ".join(new), ok=True)
 
     def run_cycle(self) -> dict:
         t0 = time.time()
