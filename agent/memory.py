@@ -90,6 +90,11 @@ class Memory:
     def count_journal(self) -> int:
         return self._conn.execute("SELECT COUNT(*) AS c FROM journal").fetchone()["c"]
 
+    def count_projects(self) -> int:
+        """How many projects it has concluded (finished or given up) all-time."""
+        return self._conn.execute(
+            "SELECT COUNT(*) AS c FROM journal WHERE kind='cycle'").fetchone()["c"]
+
     def reset_runtime(self, keep_keys=("settings",)) -> int:
         """Wipe ALL projects' history: clears the journal, the LLM usage/cooldown
         counters, and every kv entry EXCEPT keep_keys (settings are kept so API

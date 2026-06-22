@@ -578,6 +578,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      ['disk',s.disk_pct!=null?s.disk_used_gb+'/'+s.disk_total_gb+'GB':'—'],
      ['load',(s.load||[]).join(' ')||'—'],
      ['temps',(s.temps||[]).map(t=>t.label.replace('-thermal','')+' '+t.c+'°C').join('  ')||'—'],
+     ['projects',d.projects||0],
      ['fix queue',d.fix_queue||0],
    ];
    $('#sysgrid').innerHTML=cells.map(([k,v])=>{
@@ -764,6 +765,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             "next_cycle_in": max(0, int(nxt - time.time())) if nxt else None,
             "safe_mode": bool(mem.recall("safe_mode")),
             "fix_queue": len(mem.fix_queue()),
+            "projects": mem.count_projects(),
             "usage": _usage_view(),                 # live so cooldowns tick
             "suggestion": mem.get_suggestion(),
             "journal_sig": _journal_sig(_journal(60)),
