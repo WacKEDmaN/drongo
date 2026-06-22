@@ -89,8 +89,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .bar{height:5px;border-radius:3px;background:#05090d;margin-top:9px;overflow:hidden;border:1px solid var(--bd)}.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--ac2),var(--ac));box-shadow:0 0 10px rgba(51,230,164,.5)}
  .chip{display:inline-block;font:11px var(--mono);padding:3px 9px;border-radius:20px;border:1px solid var(--bd2);color:var(--mut);margin:0 5px 5px 0;background:rgba(255,255,255,.02)}
  .chip.fix{color:var(--bad);border-color:rgba(255,93,108,.45);background:rgba(255,93,108,.08)}
- button.act{font:600 12px var(--mono);background:rgba(255,255,255,.03);color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:6px 12px;cursor:pointer;margin:6px 6px 0 0;transition:.15s}
- button.act:hover{border-color:var(--ac);color:var(--ac);box-shadow:0 0 12px rgba(51,230,164,.2)} button.danger:hover{border-color:var(--bad);color:var(--bad);box-shadow:0 0 12px rgba(255,93,108,.2)}
+ .act{display:inline-block;font:600 12px var(--mono);background:rgba(255,255,255,.03);color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:6px 12px;cursor:pointer;margin:6px 6px 0 0;transition:.15s;text-decoration:none}
+ .act:hover{border-color:var(--ac);color:var(--ac);box-shadow:0 0 12px rgba(51,230,164,.2);text-decoration:none} .danger:hover{border-color:var(--bad);color:var(--bad);box-shadow:0 0 12px rgba(255,93,108,.2)}
  .big{font-size:13.5px;padding:11px 18px;margin:6px 10px 6px 0;border-radius:9px}
  .runbtn{font:11px var(--mono);padding:2px 8px;margin-left:5px;background:rgba(51,230,164,.08);color:var(--ok);border:1px solid rgba(51,230,164,.4);border-radius:6px;cursor:pointer}
  .runbtn:hover{background:rgba(51,230,164,.18);box-shadow:0 0 10px rgba(51,230,164,.3)}
@@ -125,6 +125,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .modal .box{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--bd2);border-radius:14px;max-width:820px;width:100%;max-height:84vh;overflow:auto;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(51,230,164,.08)}
  .modal .box h3{font:600 15px var(--mono);margin:0 0 8px}
  .modal pre{white-space:pre-wrap;word-break:break-word;font:12.5px/1.55 var(--mono);background:#03060a;padding:12px;border-radius:8px;margin:0;border:1px solid var(--bd);color:#bfe9d6}
+ .lightbox{position:fixed;inset:0;z-index:25;background:rgba(2,5,9,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px}
+ .lightbox.show{display:flex}
+ .lightbox img{max-width:92vw;max-height:76vh;object-fit:contain;border:1px solid var(--bd2);border-radius:10px;box-shadow:0 0 50px rgba(51,230,164,.18)}
+ .lbcap{font:12.5px var(--mono);color:var(--ac);text-shadow:0 0 8px rgba(51,230,164,.4);max-width:92vw;word-break:break-all;text-align:center}
+ .lbbtns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
+ #gallerygrid .grid{margin-top:4px}
+ .gal-empty{color:var(--mut);font:12px var(--mono)}
 </style></head><body>
 <header>
  <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
@@ -136,6 +143,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <button class="on" data-t=home>Home</button>
   <button data-t=system>System</button>
   <button data-t=projects>Projects</button>
+  <button data-t=gallery>Gallery</button>
   {% if allow_terminal %}<button data-t=terminal>Terminal</button>{% endif %}
   <button data-t=control>Control</button>
  </nav>
@@ -157,9 +165,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     </div>
    {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
    </div>
-   <div id=galwrap>{% if images %}<h2>Gallery</h2><div class="grid">
-     {% for im in images %}<a href="/file/images/{{ im }}" target=_blank><img loading=lazy src="/file/images/{{ im }}"></a>{% endfor %}
-   </div>{% endif %}</div>
   </div>
   <aside class=homeside>
    <div class=card>
@@ -209,6 +214,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <button class="act danger" onclick="delproj({{ j.id }},this)">🗑 Delete</button>
    </div>
   {% else %}<p class="meta">No finished projects yet.</p>{% endfor %}
+  </div>
+ </section>
+
+ <section id=gallery class="tab">
+  <h2>Gallery — images it has generated <span class=meta id=galcount></span></h2>
+  <div id=gallerygrid>
+   {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/file/images/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
+   {% else %}<p class="meta">No images yet — it fills this in as it makes creative_image projects.</p>{% endif %}
   </div>
  </section>
 
@@ -285,6 +298,17 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <button class="act danger" id=fixbtn style="display:none" onclick="fixFromRun()">🔧 Fix this with the error above</button>
     <button class="act" onclick="document.getElementById('modal').classList.remove('show')">close</button></div>
 </div>
+<div class=lightbox id=lightbox onclick="if(event.target===this)closeLightbox()">
+  <div class=lbcap id=lbcap></div>
+  <img id=lbimg alt="">
+  <div class=lbbtns>
+    <button class="act" onclick="lbNav(-1)">◀ prev</button>
+    <span class=meta id=lbpos></span>
+    <button class="act" onclick="lbNav(1)">next ▶</button>
+    <a class="act" id=lbopen target=_blank href="#">open ↗</a>
+    <button class="act" onclick="closeLightbox()">close ✕</button>
+  </div>
+</div>
 <script>
  const $=s=>document.querySelector(s);
  function showTab(t){
@@ -344,6 +368,23 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  const PKEY={{ pkey_json|safe }};
  const ALLOW_RUN={{ allow_run|tojson }};
  let lastSig={{ jsig|tojson }};
+ let _images={{ images|tojson }},_lbi=0;
+ const imgURL=n=>'/file/images/'+encodeURIComponent(n);
+ function renderGallery(images){_images=images||[];
+   const wrap=$('#gallerygrid'); const cnt=$('#galcount'); if(cnt)cnt.textContent=_images.length?('· '+_images.length):'';
+   if(!wrap)return; wrap.replaceChildren();
+   if(!_images.length){const p=document.createElement('p');p.className='gal-empty';p.textContent='No images yet — it fills this in as it makes creative_image projects.';wrap.appendChild(p);return;}
+   const grid=document.createElement('div');grid.className='grid';
+   _images.forEach((im,i)=>{const a=document.createElement('a');a.href='#';
+     a.addEventListener('click',e=>{e.preventDefault();openLightbox(i);});
+     const img=document.createElement('img');img.loading='lazy';img.src=imgURL(im);img.alt=im;a.appendChild(img);grid.appendChild(a);});
+   wrap.appendChild(grid);}
+ function openLightbox(i){if(!_images.length)return;_lbi=(i+_images.length)%_images.length;
+   const n=_images[_lbi];$('#lbimg').src=imgURL(n);$('#lbcap').textContent=n;
+   $('#lbpos').textContent=(_lbi+1)+' / '+_images.length;$('#lbopen').href=imgURL(n);
+   $('#lightbox').classList.add('show');}
+ function lbNav(d){openLightbox(_lbi+d);}
+ function closeLightbox(){$('#lightbox').classList.remove('show');$('#lbimg').src='';}
  const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const fileURL=p=>'/file/'+p.split('/').map(encodeURIComponent).join('/');
  function mkArtLink(a){const l=document.createElement('a');l.className='art';l.textContent='▸ '+a.label;
@@ -376,16 +417,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    c.appendChild(mk('act','+ tag',()=>addtag(j.id)));
    c.appendChild(mk('act danger','🗑 Delete',e=>delproj(j.id,e.currentTarget)));
    return c;}
- function renderHome(journal,images){
-   const list=$('#homelist'); if(list){list.replaceChildren();
-     if(journal.length)journal.forEach(j=>list.appendChild(mkHomeCard(j)));
-     else{const p=document.createElement('p');p.className='meta';p.textContent='Nothing yet — give it a little time.';list.appendChild(p);}}
-   const gw=$('#galwrap'); if(gw){gw.replaceChildren();
-     if(images&&images.length){const h=document.createElement('h2');h.textContent='Gallery';gw.appendChild(h);
-       const grid=document.createElement('div');grid.className='grid';
-       images.forEach(im=>{const a=document.createElement('a');a.href='/file/images/'+encodeURIComponent(im);a.target='_blank';
-         const img=document.createElement('img');img.loading='lazy';img.src='/file/images/'+encodeURIComponent(im);a.appendChild(img);grid.appendChild(a);});
-       gw.appendChild(grid);}}}
+ function renderHome(journal){
+   const list=$('#homelist'); if(!list)return; list.replaceChildren();
+   if(journal.length)journal.forEach(j=>list.appendChild(mkHomeCard(j)));
+   else{const p=document.createElement('p');p.className='meta';p.textContent='Nothing yet — give it a little time.';list.appendChild(p);}}
  function renderProjects(journal){const list=$('#projlist'); if(!list)return; list.replaceChildren();
    const projs=journal.filter(j=>j.kind==='cycle');
    if(projs.length)projs.forEach(j=>list.appendChild(mkProjCard(j)));
@@ -453,15 +488,19 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    if(d.journal_sig!==undefined&&d.journal_sig!==lastSig){
      lastSig=d.journal_sig;
      fetch('/api/journal').then(r=>r.json()).then(jd=>{
-       renderHome(jd.journal||[],jd.images||[]); renderProjects(jd.journal||[]);}).catch(()=>{});
+       renderHome(jd.journal||[]); renderProjects(jd.journal||[]); renderGallery(jd.images||[]);}).catch(()=>{});
    }
  }).catch(()=>{});}
- refresh(); setInterval(refresh,4000);
- (function(){const i=$('#terminput');if(!i)return;
-   i.addEventListener('keydown',e=>{
+ renderGallery(_images); refresh(); setInterval(refresh,4000);
+ (function(){const i=$('#terminput');if(i)i.addEventListener('keydown',e=>{
      if(e.key==='Enter'){e.preventDefault();termRun();}
      else if(e.key==='ArrowUp'){if(_thi>0){_thi--;i.value=_thist[_thi]||'';}e.preventDefault();}
      else if(e.key==='ArrowDown'){if(_thi<_thist.length-1){_thi++;i.value=_thist[_thi]||'';}else{_thi=_thist.length;i.value='';}e.preventDefault();}
+   });
+   document.addEventListener('keydown',e=>{
+     if(e.key==='Escape'){closeLightbox();const m=$('#modal');if(m)m.classList.remove('show');}
+     else if($('#lightbox').classList.contains('show')){
+       if(e.key==='ArrowLeft')lbNav(-1); else if(e.key==='ArrowRight')lbNav(1);}
    });})();
 </script>
 </body></html>"""
