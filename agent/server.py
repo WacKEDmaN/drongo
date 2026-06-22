@@ -159,6 +159,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .phead:hover{color:var(--ac)} .phead .chev{color:var(--mut);transition:transform .2s}
  .panel.open .phead .chev{transform:rotate(180deg);color:var(--ac)}
  .pbody{display:none;padding:0 16px 16px} .panel.open .pbody{display:block}
+ .panel .panel{background:rgba(255,255,255,.018);border-color:var(--bd);border-radius:9px;margin:8px 0}
+ .panel .panel .phead{font-size:12px;padding:11px 13px;letter-spacing:.06em;color:var(--mut)}
+ .panel .panel.open .phead{color:var(--ac)} .panel .panel .pbody{padding:0 13px 12px}
  .themes{display:flex;gap:7px;align-items:center}
  .swatch{width:16px;height:16px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
@@ -317,35 +320,73 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <button class=phead onclick="togglePanel(this)">Settings <span class=chev>▾</span></button>
    <div class="pbody set">
    <p class="meta" style="margin-top:0">Stored on the agent; “Save &amp; Restart” to apply.</p>
-   <h3>Personality &amp; interests</h3>
-   <label>Persona — how it behaves and talks<textarea id=s_persona rows=5>{{ sv.persona }}</textarea></label>
-   <label>Interests — one per line; it picks its projects from these (add / edit / remove freely)<textarea id=s_interests rows=7>{{ sv.interests_text }}</textarea></label>
 
-   <h3>Cooldowns &amp; loop</h3>
-   <label>Seconds between projects (cycle gap)<input id=s_interval value="{{ sv.loop.interval_seconds }}"></label>
-   <label>Jitter (± seconds)<input id=s_jitter value="{{ sv.loop.jitter_seconds }}"></label>
-   <label>Tool steps per cycle<input id=s_steps value="{{ sv.loop.max_steps }}"></label>
-   <label>Resume attempts before giving up on a project<input id=s_attempts value="{{ sv.loop.max_resume_attempts }}"></label>
-   <label>Min seconds between LLM calls (throttle)<input id=s_minc value="{{ sv.min_call }}"></label>
-   <label>Provider order<select id=s_prefer>
-     <option value=cloud_first {{ 'selected' if sv.prefer=='cloud_first' }}>cloud first</option>
-     <option value=local_first {{ 'selected' if sv.prefer=='local_first' }}>local first</option></select></label>
-
-   <h3>Providers &amp; API keys</h3>
-   {% for p in sv.providers %}
-    <div class=prow data-name="{{ p.name }}">
-      <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}</label>
-      <input id="pm_{{ p.name }}" value="{{ p.model }}" placeholder="model">
-      {% if p.key_env %}<input id="pk_{{ p.name }}" type=password autocomplete=off placeholder="{{ 'key set — blank keeps it' if p.key_set else 'paste '+p.key_env }}">{% endif %}
+   <div class="panel" data-panel=set-persona>
+    <button class=phead onclick="togglePanel(this)">Personality &amp; interests<span class=chev>▾</span></button>
+    <div class=pbody>
+     <label>Persona — how it behaves and talks<textarea id=s_persona rows=5>{{ sv.persona }}</textarea></label>
+     <label>Interests — one per line; it picks its projects from these<textarea id=s_interests rows=7>{{ sv.interests_text }}</textarea></label>
     </div>
-   {% endfor %}
+   </div>
 
-   <h3>Alerts</h3>
-   <label><input type=checkbox id=s_notify {{ 'checked' if sv.notify }}> Alert on every cycle (not just completions)</label>
-   <label>Discord webhook URL<input id=s_discord type=password autocomplete=off placeholder="{{ 'set — blank keeps it' if sv.discord_set else 'paste webhook URL' }}"></label>
-   <label>ntfy topic (optional)<input id=s_ntfy value="{{ sv.ntfy }}"></label>
-   <label>LED gpiochip<input id=s_ledchip value="{{ sv.led_chip }}"></label>
-   <label>LED line offset (blank = LED off)<input id=s_ledline value="{{ sv.led_line }}"></label>
+   <div class="panel" data-panel=set-loop>
+    <button class=phead onclick="togglePanel(this)">Loop &amp; cadence<span class=chev>▾</span></button>
+    <div class=pbody>
+     <label>Seconds between projects (cycle gap)<input id=s_interval value="{{ sv.loop.interval_seconds }}"></label>
+     <label>Jitter (± seconds)<input id=s_jitter value="{{ sv.loop.jitter_seconds }}"></label>
+     <label>Tool steps per cycle<input id=s_steps value="{{ sv.loop.max_steps }}"></label>
+     <label>Resume attempts before giving up<input id=s_attempts value="{{ sv.loop.max_resume_attempts }}"></label>
+     <label>Idea candidates per project (deep-think)<input id=s_ideas value="{{ sv.idea_candidates }}"></label>
+     <label>Hardware re-scan interval (seconds)<input id=s_hwscan value="{{ sv.hw_scan }}"></label>
+     <label>Cleanup janitor interval (seconds)<input id=s_cleanint value="{{ sv.cleanup_int }}"></label>
+     <label>Min seconds between LLM calls (throttle)<input id=s_minc value="{{ sv.min_call }}"></label>
+     <label>Provider order<select id=s_prefer>
+       <option value=cloud_first {{ 'selected' if sv.prefer=='cloud_first' }}>cloud first</option>
+       <option value=local_first {{ 'selected' if sv.prefer=='local_first' }}>local first</option></select></label>
+    </div>
+   </div>
+
+   <div class="panel" data-panel=set-behaviour>
+    <button class=phead onclick="togglePanel(this)">Behaviour<span class=chev>▾</span></button>
+    <div class=pbody>
+     <label><input type=checkbox id=s_critique {{ 'checked' if sv.self_critique }}> Self-review before finishing a project</label>
+     <label><input type=checkbox id=s_git {{ 'checked' if sv.git_history }}> Keep per-project git history</label>
+     <label><input type=checkbox id=s_cleanup {{ 'checked' if sv.cleanup_enabled }}> Auto-clean junk &amp; empty folders</label>
+    </div>
+   </div>
+
+   <div class="panel" data-panel=set-llm>
+    <button class=phead onclick="togglePanel(this)">LLM tuning<span class=chev>▾</span></button>
+    <div class=pbody>
+     <label>Temperature (0–1.5)<input id=s_temp value="{{ sv.temperature }}"></label>
+     <label>Max tokens per reply<input id=s_maxtok value="{{ sv.max_tokens }}"></label>
+     <label>Request timeout (seconds)<input id=s_timeout value="{{ sv.req_timeout }}"></label>
+    </div>
+   </div>
+
+   <div class="panel" data-panel=set-providers>
+    <button class=phead onclick="togglePanel(this)">Providers &amp; API keys<span class=chev>▾</span></button>
+    <div class=pbody>
+    {% for p in sv.providers %}
+     <div class=prow data-name="{{ p.name }}">
+       <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}</label>
+       <input id="pm_{{ p.name }}" value="{{ p.model }}" placeholder="model">
+       {% if p.key_env %}<input id="pk_{{ p.name }}" type=password autocomplete=off placeholder="{{ 'key set — blank keeps it' if p.key_set else 'paste '+p.key_env }}">{% endif %}
+     </div>
+    {% endfor %}
+    </div>
+   </div>
+
+   <div class="panel" data-panel=set-alerts>
+    <button class=phead onclick="togglePanel(this)">Alerts &amp; LED<span class=chev>▾</span></button>
+    <div class=pbody>
+     <label><input type=checkbox id=s_notify {{ 'checked' if sv.notify }}> Alert on every cycle (not just completions)</label>
+     <label>Discord webhook URL<input id=s_discord type=password autocomplete=off placeholder="{{ 'set — blank keeps it' if sv.discord_set else 'paste webhook URL' }}"></label>
+     <label>ntfy topic (optional)<input id=s_ntfy value="{{ sv.ntfy }}"></label>
+     <label>LED gpiochip<input id=s_ledchip value="{{ sv.led_chip }}"></label>
+     <label>LED line offset (blank = LED off)<input id=s_ledline value="{{ sv.led_line }}"></label>
+    </div>
+   </div>
 
    <div style="margin-top:12px">
      <button class="act big" onclick="saveSettings(false)">Save</button>
@@ -562,6 +603,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  const gv=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
  const gc=id=>{const e=document.getElementById(id);return e?e.checked:false;};
  const gn=id=>{const v=parseInt(gv(id),10);return isNaN(v)?null:v;};
+ const gf=id=>{const v=parseFloat(gv(id));return isNaN(v)?null:v;};
  function saveSettings(restart){
    const provs={},env={};
    document.querySelectorAll('.prow').forEach(r=>{const n=r.dataset.name;
@@ -570,9 +612,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    const dw=gv('s_discord'); if(dw)env.DISCORD_WEBHOOK_URL=dw;
    const ll=gv('s_ledline'); env.DRONGO_LED_CHIP=gv('s_ledchip'); if(ll)env.DRONGO_LED_LINE=ll;
    const loop={};[['interval_seconds','s_interval'],['jitter_seconds','s_jitter'],
-     ['max_steps','s_steps'],['max_resume_attempts','s_attempts']].forEach(([k,id])=>{
+     ['max_steps','s_steps'],['max_resume_attempts','s_attempts'],['idea_candidates','s_ideas'],
+     ['hw_scan_interval_seconds','s_hwscan'],['cleanup_interval_seconds','s_cleanint']].forEach(([k,id])=>{
      const v=gn(id); if(v!=null)loop[k]=v;});
+   loop.self_critique=gc('s_critique'); loop.git_history=gc('s_git'); loop.cleanup_enabled=gc('s_cleanup');
    const llm={prefer:gv('s_prefer'),providers:provs}; const mc=gn('s_minc'); if(mc!=null)llm.min_call_interval_seconds=mc;
+   const tp=gf('s_temp'); if(tp!=null)llm.temperature=tp;
+   const mt=gn('s_maxtok'); if(mt!=null)llm.max_tokens=mt;
+   const rt=gn('s_timeout'); if(rt!=null)llm.request_timeout=rt;
    const interests=(gv('s_interests')||'').split('\\n').map(x=>x.trim()).filter(Boolean);
    const s={loop,llm,alerts:{notify_every_cycle:gc('s_notify'),
      ntfy:{topic:gv('s_ntfy'),enabled:!!gv('s_ntfy')},led:{enabled:!!ll}},env,interests};
@@ -1092,9 +1139,21 @@ def _settings_view(cfg, mem):
     def keyset(name):
         return bool(name and (env_db.get(name) or os.environ.get(name)))
 
+    def loopval(k, d):
+        return loop_db.get(k, cfg.get("loop", k, default=d))
+
     sv = {
         "loop": {k: loop_db.get(k, cfg.get("loop", k, default="")) for k in
                  ("interval_seconds", "jitter_seconds", "max_steps", "max_resume_attempts")},
+        "idea_candidates": loopval("idea_candidates", 2),
+        "hw_scan": loopval("hw_scan_interval_seconds", 1200),
+        "cleanup_int": loopval("cleanup_interval_seconds", 1800),
+        "self_critique": bool(loopval("self_critique", True)),
+        "git_history": bool(loopval("git_history", True)),
+        "cleanup_enabled": bool(loopval("cleanup_enabled", True)),
+        "temperature": llm_db.get("temperature", cfg.get("llm", "temperature", default=0.7)),
+        "max_tokens": llm_db.get("max_tokens", cfg.get("llm", "max_tokens", default=2048)),
+        "req_timeout": llm_db.get("request_timeout", cfg.get("llm", "request_timeout", default=120)),
         "min_call": llm_db.get("min_call_interval_seconds", cfg.get("llm", "min_call_interval_seconds", default=3)),
         "prefer": llm_db.get("prefer", cfg.get("llm", "prefer", default="cloud_first")),
         "notify": al_db.get("notify_every_cycle", cfg.get("alerts", "notify_every_cycle", default=False)),
