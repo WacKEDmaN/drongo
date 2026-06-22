@@ -87,7 +87,12 @@ DEFAULTS = {
         "ntfy": {"enabled": False, "server": "https://ntfy.sh", "topic": ""},
         "command": {"enabled": False, "run": ""},
     },
-    "web": {"host": "0.0.0.0", "port": 8080, "allow_run": True},
+    "web": {"host": "0.0.0.0", "port": 8080, "allow_run": True,
+            # A shell terminal on the dashboard. Runs as the unprivileged drongo
+            # user, in the workspace, through the SAME safeguard denylist as the
+            # agent, with secrets stripped. LAN + password gated like the rest.
+            # Set false to remove it entirely.
+            "allow_terminal": True},
     "selfupdate": {"enabled": True, "repo_dir": "."},
 }
 

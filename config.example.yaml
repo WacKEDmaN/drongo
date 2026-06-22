@@ -216,6 +216,11 @@ web:
   # (only files under projects/, as the unprivileged drongo user, 30s timeout).
   # Set false to disable that button entirely.
   allow_run: true
+  # A shell terminal on the dashboard (Terminal tab). Commands run as the
+  # unprivileged drongo user inside the workspace, through the SAME safeguard
+  # denylist the agent uses, with secrets stripped. It's LAN + password gated
+  # like the rest of the UI. Set false to remove the tab and endpoint entirely.
+  allow_terminal: true
 
 selfupdate:
   enabled: true

@@ -249,6 +249,7 @@ LAN-only) — four tabs:
 | Send a broken project back for fixing | Dashboard → Projects → **🔧 Fix this** |
 | Delete a project (removes its files too) | Dashboard → Projects → **🗑 Delete** |
 | Run a cycle right now | Dashboard → Control → **▶ Run a cycle now** |
+| Run shell commands | Dashboard → **Terminal** (drongo user, in the workspace, same denylist as the agent; `web.allow_terminal: false` to disable) |
 | Watch it live | `journalctl -u drongo -f` |
 | Steer its interests | edit `interests:` in `/etc/drongo/config.yaml`, restart |
 | Force a code update | `sudo systemctl start drongo-update` |

@@ -28,6 +28,7 @@ from flask import Flask, Response, abort, render_template_string, request, send_
 from . import safeguard, watchdog
 from .memory import Memory, utc_iso
 from .safeguard import integrity_status
+from . import tools
 from .tools import system_stats
 
 log = logging.getLogger("agent.server")
@@ -82,6 +83,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .usaget td{border-top:1px solid var(--bd);padding:3px 0}
  .usaget th:not(:first-child),.usaget td:not(:first-child){text-align:right}
  #suggbox{width:100%;background:#0a0d12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;font:13px/1.5 ui-sans-serif,system-ui,sans-serif;resize:vertical}
+ .term{background:#05080c;border:1px solid var(--bd);border-radius:8px;padding:10px;height:52vh;overflow:auto;font:12.5px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word;margin:0 0 8px;color:#cdd6e0}
+ .termline{display:flex;gap:8px;align-items:center}
+ .termps{color:var(--ok);font:14px ui-monospace,monospace}
+ #terminput{flex:1;background:#05080c;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:7px 9px;font:12.5px ui-monospace,monospace}
  @media(max-width:760px){.homewrap{flex-direction:column}.homeside{width:100%;position:static}}
  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ac);color:#02121f;padding:8px 16px;border-radius:8px;font-weight:600;opacity:0;transition:.2s;pointer-events:none;z-index:20}
  #toast.show{opacity:1}
@@ -100,6 +105,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <button class="on" data-t=home>Home</button>
   <button data-t=system>System</button>
   <button data-t=projects>Projects</button>
+  {% if allow_terminal %}<button data-t=terminal>Terminal</button>{% endif %}
   <button data-t=control>Control</button>
  </nav>
 </header>
@@ -175,6 +181,21 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   </div>
  </section>
 
+ {% if allow_terminal %}
+ <section id=terminal class="tab">
+  <h2>Terminal — a shell on the box</h2>
+  <div class="card">
+   <p class="meta">Runs as the unprivileged <b>drongo</b> user inside the workspace, through the
+    same safety denylist the agent uses (so <code>rm&nbsp;-rf&nbsp;/</code> and friends are blocked)
+    and with secrets stripped. Each command starts fresh in the workspace — chain with
+    <code>cd&nbsp;foo&nbsp;&amp;&amp;&nbsp;…</code>. For an unrestricted shell, SSH in.</p>
+   <pre id=termout class=term>DRONGO terminal — type a command below and press Enter.</pre>
+   <div class=termline><span class=termps>$</span>
+     <input id=terminput autocomplete=off autocapitalize=off spellcheck=false placeholder="e.g. ls -la projects/   ·   df -h   ·   python --version"></div>
+  </div>
+ </section>
+ {% endif %}
+
  <section id=control class="tab">
   <h2>Controls</h2>
   <div class="card">
@@ -239,6 +260,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    history.replaceState(null,'','#'+t);
+   if(t==='terminal'){const i=$('#terminput');if(i)setTimeout(()=>i.focus(),0);}
  }
  document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
  if(location.hash){const t=location.hash.slice(1); if($('#'+t)) showTab(t);}
@@ -258,6 +280,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    .then(r=>r.json()).then(d=>{if(d.ok){$('#suggbox').value='';
      $('#suggcur').textContent='Queued: '+t;toast('Suggestion queued for next ✓');}
      else toast(d.error||'failed');});}
+ let _thist=[],_thi=0;
+ function termAppend(t){const o=$('#termout');if(!o)return;o.textContent+=t;o.scrollTop=o.scrollHeight;}
+ function termRun(){const i=$('#terminput');if(!i)return;const cmd=i.value;if(!cmd.trim())return;
+   _thist.push(cmd);_thi=_thist.length;termAppend('\\n$ '+cmd+'\\n');i.value='';i.disabled=true;
+   fetch('/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})})
+   .then(r=>r.json()).then(d=>termAppend((d.out||'(no output)')))
+   .catch(e=>termAppend('ERROR: '+e)).finally(()=>{i.disabled=false;i.focus();});}
  function viewfile(path){$('#modaltitle').textContent='📄 '+path;$('#modalout').textContent='loading…';
    $('#fixbtn').style.display='none';$('#modal').classList.add('show');
    fetch('/file/'+path.split('/').map(encodeURIComponent).join('/'))
@@ -397,6 +426,12 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    }
  }).catch(()=>{});}
  refresh(); setInterval(refresh,4000);
+ (function(){const i=$('#terminput');if(!i)return;
+   i.addEventListener('keydown',e=>{
+     if(e.key==='Enter'){e.preventDefault();termRun();}
+     else if(e.key==='ArrowUp'){if(_thi>0){_thi--;i.value=_thist[_thi]||'';}e.preventDefault();}
+     else if(e.key==='ArrowDown'){if(_thi<_thist.length-1){_thi++;i.value=_thist[_thi]||'';}else{_thi=_thist.length;i.value='';}e.preventDefault();}
+   });})();
 </script>
 </body></html>"""
 
@@ -420,6 +455,7 @@ def create_app(cfg, mem: Memory) -> Flask:
     name = cfg.get("identity", "name", default="DRONGO")
     ws = Path(cfg.workspace)
     allow_run = bool(cfg.get("web", "allow_run", default=True))
+    allow_terminal = bool(cfg.get("web", "allow_terminal", default=True))
 
     password = os.environ.get("DRONGO_WEB_PASSWORD", "")
     nets = []
@@ -495,7 +531,8 @@ def create_app(cfg, mem: Memory) -> Flask:
             PAGE, name=name, journal=rows,
             projects=[r for r in rows if r["kind"] == "cycle"],
             images=_ls(cfg.images, (".png", ".jpg", ".jpeg")),
-            usage=_usage_view(), allow_run=allow_run, sv=sv, pkey_json=json.dumps(pkey),
+            usage=_usage_view(), allow_run=allow_run, allow_terminal=allow_terminal,
+            sv=sv, pkey_json=json.dumps(pkey),
             alive=age is not None and age < 1800,
             hb=(f"{int(age)}s ago" if age is not None else ""),
             safe=bool(mem.recall("safe_mode")),
@@ -651,6 +688,21 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.remove_fix(jid)
         log.info("deleted project: %s (%d path(s))", j["title"], len(removed))
         return {"ok": True, "removed": removed}
+
+    @app.route("/terminal", methods=["POST"])
+    def terminal():
+        # A shell for the human, run through the EXACT same path as the agent's
+        # own shell tool: unprivileged drongo user, cwd=workspace, project venv on
+        # PATH, secrets stripped, safeguard denylist enforced, timeout + rlimits.
+        # So it's no more powerful than what the agent (or /run) can already do.
+        if not allow_terminal:
+            return {"ok": False, "out": "terminal disabled (web.allow_terminal: false)"}, 403
+        cmd = ((request.get_json(silent=True) or {}).get("command") or "").strip()
+        if not cmd:
+            return {"ok": False, "out": ""}
+        ctx = tools.ToolContext(cfg=cfg, mem=mem, router=None, alerter=None, log=log)
+        log.info("dashboard terminal: %s", cmd[:200])
+        return {"ok": True, "out": tools.shell(ctx, command=cmd)}
 
     @app.route("/control/suggest", methods=["POST"])
     def control_suggest():
