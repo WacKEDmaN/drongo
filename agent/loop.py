@@ -285,9 +285,16 @@ class AgentLoop:
         if messages is None:
             system = EXEC_SYSTEM.format(persona=self.persona,
                                         tools=tools.tools_prompt(registry))
+            lessons = self.mem.recent_lessons(6)
+            lesson_txt = ("\n\nLessons from past projects — apply them:\n"
+                          + "\n".join("- " + l for l in lessons)) if lessons else ""
+            plan = self.plan(task)
+            if plan:
+                self.mem.push_step("info", "📋 planning the build")
+            plan_txt = ("\n\nYour plan:\n" + plan + "\nExecute it, adapting as needed.") if plan else ""
             task_msg = (f"Project type: {task['task_type']}\n"
                         f"Title: {task['title']}\n"
-                        f"Goal: {task['description']}\n\nBegin.")
+                        f"Goal: {task['description']}{lesson_txt}{plan_txt}\n\nBegin.")
             messages = [{"role": "system", "content": system},
                         {"role": "user", "content": task_msg}]
         else:
@@ -342,17 +349,37 @@ class AgentLoop:
             return messages
         return messages[:2] + messages[-keep:]
 
-    # ---- reflection ----------------------------------------------------
-    def reflect(self, task, outcome, ctx) -> str:
-        arts = "\n".join(f"- {a['label']} ({a['path']})" for a in ctx.artifacts) or "(none)"
-        system = self.persona + "\nWrite a short, friendly journal note (2-4 sentences) about what you just made, for your human to read later."
-        user = (f"Project: {task['title']}\nOutcome: {outcome}\nArtifacts:\n{arts}\n\n"
-                "Write the note.")
+    # ---- planning ------------------------------------------------------
+    def plan(self, task) -> str:
+        """One quick call to outline the project as 3-5 steps before building."""
+        system = (self.persona + "\nYou are about to build a project. Outline how "
+                  "you'll do it in 3-5 short imperative steps. Reply as a plain "
+                  "numbered list and NOTHING else.")
+        user = f"Project [{task['task_type']}]: {task['title']}\n{task['description']}"
         try:
-            text, _ = self.router.complete(system, user, temperature=0.6, max_tokens=300)
+            text, _ = self.router.complete(system, user, temperature=0.5, max_tokens=220)
             return text.strip()
         except AllProvidersFailed:
-            return outcome
+            return ""
+
+    # ---- reflection ----------------------------------------------------
+    def reflect(self, task, outcome, ctx):
+        """Returns (journal_note, lesson). The lesson is a one-line takeaway fed
+        back into future projects so the agent stops repeating mistakes."""
+        arts = "\n".join(f"- {a['label']} ({a['path']})" for a in ctx.artifacts) or "(none)"
+        system = (self.persona + "\nReflect on the project you just worked on. Reply "
+                  "with ONE JSON object: {\"note\": \"<2-4 friendly sentences for your "
+                  "human about what you made>\", \"lesson\": \"<one concrete tip or "
+                  "gotcha you learned for next time, or empty string if none>\"}.")
+        user = (f"Project: {task['title']}\nOutcome: {outcome}\nArtifacts:\n{arts}\n\n"
+                "Reply with the JSON now.")
+        try:
+            text, _ = self.router.complete(system, user, temperature=0.6, max_tokens=320)
+        except AllProvidersFailed:
+            return outcome, ""
+        obj = extract_json(text) or {}
+        note = (obj.get("note") or text).strip()
+        return note, (obj.get("lesson") or "").strip()
 
     # ---- alerts: ONLY on completion or a problem ----------------------
     def _alert_done(self, task, note):
@@ -482,7 +509,8 @@ class AgentLoop:
         if finished:
             self.mem.remember("current_project", None)
             self.mem.remember("working_on", None)
-            note = self.reflect(task, outcome, ctx)
+            note, lesson = self.reflect(task, outcome, ctx)
+            self.mem.add_lesson(lesson)
             self.mem.add_journal("cycle", task["title"], note, task_type=task["task_type"],
                                  artifacts=all_artifacts, provider=provider, ok=True)
             self._alert_done(task, note)
@@ -502,7 +530,8 @@ class AgentLoop:
         if attempt >= max_attempts:
             self.mem.remember("current_project", None)
             self.mem.remember("working_on", None)
-            note = self.reflect(task, outcome, ctx)
+            note, lesson = self.reflect(task, outcome, ctx)
+            self.mem.add_lesson(lesson)
             self.mem.add_journal("cycle", task["title"],
                                  note + f"\n\n(couldn't finish after {attempt} attempts)",
                                  task_type=task["task_type"], artifacts=all_artifacts,

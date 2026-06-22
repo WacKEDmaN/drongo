@@ -169,9 +169,27 @@ def write_file(ctx: ToolContext, path: str = "", content: str = "", **_):
             fh.write(content)
         rel = os.path.relpath(full, ctx.workspace)
         ctx.add_artifact(rel, f"file: {rel}")
-        return f"wrote {len(content)} chars to {rel}"
+        msg = f"wrote {len(content)} chars to {rel}"
+        warn = _syntax_check(rel, content)   # immediate feedback so it self-fixes
+        return msg + ("\n" + warn if warn else "")
     except Exception as e:
         return f"ERROR: {e}"
+
+
+def _syntax_check(rel: str, content: str) -> str:
+    """Stdlib-only sanity check on what was just written, so the model sees an
+    error in the SAME observation and fixes it before moving on."""
+    low = rel.lower()
+    try:
+        if low.endswith(".py"):
+            compile(content, rel, "exec")
+        elif low.endswith(".json"):
+            json.loads(content)
+    except SyntaxError as e:
+        return f"⚠ SyntaxError at line {e.lineno}: {e.msg} — FIX this before continuing."
+    except Exception as e:
+        return f"⚠ invalid JSON: {e} — FIX this before continuing."
+    return ""
 
 
 @tool("read_file", "Read a file from the workspace.", "path: str")

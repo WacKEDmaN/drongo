@@ -171,6 +171,21 @@ class Memory:
             self.remember("suggestion", "")
         return s
 
+    def add_lesson(self, text):
+        """Record a one-line lesson learned from a project (capped ring of 25)."""
+        text = str(text or "").strip()
+        if not text:
+            return
+        v = self.recall("lessons")
+        v = v if isinstance(v, list) else []
+        v.append({"t": time.time(), "txt": text[:200]})
+        self.remember("lessons", v[-25:])
+
+    def recent_lessons(self, limit=8):
+        v = self.recall("lessons")
+        v = v if isinstance(v, list) else []
+        return [x["txt"] for x in v[-limit:] if x.get("txt")]
+
     def push_step(self, kind, text):
         """Append a short entry to the live-thinking ring buffer (last ~40) that
         the dashboard tails, so you can watch the agent work in real time."""
