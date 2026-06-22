@@ -587,10 +587,10 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
  function addProvider(){const body={name:gv('ap_name'),base_url:gv('ap_url'),model:gv('ap_model'),api_key_env:gv('ap_keyenv'),key:gv('ap_key')};
    if(!body.name||!body.base_url||!body.model){toast('need name, base_url and model');return;}
    fetch('/control/add_provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-   .then(r=>r.json()).then(d=>{toast(d.ok?('added '+d.name+' — restart to activate'):(d.error||'failed'));});}
+   .then(r=>r.json()).then(d=>{if(d.ok){toast('added '+d.name+' ✓ — restart to activate');setTimeout(()=>location.reload(),900);}else toast(d.error||'failed');});}
  function removeProvider(name){if(!confirm('Remove provider '+name+'?'))return;
    fetch('/control/remove_provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
-   .then(r=>r.json()).then(d=>{toast(d.ok?'removed — restart to apply':'failed');});}
+   .then(r=>r.json()).then(d=>{if(d.ok){toast('removed — restart to apply');setTimeout(()=>location.reload(),700);}else toast(d.error||'failed');});}
  function toggleTurbo(on){fetch('/control/turbo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on})})
    .then(r=>r.json()).then(d=>toast(d.ok?('⚡ Turbo '+(on?'ON — going hard':'off')):(d.error||'failed')));}
  function hwRow(k,v){const r=document.createElement('div');r.className='row';
@@ -1503,6 +1503,25 @@ def _settings_view(cfg, mem):
         })
         if p.get("api_key_env"):
             pkey[name] = p["api_key_env"]
+    # Dashboard-added providers live in the DB settings and only land in cfg after
+    # a restart of THIS (web) process — so surface them straight from settings too,
+    # otherwise a just-added provider seems to vanish until the web service restarts.
+    seen = {pp["name"] for pp in sv["providers"]}
+    for c in (llm_db.get("custom_providers") or []):
+        nm = c.get("name")
+        if not nm or nm in seen:
+            continue
+        o = pov.get(nm) or {}
+        sv["providers"].append({
+            "name": nm,
+            "enabled": o.get("enabled", c.get("enabled", True)),
+            "model": o.get("model") or c.get("model", ""),
+            "key_env": c.get("api_key_env"),
+            "key_set": keyset(c.get("api_key_env")),
+            "custom": True,
+        })
+        if c.get("api_key_env"):
+            pkey[nm] = c["api_key_env"]
     return sv, pkey
 
 
