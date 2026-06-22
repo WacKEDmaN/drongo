@@ -81,10 +81,15 @@ class Memory:
         self._conn.commit()
         return cur.lastrowid
 
-    def recent_journal(self, limit=20):
-        rows = self._conn.execute(
-            "SELECT * FROM journal ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
+    def recent_journal(self, limit=20, kind=None):
+        if kind:
+            rows = self._conn.execute(
+                "SELECT * FROM journal WHERE kind=? ORDER BY id DESC LIMIT ?", (kind, limit)
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM journal ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def count_journal(self) -> int:

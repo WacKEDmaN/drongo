@@ -762,8 +762,8 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    const list=$('#homelist'); if(!list)return; list.replaceChildren();
    if(journal.length)journal.forEach(j=>list.appendChild(mkHomeCard(j)));
    else{const p=document.createElement('p');p.className='meta';p.textContent='Nothing yet — give it a little time.';list.appendChild(p);}}
- function renderProjects(journal){const list=$('#projlist'); if(!list)return; list.replaceChildren();
-   const projs=journal.filter(j=>j.kind==='cycle');
+ function renderProjects(projs){const list=$('#projlist'); if(!list)return; list.replaceChildren();
+   projs=(projs||[]).filter(j=>j.kind==='cycle');
    if(projs.length)projs.forEach(j=>list.appendChild(mkProjCard(j)));
    else{const p=document.createElement('p');p.className='meta';p.textContent='No finished projects yet.';list.appendChild(p);}}
  function renderWorking(w){const el=$('#workingon'); if(!el)return; el.replaceChildren();
@@ -844,7 +844,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    if(d.journal_sig!==undefined&&d.journal_sig!==lastSig){
      lastSig=d.journal_sig;
      fetch('/api/journal').then(r=>r.json()).then(jd=>{
-       renderHome(jd.journal||[]); renderProjects(jd.journal||[]); renderGallery(jd.images||[]);}).catch(()=>{});
+       renderHome(jd.journal||[]); renderProjects(jd.projects||[]); renderGallery(jd.images||[]);}).catch(()=>{});
    }
  }).catch(()=>{});}
  initThemes(); renderGallery(_images); restorePanels(); localizeTimes(); loadHW(); refresh(); setInterval(refresh,4000);
@@ -944,9 +944,9 @@ def create_app(cfg, mem: Memory) -> Flask:
                 seen[a["path"]] = a
         return list(seen.values())
 
-    def _journal(limit):
+    def _journal(limit, kind=None):
         rows = []
-        for j in mem.recent_journal(limit):
+        for j in mem.recent_journal(limit, kind=kind):
             rows.append({"id": j["id"], "title": j["title"] or "", "kind": j["kind"],
                          "task_type": j["task_type"], "body": j["body"] or "",
                          "provider": j["provider"], "ok": bool(j["ok"]),
@@ -982,7 +982,7 @@ def create_app(cfg, mem: Memory) -> Flask:
               "code": "/opt/drongo", "ws": str(cfg.workspace), "base": str(cfg.base_dir)}
         return render_template_string(
             PAGE, name=name, journal=rows,
-            projects=[r for r in rows if r["kind"] == "cycle"],
+            projects=_journal(500, kind="cycle"),     # ALL projects, not just recent journal
             images=_gallery_images(cfg),
             usage=_usage_view(), allow_run=allow_run,
             sv=sv, pkey_json=json.dumps(pkey), hp=hp,
@@ -1039,7 +1039,8 @@ def create_app(cfg, mem: Memory) -> Flask:
     def api_journal():
         # The heavier payload (cards + gallery) — the client only fetches this
         # when journal_sig from /api/system changes, so new projects pop in live.
-        return {"journal": _journal(60), "images": _gallery_images(cfg)}
+        return {"journal": _journal(60), "projects": _journal(500, kind="cycle"),
+                "images": _gallery_images(cfg)}
 
     @app.route("/api/hardware")
     def api_hardware():
