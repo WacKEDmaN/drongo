@@ -394,11 +394,27 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <div class=pbody>
     {% for p in sv.providers %}
      <div class=prow data-name="{{ p.name }}">
-       <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}</label>
+       <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}{% if p.custom %} <span class=meta>(custom)</span>{% endif %}</label>
        <input id="pm_{{ p.name }}" value="{{ p.model }}" placeholder="model">
        {% if p.key_env %}<input id="pk_{{ p.name }}" type=password autocomplete=off placeholder="{{ 'key set — blank keeps it' if p.key_set else 'paste '+p.key_env }}">{% endif %}
+       {% if p.custom %}<button class="act danger" onclick="removeProvider('{{ p.name }}')" title="remove this provider">✕</button>{% endif %}
      </div>
     {% endfor %}
+    <h3 style="margin-top:14px">Add a provider</h3>
+    <label>Preset<select id=ap_preset onchange="apPreset()">
+      <option value=custom>Custom (OpenAI-compatible)</option>
+      <option value=github>GitHub Models (free)</option>
+      <option value=nvidia>NVIDIA NIM (free)</option>
+      <option value=together>Together AI</option>
+      <option value=openrouter>OpenRouter</option></select></label>
+    <label>Name<input id=ap_name placeholder="e.g. github"></label>
+    <label>Base URL<input id=ap_url placeholder="https://…/v1"></label>
+    <label>Model<input id=ap_model placeholder="provider/model-name"></label>
+    <label>API-key env var<input id=ap_keyenv placeholder="GITHUB_TOKEN"></label>
+    <label>API key (optional — paste to set)<input id=ap_key type=password autocomplete=off></label>
+    <button class="act big" onclick="addProvider()">+ Add provider</button>
+    <p class="meta">Added providers take effect after a restart. Use the live on/off
+      switches above the Settings panel to toggle any provider instantly.</p>
     </div>
    </div>
 
@@ -497,6 +513,20 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function toggleProvider(name,on){
    fetch('/control/provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,on})})
    .then(r=>r.json()).then(d=>{toast(d.ok?(name+' '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
+ const AP_PRESETS={
+   github:{name:'github',url:'https://models.github.ai/inference',model:'openai/gpt-4o-mini',keyenv:'GITHUB_TOKEN'},
+   nvidia:{name:'nvidia',url:'https://integrate.api.nvidia.com/v1',model:'meta/llama-3.1-8b-instruct',keyenv:'NVIDIA_API_KEY'},
+   together:{name:'together',url:'https://api.together.xyz/v1',model:'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',keyenv:'TOGETHER_API_KEY'},
+   openrouter:{name:'openrouter2',url:'https://openrouter.ai/api/v1',model:'meta-llama/llama-3.1-8b-instruct:free',keyenv:'OPENROUTER_API_KEY'}};
+ function apPreset(){const p=AP_PRESETS[$('#ap_preset').value];if(!p)return;
+   $('#ap_name').value=p.name;$('#ap_url').value=p.url;$('#ap_model').value=p.model;$('#ap_keyenv').value=p.keyenv;}
+ function addProvider(){const body={name:gv('ap_name'),base_url:gv('ap_url'),model:gv('ap_model'),api_key_env:gv('ap_keyenv'),key:gv('ap_key')};
+   if(!body.name||!body.base_url||!body.model){toast('need name, base_url and model');return;}
+   fetch('/control/add_provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+   .then(r=>r.json()).then(d=>{toast(d.ok?('added '+d.name+' — restart to activate'):(d.error||'failed'));});}
+ function removeProvider(name){if(!confirm('Remove provider '+name+'?'))return;
+   fetch('/control/remove_provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?'removed — restart to apply':'failed');});}
  function toggleTurbo(on){fetch('/control/turbo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({on})})
    .then(r=>r.json()).then(d=>toast(d.ok?('⚡ Turbo '+(on?'ON — going hard':'off')):(d.error||'failed')));}
  function hwRow(k,v){const r=document.createElement('div');r.className='row';
@@ -1183,6 +1213,46 @@ def create_app(cfg, mem: Memory) -> Flask:
         log.info("alerts toggle: %s -> %s", d.get("target"), "on" if on else "off")
         return {"ok": True, "target": d.get("target"), "on": on}
 
+    @app.route("/control/add_provider", methods=["POST"])
+    def control_add_provider():
+        # Add a custom LLM provider from the dashboard. Stored in settings; takes
+        # effect on restart (apply_overrides appends it to the router).
+        d = request.get_json(silent=True) or {}
+        name = re.sub(r"[^a-z0-9_-]", "", (d.get("name") or "").strip().lower())[:30]
+        base_url = (d.get("base_url") or "").strip()
+        model = (d.get("model") or "").strip()
+        if not name or not model or not base_url.startswith(("http://", "https://")):
+            return {"ok": False, "error": "need a name, an http(s) base_url and a model"}, 400
+        key_env = (re.sub(r"[^A-Z0-9_]", "", (d.get("api_key_env") or "").strip().upper())[:40]
+                   or name.upper().replace("-", "_") + "_API_KEY")
+        spec = {"name": name, "base_url": base_url, "model": model,
+                "api_key_env": key_env, "enabled": True,
+                "rpm_limit": int(d.get("rpm_limit") or 0) or None,
+                "daily_limit": int(d.get("daily_limit") or 0) or None}
+        if (d.get("type") or "").strip() == "anthropic":
+            spec["type"] = "anthropic"
+        cur = mem.recall("settings") or {}
+        llm = cur.setdefault("llm", {})
+        llm["custom_providers"] = [c for c in (llm.get("custom_providers") or [])
+                                   if c.get("name") != name] + [spec]
+        key = (d.get("key") or "").strip()
+        if key:
+            cur.setdefault("env", {})[key_env] = key
+        mem.remember("settings", cur)
+        log.info("added custom provider '%s' (%s)", name, base_url)
+        return {"ok": True, "name": name}
+
+    @app.route("/control/remove_provider", methods=["POST"])
+    def control_remove_provider():
+        name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+        cur = mem.recall("settings") or {}
+        if isinstance(cur.get("llm"), dict):
+            cur["llm"]["custom_providers"] = [c for c in (cur["llm"].get("custom_providers") or [])
+                                              if c.get("name") != name]
+            mem.remember("settings", cur)
+        log.info("removed custom provider '%s'", name)
+        return {"ok": True}
+
     @app.route("/control/provider", methods=["POST"])
     def control_provider():
         # Manually enable/disable an LLM provider live — the Router reads this
@@ -1318,6 +1388,7 @@ def _settings_view(cfg, mem):
         "interests_text": "\n".join(interests),
         "providers": [],
     }
+    custom_names = {c.get("name") for c in (llm_db.get("custom_providers") or [])}
     pkey = {}
     for p in cfg.get("llm", "providers", default=[]) or []:
         name, o = p.get("name"), pov.get(p.get("name")) or {}
@@ -1327,6 +1398,7 @@ def _settings_view(cfg, mem):
             "model": o.get("model") or p.get("model", ""),
             "key_env": p.get("api_key_env"),
             "key_set": keyset(p.get("api_key_env")),
+            "custom": name in custom_names,
         })
         if p.get("api_key_env"):
             pkey[name] = p["api_key_env"]

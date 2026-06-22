@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
 
@@ -103,12 +104,15 @@ DEFAULTS = {
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    out = dict(base)
+    # Deep-copy so the merged Config never shares mutable dicts/lists with the
+    # module-level DEFAULTS (otherwise apply_overrides could mutate DEFAULTS for
+    # the whole process when the user's yaml omits a section).
+    out = copy.deepcopy(base)
     for k, v in (override or {}).items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):
             out[k] = _deep_merge(out[k], v)
         else:
-            out[k] = v
+            out[k] = copy.deepcopy(v)
     return out
 
 
@@ -194,6 +198,17 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
               "request_timeout", "local_timeout"):
         if k in llm:
             cfg.data.setdefault("llm", {})[k] = llm[k]
+    # Providers ADDED from the dashboard (full specs). Append any whose name isn't
+    # already a built-in, so the user can add GitHub/NVIDIA/etc. without editing yaml.
+    # NB: copy the list (don't mutate the possibly-shared default list in place).
+    provs = list(cfg.data.setdefault("llm", {}).get("providers") or [])
+    existing = {p.get("name") for p in provs}
+    for spec in (llm.get("custom_providers") or []):
+        if isinstance(spec, dict) and spec.get("name") and spec.get("base_url") \
+                and spec["name"] not in existing:
+            provs.append(dict(spec))
+            existing.add(spec["name"])
+    cfg.data["llm"]["providers"] = provs
     pov = llm.get("providers") or {}
     for p in cfg.data.get("llm", {}).get("providers", []) or []:
         o = pov.get(p.get("name"))
