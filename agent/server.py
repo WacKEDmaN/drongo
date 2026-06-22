@@ -107,9 +107,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
  <section id=home class="tab on"><div class=homewrap>
   <div class=homemain>
-   {% if working_on %}<div class="card"><b>⏳ Working on:</b> {{ working_on.title }}
-     <span class=meta>({{ working_on.type }} · attempt {{ working_on.attempt }})</span></div>{% endif %}
+   <div id=workingon>{% if working_on %}<div class="card"><b>⏳ Working on:</b> {{ working_on.title }}
+     <span class=meta>({{ working_on.type }} · attempt {{ working_on.attempt }})</span></div>{% endif %}</div>
    <h2>Recent activity</h2>
+   <div id=homelist>
    {% for j in journal %}
     <div class="card">
       <h3>{{ j.title }} <span class="meta">· {{ j.kind }}{% if j.task_type %} · {{ j.task_type }}{% endif %}</span></h3>
@@ -118,9 +119,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
       {% for a in j.arts %}{% if a.view %}<a class="art" href="#" onclick="viewfile('{{ a.path }}');return false">▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% endfor %}
     </div>
    {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
-   {% if images %}<h2>Gallery</h2><div class="grid">
+   </div>
+   <div id=galwrap>{% if images %}<h2>Gallery</h2><div class="grid">
      {% for im in images %}<a href="/file/images/{{ im }}" target=_blank><img loading=lazy src="/file/images/{{ im }}"></a>{% endfor %}
-   </div>{% endif %}
+   </div>{% endif %}</div>
   </div>
   <aside class=homeside>
    <div class=card>
@@ -129,7 +131,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
    <div class=card>
     <h3 style="margin-top:0">LLM usage today</h3>
-    <table class=usaget>
+    <table class=usaget id=usagetbl>
      <tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>
      {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=4 class=meta>no calls yet</td></tr>{% endfor %}
     </table>
@@ -155,6 +157,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     </div>
   </div>
   <h2>Projects it has built — open, run, tag, or flag broken ones for a fix</h2>
+  <div id=projlist>
   {% for j in projects %}
    <div class="card" data-id="{{ j.id }}">
      <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
@@ -169,6 +172,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <button class="act danger" onclick="delproj({{ j.id }},this)">🗑 Delete</button>
    </div>
   {% else %}<p class="meta">No finished projects yet.</p>{% endfor %}
+  </div>
  </section>
 
  <section id=control class="tab">
@@ -278,6 +282,64 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    fetch('/control/fix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:_runid,note})})
    .then(r=>r.json()).then(d=>{toast(d.ok?'Queued for fixing ✓':'failed');$('#modal').classList.remove('show');});}
  const PKEY={{ pkey_json|safe }};
+ const ALLOW_RUN={{ allow_run|tojson }};
+ let lastSig={{ jsig|tojson }};
+ const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const fileURL=p=>'/file/'+p.split('/').map(encodeURIComponent).join('/');
+ function mkArtLink(a){const l=document.createElement('a');l.className='art';l.textContent='▸ '+a.label;
+   if(a.view){l.href='#';l.addEventListener('click',e=>{e.preventDefault();viewfile(a.path);});}
+   else{l.href=fileURL(a.path);l.target='_blank';} return l;}
+ function mkHomeCard(j){const c=document.createElement('div');c.className='card';
+   const h=document.createElement('h3');h.textContent=j.title+' ';
+   const sub=document.createElement('span');sub.className='meta';
+   sub.textContent='· '+j.kind+(j.task_type?' · '+j.task_type:'');h.appendChild(sub);c.appendChild(h);
+   const m=document.createElement('div');m.className='meta';
+   m.textContent=j.when+(j.provider?' · via '+j.provider:'')+(j.ok?'':' · ⚠ unfinished');c.appendChild(m);
+   const p=document.createElement('p');p.textContent=j.body||'';c.appendChild(p);
+   (j.arts||[]).forEach(a=>c.appendChild(mkArtLink(a)));return c;}
+ function mkProjCard(j){const c=document.createElement('div');c.className='card';c.dataset.id=j.id;
+   const h=document.createElement('h3');h.textContent=j.title+' ';
+   if(!j.ok){const pill=document.createElement('span');pill.className='pill bad';pill.textContent='unfinished';h.appendChild(pill);}
+   c.appendChild(h);
+   const m=document.createElement('div');m.className='meta';m.textContent=j.when+(j.provider?' · via '+j.provider:'');c.appendChild(m);
+   const p=document.createElement('p');p.textContent=j.body||'';c.appendChild(p);
+   (j.arts||[]).forEach(a=>{const span=document.createElement('span');span.style.whiteSpace='nowrap';
+     span.appendChild(mkArtLink(a));
+     if(a.path.endsWith('.py')&&ALLOW_RUN){const b=document.createElement('button');b.className='runbtn';b.textContent='▶ run';
+       b.addEventListener('click',()=>runpy(a.path,j.id));span.appendChild(b);}
+     c.appendChild(span);c.appendChild(document.createTextNode(' '));});
+   const chips=document.createElement('div');chips.className='chips';chips.id='chips-'+j.id;chips.style.marginTop='8px';
+   (j.tags||[]).forEach(t=>{const s=document.createElement('span');s.className='chip'+(t==='needs-fix'?' fix':'');s.textContent=t;chips.appendChild(s);});
+   c.appendChild(chips);
+   const mk=(cls,txt,fn)=>{const b=document.createElement('button');b.className=cls;b.textContent=txt;b.addEventListener('click',fn);return b;};
+   c.appendChild(mk('act danger','🔧 Fix this',()=>fixit(j.id)));
+   c.appendChild(mk('act','+ tag',()=>addtag(j.id)));
+   c.appendChild(mk('act danger','🗑 Delete',e=>delproj(j.id,e.currentTarget)));
+   return c;}
+ function renderHome(journal,images){
+   const list=$('#homelist'); if(list){list.replaceChildren();
+     if(journal.length)journal.forEach(j=>list.appendChild(mkHomeCard(j)));
+     else{const p=document.createElement('p');p.className='meta';p.textContent='Nothing yet — give it a little time.';list.appendChild(p);}}
+   const gw=$('#galwrap'); if(gw){gw.replaceChildren();
+     if(images&&images.length){const h=document.createElement('h2');h.textContent='Gallery';gw.appendChild(h);
+       const grid=document.createElement('div');grid.className='grid';
+       images.forEach(im=>{const a=document.createElement('a');a.href='/file/images/'+encodeURIComponent(im);a.target='_blank';
+         const img=document.createElement('img');img.loading='lazy';img.src='/file/images/'+encodeURIComponent(im);a.appendChild(img);grid.appendChild(a);});
+       gw.appendChild(grid);}}}
+ function renderProjects(journal){const list=$('#projlist'); if(!list)return; list.replaceChildren();
+   const projs=journal.filter(j=>j.kind==='cycle');
+   if(projs.length)projs.forEach(j=>list.appendChild(mkProjCard(j)));
+   else{const p=document.createElement('p');p.className='meta';p.textContent='No finished projects yet.';list.appendChild(p);}}
+ function renderWorking(w){const el=$('#workingon'); if(!el)return; el.replaceChildren();
+   if(w){const c=document.createElement('div');c.className='card';
+     const b=document.createElement('b');b.textContent='⏳ Working on: ';c.appendChild(b);
+     c.appendChild(document.createTextNode((w.title||'')+' '));
+     const m=document.createElement('span');m.className='meta';m.textContent='('+w.type+' · attempt '+w.attempt+')';c.appendChild(m);el.appendChild(c);}}
+ function renderUsage(usage){const t=$('#usagetbl'); if(!t)return;
+   let h='<tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>';
+   if(usage&&usage.length)usage.forEach(u=>{h+='<tr><td>'+esc(u.provider)+'</td><td>'+(u.day_count||0)+'</td><td>'+(u.total||0)+'</td><td>'+esc(u.cool||'—')+'</td></tr>';});
+   else h+='<tr><td colspan=4 class=meta>no calls yet</td></tr>';
+   t.innerHTML=h;}
  const gv=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
  const gc=id=>{const e=document.getElementById(id);return e?e.checked:false;};
  const gn=id=>{const v=parseInt(gv(id),10);return isNaN(v)?null:v;};
@@ -325,13 +387,20 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      ['load',(s.load||[]).join(' ')||'—']];
    $('#homestats').innerHTML=rows.map(([k,v])=>'<div class=row><span>'+k+'</span><b>'+v+'</b></div>').join('');
    $('#fixq').textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
+   if(d.usage)renderUsage(d.usage);
+   renderWorking(d.working_on);
+   const sc=$('#suggcur'); if(sc)sc.textContent=d.suggestion?('Queued: '+d.suggestion):'';
+   if(d.journal_sig!==undefined&&d.journal_sig!==lastSig){
+     lastSig=d.journal_sig;
+     fetch('/api/journal').then(r=>r.json()).then(jd=>{
+       renderHome(jd.journal||[],jd.images||[]); renderProjects(jd.journal||[]);}).catch(()=>{});
+   }
  }).catch(()=>{});}
  refresh(); setInterval(refresh,4000);
 </script>
 </body></html>"""
 
 
-# Files we show inline in the dashboard modal rather than opening in a new tab.
 # Files we show inline in the dashboard modal rather than opening in a new tab.
 # (.html is intentionally excluded — those open in a new tab so they render.)
 TEXT_EXTS = (".py", ".js", ".sh", ".md", ".txt", ".json", ".css", ".cfg",
@@ -400,13 +469,23 @@ def create_app(cfg, mem: Memory) -> Flask:
                          "tags": _parse_tags(j["tags"] if "tags" in j.keys() else "")})
         return rows
 
+    def _journal_sig(rows):
+        # Cheap fingerprint so the client only re-renders the lists when something
+        # actually changed (new project, ok-flip, tag add, delete).
+        return ";".join(f"{r['id']}.{int(r['ok'])}.{len(r['tags'])}" for r in rows)
+
+    def _usage_view():
+        out = []
+        for u in mem.usage_summary():
+            cu = u["cooldown_until"]
+            cool = f"{int(cu - time.time())}s" if cu and cu > time.time() else ""
+            out.append({"provider": u["provider"], "day_count": u["day_count"],
+                        "total": u["total"], "cool": cool})
+        return out
+
     @app.route("/")
     def index():
         rows = _journal(60)
-        usage = []
-        for u in mem.usage_summary():
-            cool = f"{int(u['cooldown_until'] - time.time())}s" if u["cooldown_until"] and u["cooldown_until"] > time.time() else ""
-            usage.append({**u, "cool": cool})
         age = watchdog.heartbeat_age(cfg)
         integ = integrity_status()
         running_root = getattr(os, "geteuid", lambda: -1)() == 0
@@ -416,12 +495,13 @@ def create_app(cfg, mem: Memory) -> Flask:
             PAGE, name=name, journal=rows,
             projects=[r for r in rows if r["kind"] == "cycle"],
             images=_ls(cfg.images, (".png", ".jpg", ".jpeg")),
-            usage=usage, allow_run=allow_run, sv=sv, pkey_json=json.dumps(pkey),
+            usage=_usage_view(), allow_run=allow_run, sv=sv, pkey_json=json.dumps(pkey),
             alive=age is not None and age < 1800,
             hb=(f"{int(age)}s ago" if age is not None else ""),
             safe=bool(mem.recall("safe_mode")),
             working_on=mem.recall("working_on"),
             suggestion=mem.get_suggestion(),
+            jsig=_journal_sig(rows),
             integ_ok=integ_ok)
 
     @app.route("/settings", methods=["POST"])
@@ -453,7 +533,17 @@ def create_app(cfg, mem: Memory) -> Flask:
             "next_cycle_in": max(0, int(nxt - time.time())) if nxt else None,
             "safe_mode": bool(mem.recall("safe_mode")),
             "fix_queue": len(mem.fix_queue()),
+            "usage": _usage_view(),                 # live so cooldowns tick
+            "suggestion": mem.get_suggestion(),
+            "journal_sig": _journal_sig(_journal(60)),
         }
+
+    @app.route("/api/journal")
+    def api_journal():
+        # The heavier payload (cards + gallery) — the client only fetches this
+        # when journal_sig from /api/system changes, so new projects pop in live.
+        return {"journal": _journal(60),
+                "images": _ls(cfg.images, (".png", ".jpg", ".jpeg"))}
 
     @app.route("/api/status")
     def api_status():
