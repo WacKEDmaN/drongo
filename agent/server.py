@@ -97,6 +97,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .pcontent{flex:1 1 auto;min-height:0;overflow:auto;margin:2px 0 8px}
  .pactions{flex:none;display:flex;flex-wrap:wrap;align-items:center}
  .pnum{color:var(--ac);font-weight:600}
+ .pill-ok{font:10px var(--mono);color:var(--ok);border:1px solid rgba(var(--ac-rgb),.4);border-radius:10px;padding:1px 6px;margin-left:6px}
+ .pill-bad{font:10px var(--mono);color:var(--bad);border:1px solid rgba(255,93,108,.45);border-radius:10px;padding:1px 6px;margin-left:6px}
  .fbbar{font:12.5px var(--mono);margin-bottom:10px;color:var(--mut)} .fbbar a{color:var(--ac2)}
  .fbrow{display:flex;justify-content:space-between;gap:10px;padding:5px 2px;border-bottom:1px solid var(--bd);font:13px var(--mono)}
  .fbrow:last-child{border:0} .fbrow a{color:var(--fg);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .fbrow a:hover{color:var(--ac)} .fbrow .meta{flex:none}
@@ -327,11 +329,12 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     {% for p in sv.providers %}
     <div class=swrow>
      <label class=sw><input type=checkbox id="prov_{{ p.name }}" {{ 'checked' if p.name not in providers_off }} onchange="toggleProvider('{{ p.name }}',this.checked)"><span class=sl></span></label>
-     <div><div class=lbl>{{ p.name }} <span class=meta>{{ p.model }}</span></div>
-       <div class=sub>{% if p.key_env and not p.key_set %}no key set — {% endif %}off = the router skips it until you flip it back on</div></div>
+     <div><div class=lbl>{{ p.name }} <span class=meta>{{ p.model }}</span>
+       {% if p.usable %}<span class=pill-ok>active</span>{% else %}<span class=pill-bad>{{ 'no key — inactive' if p.key_env and not p.key_set else 'inactive' }}</span>{% endif %}</div>
+       <div class=sub>{% if p.key_env and not p.key_set %}⚠ the agent will SKIP this until a key is set (add it under Providers &amp; API keys, then Save &amp; Restart). {% endif %}off = router skips it until flipped back on</div></div>
     </div>
     {% endfor %}
-    <p class="meta">Use this when a provider is exhausted but still erroring (a free daily quota the bot can't see). Instant, survives restarts; keys and models untouched.</p>
+    <p class="meta">“active” = the agent actually loads it. A cloud provider with no API key is skipped. Toggle to mute one that's exhausted but still erroring.</p>
    </div>
   </div>
 
@@ -1513,15 +1516,22 @@ def _settings_view(cfg, mem):
     }
     custom_names = {c.get("name") for c in (llm_db.get("custom_providers") or [])}
     pkey = {}
+    def _is_local(spec):
+        b = spec.get("base_url") or ""
+        return bool(spec.get("local")) or "localhost" in b or "127.0.0.1" in b
+
     for p in cfg.get("llm", "providers", default=[]) or []:
         name, o = p.get("name"), pov.get(p.get("name")) or {}
+        enabled = bool(o.get("enabled", p.get("enabled", True)))
+        ks = keyset(p.get("api_key_env"))
         sv["providers"].append({
             "name": name,
-            "enabled": o.get("enabled", p.get("enabled", True)),
+            "enabled": enabled,
             "model": o.get("model") or p.get("model", ""),
             "key_env": p.get("api_key_env"),
-            "key_set": keyset(p.get("api_key_env")),
+            "key_set": ks,
             "custom": name in custom_names,
+            "usable": enabled and (_is_local(p) or ks),   # what the router will actually load
         })
         if p.get("api_key_env"):
             pkey[name] = p["api_key_env"]
@@ -1534,13 +1544,16 @@ def _settings_view(cfg, mem):
         if not nm or nm in seen:
             continue
         o = pov.get(nm) or {}
+        enabled = bool(o.get("enabled", c.get("enabled", True)))
+        ks = keyset(c.get("api_key_env"))
         sv["providers"].append({
             "name": nm,
-            "enabled": o.get("enabled", c.get("enabled", True)),
+            "enabled": enabled,
             "model": o.get("model") or c.get("model", ""),
             "key_env": c.get("api_key_env"),
-            "key_set": keyset(c.get("api_key_env")),
+            "key_set": ks,
             "custom": True,
+            "usable": enabled and (_is_local(c) or ks),
         })
         if c.get("api_key_env"):
             pkey[nm] = c["api_key_env"]
