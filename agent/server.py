@@ -99,7 +99,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .set h3{margin:18px 0 6px;font:600 13px var(--mono);color:var(--ac2);text-transform:uppercase;letter-spacing:.08em}
  .set label{display:block;margin:8px 0;font:12.5px var(--mono);color:var(--mut)}
  .set input,.set select,.set textarea{display:block;width:100%;max-width:560px;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:7px;padding:7px 9px;font:13px var(--mono);margin-top:3px;transition:.15s}
- .set input:focus,.set select:focus,.set textarea:focus,#suggbox:focus,#terminput:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px rgba(var(--ac-rgb),.13)}
+ .set input:focus,.set select:focus,.set textarea:focus,#suggbox:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px rgba(var(--ac-rgb),.13)}
  .set textarea{line-height:1.5;resize:vertical}
  .set .prow input{max-width:none}
  .set input[type=checkbox]{display:inline-block;width:auto;margin-right:7px;accent-color:var(--ac)}
@@ -114,11 +114,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .usaget td{border-top:1px solid var(--bd);padding:4px 0;color:var(--fg)}
  .usaget th:not(:first-child),.usaget td:not(:first-child){text-align:right}
  #suggbox{width:100%;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:8px 10px;font:13px/1.5 var(--mono);resize:vertical}
- .term{position:relative;background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:12px 14px;height:54vh;overflow:auto;font:12.5px/1.6 var(--mono);white-space:pre-wrap;word-break:break-word;margin:0 0 10px;color:#9ff5c8;box-shadow:inset 0 0 44px rgba(0,0,0,.55)}
- .term::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:10px;background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0 1px,transparent 1px 3px)}
- .termline{display:flex;gap:9px;align-items:center}
- .termps{color:var(--ac);font:15px var(--mono);text-shadow:0 0 8px rgba(var(--ac-rgb),.6)}
- #terminput{flex:1;background:#03060a;color:var(--ac);border:1px solid var(--bd2);border-radius:8px;padding:9px 11px;font:12.5px var(--mono)}
  @media (max-width:760px){ .homewrap{flex-direction:column} .homeside{width:100%;position:static} header{padding:10px 14px} main{padding:16px 14px} }
  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:linear-gradient(180deg,#0e1a16,#0a130f);color:var(--ac);border:1px solid var(--ac);padding:10px 18px;border-radius:9px;font:600 12.5px var(--mono);opacity:0;transition:.22s;pointer-events:none;z-index:30;box-shadow:0 0 22px rgba(var(--ac-rgb),.3)}
  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -180,7 +175,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <button class="on" data-t=home>Home</button>
   <button data-t=projects>Projects</button>
   <button data-t=gallery>Gallery</button>
-  {% if allow_terminal %}<button data-t=terminal>Terminal</button>{% endif %}
   <button data-t=control>Control</button>
  </nav>
  <div class=themes id=themes></div>
@@ -201,17 +195,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <h2>Vitals <span class=meta>· recent history</span></h2>
    <div class=sparks id=sparks><p class=meta>collecting…</p></div>
 
-   <h2>Hardware <span class=meta id=hwts></span></h2>
-   <div class="card">
-    <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
-    <p class="meta">Probes USB, I²C (addresses), SPI, 1-wire, cameras &amp; GPIO. Anything newly attached becomes the agent's next project idea.</p>
-    <div id=hwbody class=meta>loading…</div>
-   </div>
-
    <h2>Recent activity</h2>
    <div class=card><div id=homelist class=evlist>
    {% for j in journal %}
-    <div class=ev><span class="evd{{ '' if j.ok else ' bad' }}"></span><span class=evt>{{ j.title }}</span><span class=meta>{{ j.task_type or j.kind }} · {{ j.when }}</span></div>
+    <div class=ev><span class="evd{{ '' if j.ok else ' bad' }}"></span><span class=evt>{{ j.title }}</span><span class=meta>{{ j.task_type or j.kind }} · <span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span></span></div>
    {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
    </div></div>
   </div>
@@ -242,7 +229,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   {% for j in projects %}
    <div class="card" data-id="{{ j.id }}">
      <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
-     <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
+     <div class="meta"><span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span>{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
      <p>{{ j.body }}</p>
      {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
      <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
@@ -265,21 +252,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    {% else %}<p class="meta">No images yet — it fills this in as it makes creative_image projects.</p>{% endif %}
   </div>
  </section>
-
- {% if allow_terminal %}
- <section id=terminal class="tab">
-  <h2>Terminal — a shell on the box</h2>
-  <div class="card">
-   <p class="meta">Runs as the unprivileged <b>drongo</b> user inside the workspace, through the
-    same safety denylist the agent uses (so <code>rm&nbsp;-rf&nbsp;/</code> and friends are blocked)
-    and with secrets stripped. Each command starts fresh in the workspace — chain with
-    <code>cd&nbsp;foo&nbsp;&amp;&amp;&nbsp;…</code>. For an unrestricted shell, SSH in.</p>
-   <pre id=termout class=term>DRONGO terminal — type a command below and press Enter.</pre>
-   <div class=termline><span class=termps>$</span>
-     <input id=terminput autocomplete=off autocapitalize=off spellcheck=false placeholder="e.g. ls -la projects/   ·   df -h   ·   python --version"></div>
-  </div>
- </section>
- {% endif %}
 
  <section id=control class="tab">
   <div class="panel open" data-panel=ctl>
@@ -322,6 +294,16 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     </div>
     {% endfor %}
     <p class="meta">Use this when a provider is exhausted but still erroring (a free daily quota the bot can't see). Instant, survives restarts; keys and models untouched.</p>
+   </div>
+  </div>
+
+  <div class="panel" data-panel=hardware>
+   <button class=phead onclick="togglePanel(this)">Hardware <span class=chev>▾</span></button>
+   <div class=pbody>
+    <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
+    <span class=meta id=hwts></span>
+    <p class="meta">Probes USB, I²C (addresses), SPI, 1-wire, cameras &amp; GPIO. Anything newly attached becomes the agent's next project idea.</p>
+    <div id=hwbody class=meta>loading…</div>
    </div>
   </div>
 
@@ -390,8 +372,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    history.replaceState(null,'','#'+t);
-   if(t==='terminal'){const i=$('#terminput');if(i)setTimeout(()=>i.focus(),0);}
-   if(t==='home')loadHW();
+   if(t==='control')loadHW();
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
@@ -466,13 +447,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      if(d.ok){renderHW(d.info);toast(d.new&&d.new.length?('found '+d.new.length+' new device(s) ✓'):'scan complete ✓');}
      else toast(d.error||'scan failed');})
    .catch(e=>toast('scan failed')).finally(()=>{if(b){b.disabled=false;b.textContent='⟳ Scan for hardware';}});}
- let _thist=[],_thi=0;
- function termAppend(t){const o=$('#termout');if(!o)return;o.textContent+=t;o.scrollTop=o.scrollHeight;}
- function termRun(){const i=$('#terminput');if(!i)return;const cmd=i.value;if(!cmd.trim())return;
-   _thist.push(cmd);_thi=_thist.length;termAppend('\\n$ '+cmd+'\\n');i.value='';i.disabled=true;
-   fetch('/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})})
-   .then(r=>r.json()).then(d=>termAppend((d.out||'(no output)')))
-   .catch(e=>termAppend('ERROR: '+e)).finally(()=>{i.disabled=false;i.focus();});}
  function viewfile(path){$('#modaltitle').textContent='📄 '+path;$('#modalout').textContent='loading…';
    $('#fixbtn').style.display='none';$('#modal').classList.add('show');
    fetch('/file/'+path.split('/').map(encodeURIComponent).join('/'))
@@ -517,6 +491,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function lbNav(d){openLightbox(_lbi+d);}
  function closeLightbox(){$('#lightbox').classList.remove('show');$('#lbimg').src='';}
  const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const fmtLocal=ts=>{if(!ts)return '';try{return new Date(ts*1000).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return '';}};
+ function localizeTimes(){document.querySelectorAll('.ts[data-ts]').forEach(el=>{const t=fmtLocal(+el.dataset.ts);if(t)el.textContent=t;});}
  const fileURL=p=>'/file/'+p.split('/').map(encodeURIComponent).join('/');
  function mkArtLink(a){const l=document.createElement('a');l.className='art';l.textContent='▸ '+a.label;
    if(a.view){l.href='#';l.addEventListener('click',e=>{e.preventDefault();viewfile(a.path);});}
@@ -524,13 +500,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function mkHomeCard(j){const r=document.createElement('div');r.className='ev';
    const dot=document.createElement('span');dot.className='evd'+(j.ok?'':' bad');
    const t=document.createElement('span');t.className='evt';t.textContent=j.title||'(untitled)';
-   const m=document.createElement('span');m.className='meta';m.textContent=(j.task_type||j.kind||'')+' · '+j.when;
+   const m=document.createElement('span');m.className='meta';m.textContent=(j.task_type||j.kind||'')+' · '+(fmtLocal(j.ts)||j.when);
    r.appendChild(dot);r.appendChild(t);r.appendChild(m);return r;}
  function mkProjCard(j){const c=document.createElement('div');c.className='card';c.dataset.id=j.id;
    const h=document.createElement('h3');h.textContent=j.title+' ';
    if(!j.ok){const pill=document.createElement('span');pill.className='pill bad';pill.textContent='unfinished';h.appendChild(pill);}
    c.appendChild(h);
-   const m=document.createElement('div');m.className='meta';m.textContent=j.when+(j.provider?' · via '+j.provider:'');c.appendChild(m);
+   const m=document.createElement('div');m.className='meta';m.textContent=(fmtLocal(j.ts)||j.when)+(j.provider?' · via '+j.provider:'');c.appendChild(m);
    const p=document.createElement('p');p.textContent=j.body||'';c.appendChild(p);
    (j.arts||[]).forEach(a=>{const span=document.createElement('span');span.style.whiteSpace='nowrap';
      span.appendChild(mkArtLink(a));
@@ -612,8 +588,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    const s=d.stats||{};
    const status=(d.status||'?')+(d.next_cycle_in!=null&&d.status=='sleeping'?' · next in '+d.next_cycle_in+'s':'');
    $('#p_status').textContent=status;
+   const now=new Date();
+   const ltime=now.toLocaleTimeString([],{hour12:false});
+   const ldate=now.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short',year:'numeric'});
    const cells=[
-     ['status',d.status||'?'],['time',s.time||'—'],['uptime',s.uptime||'—'],
+     ['status',d.status||'?'],['time',ltime],['uptime',s.uptime||'—'],
      ['cpu',pct(s.cpu_pct)],['memory',s.mem_pct!=null?s.mem_used_mb+'/'+s.mem_total_mb+'MB':'—'],
      ['disk',s.disk_pct!=null?s.disk_used_gb+'/'+s.disk_total_gb+'GB':'—'],
      ['load',(s.load||[]).join(' ')||'—'],
@@ -625,7 +604,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      if(p!=null)bar='<div class=bar><i style="width:'+Math.min(100,p)+'%;background:'+(p>90?'var(--bad)':p>70?'var(--warn)':'var(--ac)')+'"></i></div>';
      return '<div class=stat><div class=k>'+k+'</div><div class=v>'+v+'</div>'+bar+'</div>';
    }).join('');
-   $('#sysmodel').textContent=(s.model||'')+(s.date?'  ·  '+s.date:'');
+   $('#sysmodel').textContent=(s.model||'')+'  ·  '+ldate;
    $('#fixq').textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
    if(d.usage)renderUsage(d.usage);
    renderWorking(d.working_on);
@@ -637,17 +616,12 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
        renderHome(jd.journal||[]); renderProjects(jd.journal||[]); renderGallery(jd.images||[]);}).catch(()=>{});
    }
  }).catch(()=>{});}
- initThemes(); renderGallery(_images); restorePanels(); loadHW(); refresh(); setInterval(refresh,4000);
- (function(){const i=$('#terminput');if(i)i.addEventListener('keydown',e=>{
-     if(e.key==='Enter'){e.preventDefault();termRun();}
-     else if(e.key==='ArrowUp'){if(_thi>0){_thi--;i.value=_thist[_thi]||'';}e.preventDefault();}
-     else if(e.key==='ArrowDown'){if(_thi<_thist.length-1){_thi++;i.value=_thist[_thi]||'';}else{_thi=_thist.length;i.value='';}e.preventDefault();}
-   });
-   document.addEventListener('keydown',e=>{
-     if(e.key==='Escape'){closeLightbox();const m=$('#modal');if(m)m.classList.remove('show');}
-     else if($('#lightbox').classList.contains('show')){
-       if(e.key==='ArrowLeft')lbNav(-1); else if(e.key==='ArrowRight')lbNav(1);}
-   });})();
+ initThemes(); renderGallery(_images); restorePanels(); localizeTimes(); loadHW(); refresh(); setInterval(refresh,4000);
+ document.addEventListener('keydown',e=>{
+   if(e.key==='Escape'){closeLightbox();const m=$('#modal');if(m)m.classList.remove('show');}
+   else if($('#lightbox').classList.contains('show')){
+     if(e.key==='ArrowLeft')lbNav(-1); else if(e.key==='ArrowRight')lbNav(1);}
+ });
 </script>
 </body></html>"""
 
@@ -692,7 +666,6 @@ def create_app(cfg, mem: Memory) -> Flask:
     name = cfg.get("identity", "name", default="DRONGO")
     ws = Path(cfg.workspace)
     allow_run = bool(cfg.get("web", "allow_run", default=True))
-    allow_terminal = bool(cfg.get("web", "allow_terminal", default=True))
 
     password = os.environ.get("DRONGO_WEB_PASSWORD", "")
     nets = []
@@ -737,7 +710,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             rows.append({"id": j["id"], "title": j["title"] or "", "kind": j["kind"],
                          "task_type": j["task_type"], "body": j["body"] or "",
                          "provider": j["provider"], "ok": bool(j["ok"]),
-                         "when": utc_iso(j["ts"]),
+                         "when": utc_iso(j["ts"]), "ts": j["ts"],
                          "arts": _dedupe_arts(json.loads(j["artifacts"] or "[]")),
                          "tags": _parse_tags(j["tags"] if "tags" in j.keys() else "")})
         return rows
@@ -783,7 +756,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             PAGE, name=name, journal=rows,
             projects=[r for r in rows if r["kind"] == "cycle"],
             images=_ls(cfg.images, (".png", ".jpg", ".jpeg")),
-            usage=_usage_view(), allow_run=allow_run, allow_terminal=allow_terminal,
+            usage=_usage_view(), allow_run=allow_run,
             sv=sv, pkey_json=json.dumps(pkey),
             alive=age is not None and age < 1800,
             hb=(f"{int(age)}s ago" if age is not None else ""),
@@ -978,21 +951,6 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.remove_fix(jid)
         log.info("deleted project: %s (%d path(s))", j["title"], len(removed))
         return {"ok": True, "removed": removed}
-
-    @app.route("/terminal", methods=["POST"])
-    def terminal():
-        # A shell for the human, run through the EXACT same path as the agent's
-        # own shell tool: unprivileged drongo user, cwd=workspace, project venv on
-        # PATH, secrets stripped, safeguard denylist enforced, timeout + rlimits.
-        # So it's no more powerful than what the agent (or /run) can already do.
-        if not allow_terminal:
-            return {"ok": False, "out": "terminal disabled (web.allow_terminal: false)"}, 403
-        cmd = ((request.get_json(silent=True) or {}).get("command") or "").strip()
-        if not cmd:
-            return {"ok": False, "out": ""}
-        ctx = tools.ToolContext(cfg=cfg, mem=mem, router=None, alerter=None, log=log)
-        log.info("dashboard terminal: %s", cmd[:200])
-        return {"ok": True, "out": tools.shell(ctx, command=cmd)}
 
     @app.route("/control/suggest", methods=["POST"])
     def control_suggest():
