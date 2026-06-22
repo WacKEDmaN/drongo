@@ -181,6 +181,11 @@ class Alerter:
 
     def send(self, message: str, title: str = "DRONGO", priority: str = "default",
              link: str | None = None) -> bool:
+        # Dashboard kill-switch (no restart needed): if this flag file exists the
+        # agent stays quiet on every channel. The web UI creates/removes it.
+        if os.path.exists(os.path.join(str(self.cfg.workspace), "AGENT_ALERTS_OFF")):
+            log.info("agent alerts muted (AGENT_ALERTS_OFF); skipping: %s", title)
+            return False
         sent = False
         for ch in self.channels:
             try:

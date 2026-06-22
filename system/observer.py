@@ -50,6 +50,9 @@ def log(msg):
 
 
 def alert(message, title="DRONGO observer", priority="high"):
+    # Dashboard kill-switch: if this flag exists, the root watchers stay silent.
+    if os.path.exists(os.path.join(CFG["runtime"], "workspace", "OBSERVER_ALERTS_OFF")):
+        return
     sent = False
     if CFG["discord"]:
         try:

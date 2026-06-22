@@ -132,6 +132,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .lbbtns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
  #gallerygrid .grid{margin-top:4px}
  .gal-empty{color:var(--mut);font:12px var(--mono)}
+ .swrow{display:flex;align-items:center;gap:13px;margin:12px 0}
+ .swrow .lbl{font:13px var(--mono);color:var(--fg)} .swrow .sub{color:var(--mut);font:11.5px var(--mono)}
+ .sw{position:relative;display:inline-block;width:44px;height:24px;flex:none}
+ .sw input{opacity:0;width:0;height:0;position:absolute}
+ .sw .sl{position:absolute;inset:0;background:#05090d;border:1px solid var(--bd2);border-radius:20px;cursor:pointer;transition:.2s}
+ .sw .sl::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;border-radius:50%;background:var(--mut);transition:.2s}
+ .sw input:checked + .sl{border-color:var(--ac);box-shadow:0 0 10px rgba(51,230,164,.25)}
+ .sw input:checked + .sl::before{transform:translateX(20px);background:var(--ac);box-shadow:0 0 8px var(--ac)}
 </style></head><body>
 <header>
  <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
@@ -253,6 +261,19 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <p class="meta" id=fixq></p>
   </div>
 
+  <h2>Discord alerts <span class="meta">— instant, no restart</span></h2>
+  <div class="card">
+   <div class=swrow>
+    <label class=sw><input type=checkbox id=al_agent {{ 'checked' if alerts_agent_on }} onchange="toggleAlerts('agent',this.checked)"><span class=sl></span></label>
+    <div><div class=lbl>Agent alerts</div><div class=sub>“project complete” + problems (and the LED, if wired). Turn off to stop the per-project spam.</div></div>
+   </div>
+   <div class=swrow>
+    <label class=sw><input type=checkbox id=al_observer {{ 'checked' if alerts_observer_on }} onchange="toggleAlerts('observer',this.checked)"><span class=sl></span></label>
+    <div><div class=lbl>Observer alerts</div><div class=sub>crash-loops, rollbacks &amp; host-health from the root watchdog/updater. Best left on.</div></div>
+   </div>
+   <p class="meta">Both take effect immediately. The agent stays unaffected otherwise — only notifications are silenced.</p>
+  </div>
+
   <h2>Settings <span class="meta">— stored on the agent; “Save &amp; Restart” to apply</span></h2>
   <div class="card set">
    <h3>Personality &amp; interests</h3>
@@ -335,6 +356,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    .then(r=>r.json()).then(d=>{if(d.ok){$('#suggbox').value='';
      $('#suggcur').textContent='Queued: '+t;toast('Suggestion queued for next ✓');}
      else toast(d.error||'failed');});}
+ function toggleAlerts(target,on){
+   fetch('/control/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,on})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?((target==='agent'?'Agent':'Observer')+' alerts '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
  let _thist=[],_thi=0;
  function termAppend(t){const o=$('#termout');if(!o)return;o.textContent+=t;o.scrollTop=o.scrollHeight;}
  function termRun(){const i=$('#terminput');if(!i)return;const cmd=i.value;if(!cmd.trim())return;
@@ -609,6 +633,8 @@ def create_app(cfg, mem: Memory) -> Flask:
             working_on=mem.recall("working_on"),
             suggestion=mem.get_suggestion(),
             jsig=_journal_sig(rows),
+            alerts_agent_on=not (ws / "AGENT_ALERTS_OFF").exists(),
+            alerts_observer_on=not (ws / "OBSERVER_ALERTS_OFF").exists(),
             integ_ok=integ_ok)
 
     @app.route("/settings", methods=["POST"])
@@ -784,6 +810,28 @@ def create_app(cfg, mem: Memory) -> Flask:
         mem.remember("run_now", True)   # wake it so an idle agent picks this up soon
         log.info("human suggestion queued: %s", text[:120])
         return {"ok": True}
+
+    @app.route("/control/alerts", methods=["POST"])
+    def control_alerts():
+        # Toggle Discord/LED notifications per source via a workspace flag file,
+        # which the agent's Alerter and the root observer/updater each check
+        # before sending. Instant, no restart, no privilege escalation.
+        d = request.get_json(silent=True) or {}
+        on = bool(d.get("on"))
+        fname = {"agent": "AGENT_ALERTS_OFF",
+                 "observer": "OBSERVER_ALERTS_OFF"}.get(d.get("target"))
+        if not fname:
+            return {"ok": False, "error": "bad target"}, 400
+        f = ws / fname
+        try:
+            if on:
+                f.unlink(missing_ok=True)            # alerts ON  = remove the off-flag
+            else:
+                f.write_text(f"off via dashboard {int(time.time())}\n", encoding="utf-8")
+        except Exception as e:
+            return {"ok": False, "error": str(e)}, 500
+        log.info("alerts toggle: %s -> %s", d.get("target"), "on" if on else "off")
+        return {"ok": True, "target": d.get("target"), "on": on}
 
     @app.route("/run", methods=["POST"])
     def run_py():

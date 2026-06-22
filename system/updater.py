@@ -40,6 +40,9 @@ def log(m):
 
 
 def alert(message, title="DRONGO updater", priority="default"):
+    # Shares the observer's dashboard kill-switch flag.
+    if os.path.exists(os.path.join(RUNTIME, "workspace", "OBSERVER_ALERTS_OFF")):
+        return
     if DISCORD:
         try:
             body = json.dumps({"username": "DRONGO",
