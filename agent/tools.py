@@ -400,6 +400,43 @@ def collect_hardware() -> dict:
     return info
 
 
+def _i2c_addresses(grid: str) -> set:
+    """Occupied addresses from an `i2cdetect -y N` grid (cells are the address in
+    hex; '--' empty, 'UU' busy/driver-claimed). Row labels like '70:' are skipped."""
+    addrs = set()
+    for line in (grid or "").splitlines():
+        label, sep, rest = line.partition(":")
+        if not sep or not re.fullmatch(r"\s*[0-9a-fA-F]{2}\s*", label):
+            continue
+        for c in rest.split():
+            if re.fullmatch(r"[0-9a-fA-F]{2}", c):   # a real address (UU/-- excluded)
+                addrs.add(c.lower())
+    return addrs
+
+
+def hardware_devices(info: dict) -> list:
+    """Stable identifiers for the devices currently attached, derived from
+    collect_hardware(). Excludes volatile readings (temps/mem/uptime) so two
+    scans can be diffed to spot genuinely NEW hardware (camera, sensor, etc.)."""
+    out = set()
+    for line in (info.get("usb") or "").splitlines():
+        m = re.search(r"\bID\s+([0-9a-fA-F]{4}:[0-9a-fA-F]{4}.*)$", line.strip())
+        if m:
+            out.add("usb:" + m.group(1).strip())
+    for v in info.get("video_devices") or []:
+        out.add("video:" + v)
+    for b in info.get("i2c_buses") or []:
+        out.add("i2c-bus:" + b)
+    for s in info.get("spi_devices") or []:
+        out.add("spi:" + s)
+    for w in info.get("onewire") or []:
+        out.add("1wire:" + w)
+    for bus, grid in (info.get("i2c_scan") or {}).items():
+        for addr in _i2c_addresses(grid):
+            out.add(f"i2c:{bus}@0x{addr}")
+    return sorted(out)
+
+
 def hardware_summary() -> dict:
     """Fast, non-intrusive snapshot of what's wired up — lists buses/devices and
     reads thermals, but does NOT probe i2c (so it never disturbs a device).

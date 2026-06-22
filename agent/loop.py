@@ -223,11 +223,22 @@ class AgentLoop:
             last_type = recent[0]["task_type"] if recent else ""
             if last_type:
                 steer += f"\nYour LAST project was a {last_type}; make this a different type."
+            # New hardware is the ONE thing that overrides "stop doing sensors":
+            # reacting to something just plugged in is novel and exactly wanted.
+            new_hw = self.mem.recall("new_hardware")
+            new_items = (new_hw or {}).get("items") if isinstance(new_hw, dict) else None
+            if new_items:
+                steer = ("\n*** NEW HARDWARE just appeared: " + ", ".join(new_items[:8]) +
+                         ". This is genuinely new — your next project SHOULD identify, test or "
+                         "use it (e.g. capture from the camera, read the new sensor, document "
+                         "what it is). This OVERRIDES the 'avoid sensors' guidance above. ***" + steer)
             user = (f"Your interests: {interests}\n"
                     f"Recently built (newest first): {recent_lines}{steer}{hw_hint}\n\n"
                     "Propose your next project now — genuinely different from the list above.")
         system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
         text, provider = self.router.complete(system, user, temperature=0.9)
+        if not suggestion and self.mem.recall("new_hardware"):
+            self.mem.remember("new_hardware", None)   # consumed once ideation succeeds
         obj = extract_json(text) or {}
         return {
             "task_type": obj.get("task_type", "experiment"),
@@ -331,11 +342,38 @@ class AgentLoop:
         self.alerter.send(message, title=f"{self.name} hit a problem", priority="high")
 
     # ---- one full cycle -----------------------------------------------
+    def _scan_hardware(self):
+        """Throttled hardware scan. Refreshes the inventory and, if a device has
+        appeared since last time (USB camera, I2C/SPI/1-wire sensor, ...), records
+        a 'new_hardware' nudge that ideation treats as a high-priority project
+        idea — so the agent actually reacts to hardware you plug in."""
+        interval = self.cfg.get("loop", "hw_scan_interval_seconds", default=1200)
+        if time.time() - (self.mem.recall("hw_last_scan") or 0) < interval:
+            return
+        try:
+            info = tools.collect_hardware()
+        except Exception as e:
+            log.warning("hardware scan failed: %s", e)
+            return
+        self.mem.remember("hw_last_scan", time.time())
+        self.mem.remember("hardware", info)            # keep the inventory fresh
+        devices = tools.hardware_devices(info)
+        prev = self.mem.recall("hw_devices")
+        self.mem.remember("hw_devices", devices)
+        if not isinstance(prev, list):
+            return                                      # first scan = baseline only
+        new = [d for d in devices if d not in set(prev)]
+        if new:
+            log.info("new hardware detected: %s", new)
+            self.mem.remember("new_hardware", {"items": new, "ts": time.time()})
+            self.mem.add_journal("note", "New hardware detected", ", ".join(new), ok=True)
+
     def run_cycle(self) -> dict:
         t0 = time.time()
         ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
                                 alerter=self.alerter, log=log, safe_mode=self.safe_mode)
         max_attempts = self.cfg.get("loop", "max_resume_attempts", default=8)
+        self._scan_hardware()                           # react to anything newly plugged in
         saved = self.mem.recall("current_project")
         saved = saved if isinstance(saved, dict) else None
 

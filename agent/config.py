@@ -38,6 +38,7 @@ DEFAULTS = {
         "max_steps": 14,             # tool calls per cycle (a project resumes across cycles)
         "max_recent_tasks": 12,
         "max_resume_attempts": 8,    # keep working ONE project this many cycles before giving up
+        "hw_scan_interval_seconds": 1200,  # re-scan buses for newly-attached hardware this often
     },
     "llm": {
         "prefer": "cloud_first",   # cloud_first | local_first
