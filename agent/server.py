@@ -274,6 +274,18 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <p class="meta">Both take effect immediately. The agent stays unaffected otherwise — only notifications are silenced.</p>
   </div>
 
+  <h2>LLM providers <span class="meta">— instant on/off, keeps your keys</span></h2>
+  <div class="card">
+   {% for p in sv.providers %}
+   <div class=swrow>
+    <label class=sw><input type=checkbox id="prov_{{ p.name }}" {{ 'checked' if p.name not in providers_off }} onchange="toggleProvider('{{ p.name }}',this.checked)"><span class=sl></span></label>
+    <div><div class=lbl>{{ p.name }} <span class=meta>{{ p.model }}</span></div>
+      <div class=sub>{% if p.key_env and not p.key_set %}no key set — {% endif %}off = the router skips it until you flip it back on</div></div>
+   </div>
+   {% endfor %}
+   <p class="meta">Use this when a provider is exhausted but still erroring (e.g. a free daily quota the bot can't see). It survives restarts; keys and models are untouched.</p>
+  </div>
+
   <h2>Settings <span class="meta">— stored on the agent; “Save &amp; Restart” to apply</span></h2>
   <div class="card set">
    <h3>Personality &amp; interests</h3>
@@ -359,6 +371,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function toggleAlerts(target,on){
    fetch('/control/alerts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,on})})
    .then(r=>r.json()).then(d=>{toast(d.ok?((target==='agent'?'Agent':'Observer')+' alerts '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
+ function toggleProvider(name,on){
+   fetch('/control/provider',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,on})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?(name+' '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
  let _thist=[],_thi=0;
  function termAppend(t){const o=$('#termout');if(!o)return;o.textContent+=t;o.scrollTop=o.scrollHeight;}
  function termRun(){const i=$('#terminput');if(!i)return;const cmd=i.value;if(!cmd.trim())return;
@@ -635,6 +650,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             jsig=_journal_sig(rows),
             alerts_agent_on=not (ws / "AGENT_ALERTS_OFF").exists(),
             alerts_observer_on=not (ws / "OBSERVER_ALERTS_OFF").exists(),
+            providers_off=mem.providers_off(),
             integ_ok=integ_ok)
 
     @app.route("/settings", methods=["POST"])
@@ -832,6 +848,20 @@ def create_app(cfg, mem: Memory) -> Flask:
             return {"ok": False, "error": str(e)}, 500
         log.info("alerts toggle: %s -> %s", d.get("target"), "on" if on else "off")
         return {"ok": True, "target": d.get("target"), "on": on}
+
+    @app.route("/control/provider", methods=["POST"])
+    def control_provider():
+        # Manually enable/disable an LLM provider live — the Router reads this
+        # list before every call, so it takes effect with no restart. Keys/models
+        # are untouched; the provider is simply skipped while off.
+        d = request.get_json(silent=True) or {}
+        name = (d.get("name") or "").strip()
+        if not name:
+            return {"ok": False, "error": "no provider name"}, 400
+        on = bool(d.get("on"))
+        off = mem.set_provider_enabled(name, on)
+        log.info("provider toggle: %s -> %s", name, "on" if on else "off")
+        return {"ok": True, "name": name, "on": on, "off": off}
 
     @app.route("/run", methods=["POST"])
     def run_py():

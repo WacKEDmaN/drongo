@@ -154,6 +154,19 @@ class Memory:
             self.remember("suggestion", "")
         return s
 
+    def providers_off(self) -> list:
+        """Provider names the human has manually switched off from the dashboard
+        (kept across restarts; the Router skips them live, no restart needed)."""
+        v = self.recall("providers_off")
+        return v if isinstance(v, list) else []
+
+    def set_provider_enabled(self, name, on) -> list:
+        off = [x for x in self.providers_off() if x != name]
+        if not on:
+            off.append(name)
+        self.remember("providers_off", off)
+        return off
+
     def add_fix(self, entry: dict):
         q = self.recall("fix_queue") or []
         q.append(entry)

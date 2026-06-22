@@ -198,8 +198,11 @@ class Router:
                 time.sleep(wait)
         self._last_call = time.time()
         errors = []
+        manual_off = set(self.mem.providers_off())             # dashboard kill-switches (live)
         for p in self.providers:
             if p.name in self._disabled:                       # config error this session
+                continue
+            if p.name in manual_off:                           # turned off from the dashboard
                 continue
             if not p.is_local and not self.mem.can_use(p.name, p.rpm_limit, p.daily_limit):
                 continue                                       # provider-enforced cooldown
