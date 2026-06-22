@@ -71,7 +71,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  nav button{font:600 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;background:rgba(255,255,255,.02);color:var(--mut);border:1px solid var(--bd);border-radius:7px;padding:8px 13px;cursor:pointer;transition:.15s}
  nav button:hover{color:var(--fg);border-color:var(--ac2)}
  nav button.on{background:linear-gradient(180deg,rgba(var(--ac-rgb),.18),rgba(var(--ac-rgb),.05));color:var(--ac);border-color:var(--ac);box-shadow:0 0 14px rgba(var(--ac-rgb),.25),inset 0 0 12px rgba(var(--ac-rgb),.07)}
- main{position:relative;z-index:1;max-width:1120px;margin:0 auto;padding:22px 20px 44px}
+ main{position:relative;z-index:1;max-width:1600px;margin:0 auto;padding:18px 22px 44px}
  .tab{display:none} .tab.on{display:block;animation:fade .26s ease}
  @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
  .card{position:relative;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--bd);border-radius:12px;padding:15px 17px;margin:12px 0;transition:border-color .18s,box-shadow .18s}
@@ -105,16 +105,19 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .set input[type=checkbox]{display:inline-block;width:auto;margin-right:7px;accent-color:var(--ac)}
  .prow{display:flex;gap:8px;align-items:center;margin:7px 0;flex-wrap:wrap}
  .prow input{flex:1;min-width:120px}
- .homewrap{display:flex;gap:18px;align-items:flex-start}
- .homemain{flex:1;min-width:0} .homeside{width:264px;flex:none;position:sticky;top:80px}
- .homeside .row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd);font:12.5px var(--mono)}
- .homeside .row span{color:var(--mut)} .homeside .row b{font-weight:600;color:var(--fg)} .homeside .row:last-child{border:0}
+ .dash{display:grid;grid-template-columns:repeat(12,1fr);gap:14px;align-items:start}
+ .dash>#workingon:empty{display:none}
+ .tile{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--bd);border-radius:12px;padding:13px 15px;min-width:0}
+ .tile .th{font:600 12px var(--mono);text-transform:uppercase;letter-spacing:.13em;color:var(--ac);margin:0 0 10px;display:flex;gap:9px;align-items:center}
+ .tile .th::before{content:"//";color:var(--mut)}
+ .c4{grid-column:span 4}.c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
+ @media (max-width:1000px){ .c4,.c5,.c6,.c7,.c8{grid-column:span 12} }
  .usaget{width:100%;border-collapse:collapse;font:11.5px var(--mono)}
  .usaget th{color:var(--mut);text-align:left;font-weight:500;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
  .usaget td{border-top:1px solid var(--bd);padding:4px 0;color:var(--fg)}
  .usaget th:not(:first-child),.usaget td:not(:first-child){text-align:right}
  #suggbox{width:100%;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:8px 10px;font:13px/1.5 var(--mono);resize:vertical}
- @media (max-width:760px){ .homewrap{flex-direction:column} .homeside{width:100%;position:static} header{padding:10px 14px} main{padding:16px 14px} }
+ @media (max-width:760px){ header{padding:10px 14px} main{padding:16px 14px} }
  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:linear-gradient(180deg,#0e1a16,#0a130f);color:var(--ac);border:1px solid var(--ac);padding:10px 18px;border-radius:9px;font:600 12.5px var(--mono);opacity:0;transition:.22s;pointer-events:none;z-index:30;box-shadow:0 0 22px rgba(var(--ac-rgb),.3)}
  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
  .modal{position:fixed;inset:0;background:rgba(2,5,9,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}
@@ -181,37 +184,35 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </header>
 <main>
 
- <section id=home class="tab on"><div class=homewrap>
-  <div class=homemain>
-   <div id=workingon>{% if working_on %}<div class="card nowcard"><div class=nowlbl>▶ Working on</div>
+ <section id=home class="tab on">
+  <div class=dash>
+   <div id=workingon class=c12>{% if working_on %}<div class="card nowcard"><div class=nowlbl>▶ Working on</div>
      <div class=nowtitle>{{ working_on.title }}</div>
      <span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
-   <h2>Live thinking</h2>
-   <div class=card><div id=think class=think>idle…</div></div>
-   <h2>System</h2>
-   <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div>
-   <p class="meta" id=sysmodel></p>
 
-   <h2>Vitals <span class=meta>· recent history</span></h2>
-   <div class=sparks id=sparks><p class=meta>collecting…</p></div>
+   <div class="tile c8"><div class=th>Live thinking</div>
+     <div id=think class=think>idle…</div></div>
 
-   <h2>Recent activity</h2>
-   <div class=card><div id=homelist class=evlist>
-   {% for j in journal %}
-    <div class=ev><span class="evd{{ '' if j.ok else ' bad' }}"></span><span class=evt>{{ j.title }}</span><span class=meta>{{ j.task_type or j.kind }} · <span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span></span></div>
-   {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
-   </div></div>
+   <div class="tile c4"><div class=th>LLM usage today</div>
+     <table class=usaget id=usagetbl>
+      <tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>
+      {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=4 class=meta>no calls yet</td></tr>{% endfor %}
+     </table></div>
+
+   <div class="tile c7"><div class=th>System <span class=meta id=sysmodel></span></div>
+     <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div></div>
+
+   <div class="tile c5"><div class=th>Vitals <span class=meta>· recent history</span></div>
+     <div class=sparks id=sparks><p class=meta>collecting…</p></div></div>
+
+   <div class="tile c12"><div class=th>Recent activity</div>
+     <div id=homelist class=evlist>
+     {% for j in journal %}
+      <div class=ev><span class="evd{{ '' if j.ok else ' bad' }}"></span><span class=evt>{{ j.title }}</span><span class=meta>{{ j.task_type or j.kind }} · <span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span></span></div>
+     {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
+     </div></div>
   </div>
-  <aside class=homeside>
-   <div class=card>
-    <h3 style="margin-top:0">LLM usage today</h3>
-    <table class=usaget id=usagetbl>
-     <tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>
-     {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=4 class=meta>no calls yet</td></tr>{% endfor %}
-    </table>
-   </div>
-  </aside>
- </div></section>
+ </section>
 
  <section id=projects class="tab">
   <div class="card">
