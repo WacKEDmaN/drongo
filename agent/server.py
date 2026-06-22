@@ -90,6 +90,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .stat .v{font:600 23px/1.2 var(--mono);color:var(--fg);margin-top:3px} .stat .k{color:var(--mut);font:11px var(--mono);text-transform:uppercase;letter-spacing:.1em}
  .bar{height:5px;border-radius:3px;background:#05090d;margin-top:9px;overflow:hidden;border:1px solid var(--bd)}.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--ac2),var(--ac));box-shadow:0 0 10px rgba(var(--ac-rgb),.5)}
  #projlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:14px;align-items:start}
+ #projlist .card{display:flex;flex-direction:column;height:300px;overflow:hidden}
+ #projlist .card.expanded{height:auto}
+ .pcontent{flex:1 1 auto;min-height:0;overflow:auto;margin:2px 0 8px}
+ .pactions{flex:none;display:flex;flex-wrap:wrap;align-items:center}
  .pnum{color:var(--ac);font-weight:600}
  .fbbar{font:12.5px var(--mono);margin-bottom:10px;color:var(--mut)} .fbbar a{color:var(--ac2)}
  .fbrow{display:flex;justify-content:space-between;gap:10px;padding:5px 2px;border-bottom:1px solid var(--bd);font:13px var(--mono)}
@@ -241,16 +245,21 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <div class="card" data-id="{{ j.id }}">
      <h3><span class=pnum>#{{ j.id }}</span> {{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
      <div class="meta"><span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span>{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
-     <p>{{ j.body }}</p>
-     {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith(('.py', '.sh')) and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
-     <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
-       {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
+     <div class=pcontent>
+       <p>{{ j.body }}</p>
+       {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith(('.py', '.sh')) and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
+       <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
+         {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
+       </div>
      </div>
-     <button class="act" onclick="rate({{ j.id }},'loved')" title="more like this">⭐</button>
-     <button class="act" onclick="rate({{ j.id }},'meh')" title="less like this">👎</button>
-     <button class="act danger" onclick="fixit({{ j.id }})">🔧 Fix this</button>
-     <button class="act" onclick="addtag({{ j.id }})">+ tag</button>
-     <button class="act danger" onclick="delproj({{ j.id }},this)">🗑 Delete</button>
+     <div class=pactions>
+       <button class="act" onclick="rate({{ j.id }},'loved')" title="more like this">⭐</button>
+       <button class="act" onclick="rate({{ j.id }},'meh')" title="less like this">👎</button>
+       <button class="act danger" onclick="fixit({{ j.id }})">🔧 Fix</button>
+       <button class="act" onclick="addtag({{ j.id }})">+ tag</button>
+       <button class="act danger" onclick="delproj({{ j.id }},this)">🗑</button>
+       <button class="act" onclick="toggleExpand(this)" title="expand / collapse">⤢</button>
+     </div>
    </div>
   {% else %}<p class="meta">No finished projects yet.</p>{% endfor %}
   </div>
@@ -594,22 +603,27 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    if(!j.ok){const pill=document.createElement('span');pill.className='pill bad';pill.textContent='unfinished';h.appendChild(pill);}
    c.appendChild(h);
    const m=document.createElement('div');m.className='meta';m.textContent=(fmtLocal(j.ts)||j.when)+(j.provider?' · via '+j.provider:'');c.appendChild(m);
-   const p=document.createElement('p');p.textContent=j.body||'';c.appendChild(p);
+   const pc=document.createElement('div');pc.className='pcontent';
+   const p=document.createElement('p');p.textContent=j.body||'';pc.appendChild(p);
    (j.arts||[]).forEach(a=>{const span=document.createElement('span');span.style.whiteSpace='nowrap';
      span.appendChild(mkArtLink(a));
      if((a.path.endsWith('.py')||a.path.endsWith('.sh'))&&ALLOW_RUN){const b=document.createElement('button');b.className='runbtn';b.textContent='▶ run';
        b.addEventListener('click',()=>runpy(a.path,j.id));span.appendChild(b);}
-     c.appendChild(span);c.appendChild(document.createTextNode(' '));});
+     pc.appendChild(span);pc.appendChild(document.createTextNode(' '));});
    const chips=document.createElement('div');chips.className='chips';chips.id='chips-'+j.id;chips.style.marginTop='8px';
    (j.tags||[]).forEach(t=>{const s=document.createElement('span');s.className='chip'+(t==='needs-fix'?' fix':'');s.textContent=t;chips.appendChild(s);});
-   c.appendChild(chips);
+   pc.appendChild(chips); c.appendChild(pc);
    const mk=(cls,txt,fn)=>{const b=document.createElement('button');b.className=cls;b.textContent=txt;b.addEventListener('click',fn);return b;};
-   c.appendChild(mk('act','⭐',()=>rate(j.id,'loved')));
-   c.appendChild(mk('act','👎',()=>rate(j.id,'meh')));
-   c.appendChild(mk('act danger','🔧 Fix this',()=>fixit(j.id)));
-   c.appendChild(mk('act','+ tag',()=>addtag(j.id)));
-   c.appendChild(mk('act danger','🗑 Delete',e=>delproj(j.id,e.currentTarget)));
+   const act=document.createElement('div');act.className='pactions';
+   act.appendChild(mk('act','⭐',()=>rate(j.id,'loved')));
+   act.appendChild(mk('act','👎',()=>rate(j.id,'meh')));
+   act.appendChild(mk('act danger','🔧 Fix',()=>fixit(j.id)));
+   act.appendChild(mk('act','+ tag',()=>addtag(j.id)));
+   act.appendChild(mk('act danger','🗑',e=>delproj(j.id,e.currentTarget)));
+   act.appendChild(mk('act','⤢',e=>toggleExpand(e.currentTarget)));
+   c.appendChild(act);
    return c;}
+ function toggleExpand(btn){const c=btn.closest('.card');if(c)c.classList.toggle('expanded');}
  function renderHome(journal){
    const list=$('#homelist'); if(!list)return; list.replaceChildren();
    if(journal.length)journal.forEach(j=>list.appendChild(mkHomeCard(j)));
