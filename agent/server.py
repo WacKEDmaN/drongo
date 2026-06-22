@@ -415,7 +415,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <label>Preset<select id=ap_preset onchange="apPreset()">
       <option value=custom>Custom (OpenAI-compatible)</option>
       <option value=ollama>Ollama Cloud (free — gpt-oss, qwen, deepseek)</option>
-      <option value=nvidia>NVIDIA NIM (free credits)</option>
+      <option value=nemotron>Ollama Cloud — Nemotron (NVIDIA, no NVIDIA key)</option>
+      <option value=nvidia>NVIDIA NIM (direct — needs NVIDIA key)</option>
       <option value=github>GitHub Models (free w/ PAT)</option>
       <option value=cerebras>Cerebras (free)</option>
       <option value=groq>Groq (free)</option>
@@ -531,6 +532,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    .then(r=>r.json()).then(d=>{toast(d.ok?(name+' '+(on?'ON ✓':'OFF ✓')):(d.error||'failed'));});}
  const AP_PRESETS={
    ollama:{name:'ollama-cloud',url:'https://ollama.com/v1',model:'gpt-oss:120b',keyenv:'OLLAMA_API_KEY'},
+   nemotron:{name:'nemotron',url:'https://ollama.com/v1',model:'nemotron',keyenv:'OLLAMA_API_KEY'},
    nvidia:{name:'nvidia',url:'https://integrate.api.nvidia.com/v1',model:'meta/llama-3.1-8b-instruct',keyenv:'NVIDIA_API_KEY'},
    github:{name:'github',url:'https://models.github.ai/inference',model:'openai/gpt-4o-mini',keyenv:'GITHUB_TOKEN'},
    cerebras:{name:'cerebras2',url:'https://api.cerebras.ai/v1',model:'gpt-oss-120b',keyenv:'CEREBRAS_API_KEY'},
