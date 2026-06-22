@@ -30,6 +30,7 @@ DEFAULTS = {
         "compute-heavy generative art (fractals, Mandelbrot zooms, ray tracers)",
         "simulations that exercise the CPU (particle systems, cellular automata, physics)",
         "tidy shell and python utilities that improve the box",
+        "small native C/C++ programs & command-line tools (compiled with gcc/g++)",
         "sensing and visualising its own hardware (sensors, thermals, buses)",
         "retro-computing experiments (Amstrad CPC / Z80, where toolchains allow)",
         "short research notes on things it just learned",

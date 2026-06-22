@@ -236,7 +236,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
      <div class="meta"><span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span>{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
      <p>{{ j.body }}</p>
-     {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith('.py') and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
+     {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith(('.py', '.sh')) and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
      <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
        {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
      </div>
@@ -562,7 +562,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    const p=document.createElement('p');p.textContent=j.body||'';c.appendChild(p);
    (j.arts||[]).forEach(a=>{const span=document.createElement('span');span.style.whiteSpace='nowrap';
      span.appendChild(mkArtLink(a));
-     if(a.path.endsWith('.py')&&ALLOW_RUN){const b=document.createElement('button');b.className='runbtn';b.textContent='▶ run';
+     if((a.path.endsWith('.py')||a.path.endsWith('.sh'))&&ALLOW_RUN){const b=document.createElement('button');b.className='runbtn';b.textContent='▶ run';
        b.addEventListener('click',()=>runpy(a.path,j.id));span.appendChild(b);}
      c.appendChild(span);c.appendChild(document.createTextNode(' '));});
    const chips=document.createElement('div');chips.className='chips';chips.id='chips-'+j.id;chips.style.marginTop='8px';
@@ -1052,8 +1052,8 @@ def create_app(cfg, mem: Memory) -> Flask:
         if not allow_run:
             return {"ok": False, "error": "running is disabled (web.allow_run: false)"}, 403
         rel = ((request.get_json(silent=True) or {}).get("path") or "").strip()
-        if not rel.endswith(".py"):
-            return {"ok": False, "error": "only .py files can be run"}, 400
+        if not rel.endswith((".py", ".sh")):
+            return {"ok": False, "error": "only .py or .sh files can be run"}, 400
         try:
             full = safeguard.safe_join(str(ws), rel)
         except Exception:
@@ -1064,8 +1064,12 @@ def create_app(cfg, mem: Memory) -> Flask:
         py = venv_py if os.path.exists(venv_py) else "python3"
         env = dict(os.environ, VIRTUAL_ENV=str(cfg.project_venv),
                    PATH=os.path.join(str(cfg.project_venv), "bin") + os.pathsep + os.environ.get("PATH", ""))
+        # .sh runs via bash (lets compiled C/C++ projects build+run from a run.sh);
+        # .py via the project venv. Both as the unprivileged drongo user, sandboxed.
+        cmd = ["bash", full] if rel.endswith(".sh") else [py, full]
+        cwd = os.path.dirname(full) if rel.endswith(".sh") else str(ws)
         try:
-            p = subprocess.run([py, full], cwd=str(ws), capture_output=True,
+            p = subprocess.run(cmd, cwd=cwd, capture_output=True,
                                text=True, timeout=30, env=env,
                                preexec_fn=safeguard.posix_limits(mem_mb=300, cpu_seconds=25))
             out = (p.stdout or "") + (("\n[stderr]\n" + p.stderr) if p.stderr else "")

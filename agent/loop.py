@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TASK_TYPES = [
     "browser_game", "creative_image", "utility_script", "sensor_dashboard",
     "web_research_note", "self_maintenance", "experiment",
-    "simulation", "generative_art",
+    "simulation", "generative_art", "native_program",
 ]
 
 EXEC_SYSTEM = """{persona}
@@ -95,6 +95,14 @@ Rules:
   `pip install <package>` and run code with `python <file>` (both already point at
   your project venv). Prefer the standard library, but install what you need —
   and if you install something, list it in the README so it isn't a surprise.
+- YOU ARE A POLYGLOT — don't default to Python for everything. C and C++ are fully
+  available: `gcc`, `g++` and `make` are installed. Write real C/C++ (and shell)
+  when it fits — fast native tools, demos, simulations, classic algorithms. Build
+  and TEST it in the shell (e.g. `g++ -O2 main.cpp -o app && ./app`), document the
+  exact build+run command in the README, and for anything meant to be launched add
+  a small `run.sh` (it compiles + runs) so it works from the dashboard's ▶ run
+  button too. Check what else exists with `which gcc g++ make node rustc` before
+  assuming a toolchain is missing (you can't apt-install — no sudo).
 - Return "final" ONLY when the artifact actually exists and works and you've
   verified it (e.g. read the file back / ran it). NEVER return "final" just
   because you're stuck, blocked, rate-limited, or out of ideas — that falsely
