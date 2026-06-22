@@ -10,7 +10,8 @@
 #                  SymbOS / hand-written Z80 asm)
 #    * z88dk     - C + asm for Z80 machines (Amstrad CPC, ZX       [source build]
 #                  Spectrum, MSX...). Provides `zcc`.
-#    * CPCtelera - Amstrad CPC game-dev framework (pulls in Mono) [source build]
+#    * CPCtelera - Amstrad CPC game-dev framework (needs Mono +    [source build]
+#                  FreeImage; bundled SDCC builds from source)
 #
 #  Toolchains install to /opt/retro (root-owned, read-only to the agent). The
 #  agent's shell picks them up automatically (see _project_env in tools.py).
@@ -35,17 +36,34 @@ warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
 
 export DEBIAN_FRONTEND=noninteractive
 
-say "1/4  apt packages (sdcc, pasmo + build deps)"
+# Install as many of the named packages as are available, and NEVER let one
+# missing/renamed package abort the whole batch -- a plain `apt-get install A B C`
+# installs NONE of them if any single name is unavailable. Try the fast batch
+# first; on failure, fall back to installing each package on its own so every
+# package that DOES exist still gets in.
+apt_install() {
+  apt-get install -y --no-install-recommends "$@" && return 0
+  warn "batch install hit a snag — retrying each package individually"
+  local p
+  for p in "$@"; do
+    apt-get install -y --no-install-recommends "$p" || warn "  skipped (unavailable?): $p"
+  done
+}
+
+say "1/4  apt packages (sdcc, pasmo + build deps for z88dk & CPCtelera)"
 apt-get update -y || warn "apt update failed"
-apt-get install -y --no-install-recommends \
-  sdcc pasmo build-essential git curl unzip m4 dos2unix \
-  libxml2-dev zlib1g-dev libpng-dev bison flex \
-  libboost-dev libboost-graph-dev ragel texinfo \
-  || warn "some apt packages failed to install"
-# ^ libboost-* is required to build SDCC from source (CPCtelera bundles its own,
-#   and z88dk's zsdcc needs it too); ragel/texinfo are needed by the z88dk build.
-# CPCtelera's bundled tools need the Mono runtime. Installed on its own so a
-# failure here can't block sdcc/pasmo above. mono-complete is the safe catch-all.
+# Ready-to-use compilers/assemblers + fetch tools.
+apt_install sdcc pasmo build-essential git curl wget unzip m4 dos2unix pkg-config
+# Build-from-source deps shared by z88dk and CPCtelera's bundled SDCC:
+#   bison/flex/ragel/re2c    - lexer/parser generators z88dk's build invokes
+#   libxml2-dev/zlib1g-dev/libgmp3-dev/libpng-dev - libs z88dk & SDCC link against
+#   libboost-dev/-graph-dev  - SDCC's register allocator needs Boost.Graph
+#   texinfo                  - z88dk docs build (this is the one most often missing on ARM)
+#   libfreeimage-dev         - CPCtelera's image-conversion tools need FreeImage
+apt_install libxml2-dev zlib1g-dev libgmp3-dev libpng-dev bison flex ragel re2c \
+            libboost-dev libboost-graph-dev texinfo libfreeimage-dev
+# CPCtelera's bundled tools need the Mono runtime. Kept separate from the above so
+# a mono hiccup can't block the compilers. mono-complete is the safe catch-all.
 apt-get install -y mono-complete \
   || apt-get install -y mono-runtime libmono-system-drawing4.0-cil \
   || warn "mono failed to install — CPCtelera tools that need it won't run"
@@ -61,8 +79,9 @@ else
   rm -rf "$OPT/z88dk" /tmp/z88dk-src /tmp/z88dk-src.tgz
   mkdir -p /tmp/z88dk-src
   if curl -fsSL "$Z88DK_URL" -o /tmp/z88dk-src.tgz && tar xzf /tmp/z88dk-src.tgz -C /tmp/z88dk-src; then
-    SRCDIR="$(dirname "$(find /tmp/z88dk-src -maxdepth 3 -name build.sh 2>/dev/null | head -1)")"
-    if [ -n "$SRCDIR" ] && [ -d "$SRCDIR" ]; then
+    BUILDSH="$(find /tmp/z88dk-src -maxdepth 3 -name build.sh 2>/dev/null | head -1)"
+    SRCDIR="$(dirname "$BUILDSH")"
+    if [ -n "$BUILDSH" ] && [ -d "$SRCDIR" ]; then
       mv "$SRCDIR" "$OPT/z88dk"
       if ( cd "$OPT/z88dk" && export ZCCCFG="$OPT/z88dk/lib/config" PATH="$OPT/z88dk/bin:$PATH" \
            && chmod +x build.sh && ./build.sh ); then
