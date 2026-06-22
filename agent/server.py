@@ -161,10 +161,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .themes{display:flex;gap:7px;align-items:center}
  .swatch{width:16px;height:16px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
- .sparks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
- .spark{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--bd);border-radius:12px;padding:11px 13px}
- .spark .k{color:var(--mut);font:11px var(--mono);text-transform:uppercase;letter-spacing:.08em}
- .spark .v{font:600 18px var(--mono);color:var(--fg)} .spark svg{display:block;width:100%;height:34px;margin-top:5px}
  .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:172px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
  .think .tl{padding:1px 0} .think .t-think{color:var(--mut)} .think .t-tool{color:var(--ac2)} .think .t-ok{color:var(--ac)} .think .t-warn{color:var(--warn)} .think .t-info{color:var(--fg)}
 </style></head><body>
@@ -190,6 +186,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <div class=nowtitle>{{ working_on.title }}</div>
      <span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
 
+   <div class="tile c12"><div class=th>System <span class=meta id=sysmodel></span></div>
+     <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div></div>
+
    <div class="tile c8"><div class=th>Live thinking</div>
      <div id=think class=think>idle…</div></div>
 
@@ -198,12 +197,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>
       {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=4 class=meta>no calls yet</td></tr>{% endfor %}
      </table></div>
-
-   <div class="tile c7"><div class=th>System <span class=meta id=sysmodel></span></div>
-     <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div></div>
-
-   <div class="tile c5"><div class=th>Vitals <span class=meta>· recent history</span></div>
-     <div class=sparks id=sparks><p class=meta>collecting…</p></div></div>
 
    <div class="tile c12"><div class=th>Recent activity</div>
      <div id=homelist class=evlist>
@@ -542,19 +535,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    if(usage&&usage.length)usage.forEach(u=>{h+='<tr><td>'+esc(u.provider)+'</td><td>'+(u.day_count||0)+'</td><td>'+(u.total||0)+'</td><td>'+esc(u.cool||'—')+'</td></tr>';});
    else h+='<tr><td colspan=4 class=meta>no calls yet</td></tr>';
    t.innerHTML=h;}
- function spk(arr,max){const w=200,h=34;const vals=arr.filter(v=>v!=null);
-   if(vals.length<2)return '<svg viewBox="0 0 200 34" preserveAspectRatio=none></svg>';
-   const mx=max||(Math.max.apply(null,vals)*1.15)||1;const n=arr.length;const step=w/(n-1);let d='';let on=false;
-   arr.forEach((v,i)=>{if(v==null)return;const x=(i*step).toFixed(1);
-     const y=(h-Math.max(0,Math.min(1,v/mx))*h).toFixed(1);d+=(on?'L':'M')+x+' '+y+' ';on=true;});
-   return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio=none><path d="'+d+'" fill=none stroke="var(--ac)" stroke-width=1.5/></svg>';}
- function sparkCard(k,cur,svg){return '<div class=spark><div class=k>'+k+'</div><div class=v>'+cur+'</div>'+svg+'</div>';}
- function renderSparks(v){const el=$('#sparks');if(!el)return;
-   if(!v||v.length<2){el.innerHTML='<p class=meta>collecting…</p>';return;}
-   const last=v[v.length-1];
-   el.innerHTML=sparkCard('CPU',last.cpu!=null?last.cpu+'%':'—',spk(v.map(x=>x.cpu),100))
-     +sparkCard('Memory',last.mem!=null?last.mem+'%':'—',spk(v.map(x=>x.mem),100))
-     +sparkCard('Temp',last.temp!=null?last.temp+'°C':'—',spk(v.map(x=>x.temp),null));}
  function renderThink(steps){const el=$('#think');if(!el)return;
    const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
    el.replaceChildren();
@@ -609,7 +589,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    $('#fixq').textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
    if(d.usage)renderUsage(d.usage);
    renderWorking(d.working_on);
-   renderSparks(d.vitals); renderThink(d.steps);
+   renderThink(d.steps);
    const sc=$('#suggcur'); if(sc)sc.textContent=d.suggestion?('Queued: '+d.suggestion):'';
    if(d.journal_sig!==undefined&&d.journal_sig!==lastSig){
      lastSig=d.journal_sig;
@@ -730,21 +710,6 @@ def create_app(cfg, mem: Memory) -> Flask:
                         "total": u["total"], "cool": cool})
         return out
 
-    def _sample_vitals(stats):
-        # Rolling CPU/mem/temp history for the Home sparklines. Appended at most
-        # once per 20s (so multiple open tabs don't over-sample); ~30 min kept.
-        v = mem.recall("vitals")
-        v = v if isinstance(v, list) else []
-        now = time.time()
-        if not v or now - (v[-1].get("t") or 0) >= 20:
-            temps = stats.get("temps") or []
-            v.append({"t": round(now), "cpu": stats.get("cpu_pct"),
-                      "mem": stats.get("mem_pct"),
-                      "temp": (temps[0].get("c") if temps else None)})
-            v = v[-90:]
-            mem.remember("vitals", v)
-        return v
-
     @app.route("/")
     def index():
         rows = _journal(60)
@@ -790,9 +755,8 @@ def create_app(cfg, mem: Memory) -> Flask:
     def api_system():
         age = watchdog.heartbeat_age(cfg)
         nxt = mem.recall("next_cycle_ts")
-        stats = system_stats()
         return {
-            "stats": stats,
+            "stats": system_stats(),
             "status": mem.recall("status") or "starting",
             "working_on": mem.recall("working_on"),
             "heartbeat_age": age,
@@ -803,7 +767,6 @@ def create_app(cfg, mem: Memory) -> Flask:
             "usage": _usage_view(),                 # live so cooldowns tick
             "suggestion": mem.get_suggestion(),
             "journal_sig": _journal_sig(_journal(60)),
-            "vitals": _sample_vitals(stats),
             "steps": mem.recall("live_steps") or [],
         }
 
