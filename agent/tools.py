@@ -117,6 +117,14 @@ def _project_env(cfg):
     env["VIRTUAL_ENV"] = str(cfg.project_venv)
     env["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
     env.pop("PYTHONHOME", None)
+    # Retro Z80 toolchain (if system/retro-toolchain.sh has been run): put z88dk's
+    # zcc on PATH and point ZCCCFG / CPCT_PATH at it. sdcc + pasmo are in /usr/bin.
+    if os.path.isdir("/opt/retro/z88dk/bin"):
+        env["PATH"] = "/opt/retro/z88dk/bin" + os.pathsep + env["PATH"]
+        if os.path.isdir("/opt/retro/z88dk/lib/config"):
+            env["ZCCCFG"] = "/opt/retro/z88dk/lib/config"
+    if os.path.isdir("/opt/retro/cpctelera"):
+        env["CPCT_PATH"] = "/opt/retro/cpctelera"
     return env
 
 

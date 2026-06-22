@@ -172,7 +172,14 @@ outward**; each outer layer is owned by root and recovers the one inside it.
 git clone <your-fork-url> drongo && cd drongo
 sudo ./install.sh --strip-desktop          # disables the GUI to free RAM (reversible, nothing uninstalled)
                                            # omit the flag to leave the desktop running
+                                           # add --retro to also build the Z80/Amstrad toolchain
 ```
+
+> **Retro / 8-bit dev (optional):** `sudo ./install.sh --retro` (or `sudo
+> ./system/retro-toolchain.sh` any time) installs **sdcc**, **z88dk**, **CPCtelera**
+> and **pasmo** so the agent can build for the Amstrad CPC, ZX Spectrum and Z80
+> (incl. SymbOS assembly). z88dk + CPCtelera compile from source, so it's a heavy,
+> best-effort step — it won't break the base install, and you can re-run it.
 
 The installer (see [`install.sh`](install.sh)) does everything: packages, the
 `drongo` user, `/opt/drongo` (root-owned) + `/var/lib/drongo` (agent-writable),

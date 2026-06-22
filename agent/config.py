@@ -32,7 +32,7 @@ DEFAULTS = {
         "tidy shell and python utilities that improve the box",
         "small native C/C++ programs & command-line tools (compiled with gcc/g++)",
         "sensing and visualising its own hardware (sensors, thermals, buses)",
-        "retro-computing experiments (Amstrad CPC / Z80, where toolchains allow)",
+        "retro-computing for Amstrad CPC / ZX Spectrum / Z80 (sdcc, z88dk, CPCtelera, pasmo)",
         "short research notes on things it just learned",
     ],
     "loop": {

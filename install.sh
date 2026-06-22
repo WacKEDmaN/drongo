@@ -19,6 +19,8 @@
 #  Flags:  --strip-desktop   stop the GUI to free RAM (reversible; nothing is
 #                            uninstalled — just disables the graphical target)
 #          --model NAME       force a specific Ollama model (default: auto by RAM)
+#          --retro            also install the Z80/Amstrad cross-dev toolchain
+#                            (sdcc, z88dk, CPCtelera, pasmo) — heavy source builds
 # ===========================================================================
 set -euo pipefail
 
@@ -28,6 +30,7 @@ ETC=/etc/drongo
 AGENT_USER=drongo
 MODEL=""              # empty => auto-pick from RAM below
 STRIP_DESKTOP=0
+RETRO=0               # --retro => also install the Z80/Amstrad cross-dev toolchain
 
 # --- friendly failure: tell the beginner exactly where it broke ------------
 trap 'rc=$?; [ $rc -ne 0 ] && printf "\n\033[1;31m[install] FAILED (exit %s) near line %s.\033[0m\nRead the message just above, fix it, then re-run:  sudo ./install.sh\n" "$rc" "$LINENO"' EXIT
@@ -35,6 +38,7 @@ trap 'rc=$?; [ $rc -ne 0 ] && printf "\n\033[1;31m[install] FAILED (exit %s) nea
 while [ $# -gt 0 ]; do
   case "$1" in
     --strip-desktop) STRIP_DESKTOP=1 ;;
+    --retro) RETRO=1 ;;
     --model) [ $# -ge 2 ] || { echo "--model needs a value, e.g. --model qwen2.5:1.5b-instruct"; exit 1; }
              MODEL="$2"; shift ;;
     -h|--help) sed -n '2,25p' "$0"; trap - EXIT; exit 0 ;;
@@ -206,6 +210,12 @@ systemctl enable --now drongo.service drongo-web.service \
 
 # Convenience CLI: `sudo drongo doctor|configure|...` always targets /opt/drongo.
 cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/drongo
+
+# Optional Z80/Amstrad cross-dev toolchain (sdcc, z88dk, CPCtelera, pasmo).
+if [ "$RETRO" -eq 1 ]; then
+  say "Retro toolchain (--retro): sdcc / z88dk / CPCtelera / pasmo"
+  bash "$INSTALL/system/retro-toolchain.sh" || warn "retro toolchain had problems (see above) — re-run sudo $INSTALL/system/retro-toolchain.sh"
+fi
 
 # ---------------------------------------------------------------------------
 # Self-check so you immediately know whether it's healthy.

@@ -103,6 +103,11 @@ Rules:
   a small `run.sh` (it compiles + runs) so it works from the dashboard's ▶ run
   button too. Check what else exists with `which gcc g++ make node rustc` before
   assuming a toolchain is missing (you can't apt-install — no sudo).
+- RETRO / 8-bit: if the Z80 toolchain is installed you can build for the Amstrad
+  CPC, ZX Spectrum and Z80 generally. Probe with `which sdcc zcc pasmo` and
+  `[ -d "$CPCT_PATH" ]`: sdcc (C for Z80), zcc (z88dk — C+asm for CPC/Spectrum),
+  pasmo (Z80 assembler, also for SymbOS), and CPCtelera at $CPCT_PATH (Amstrad CPC
+  games). Produce a runnable .dsk/.cdt/.tap or .bin and document how to load it.
 - Return "final" ONLY when the artifact actually exists and works and you've
   verified it (e.g. read the file back / ran it). NEVER return "final" just
   because you're stuck, blocked, rate-limited, or out of ideas — that falsely
