@@ -10,7 +10,7 @@
 #                  SymbOS / hand-written Z80 asm)
 #    * z88dk     - C + asm for Z80 machines (Amstrad CPC, ZX       [source build]
 #                  Spectrum, MSX...). Provides `zcc`.
-#    * CPCtelera - Amstrad CPC game-dev framework                 [source build]
+#    * CPCtelera - Amstrad CPC game-dev framework (pulls in Mono) [source build]
 #
 #  Toolchains install to /opt/retro (root-owned, read-only to the agent). The
 #  agent's shell picks them up automatically (see _project_env in tools.py).
@@ -41,6 +41,11 @@ apt-get install -y --no-install-recommends \
   sdcc pasmo build-essential git curl unzip m4 dos2unix \
   libxml2-dev zlib1g-dev libpng-dev bison flex \
   || warn "some apt packages failed to install"
+# CPCtelera's bundled tools need the Mono runtime. Installed on its own so a
+# failure here can't block sdcc/pasmo above. mono-complete is the safe catch-all.
+apt-get install -y mono-complete \
+  || apt-get install -y mono-runtime libmono-system-drawing4.0-cil \
+  || warn "mono failed to install — CPCtelera tools that need it won't run"
 
 # --- z88dk -----------------------------------------------------------------
 say "2/4  z88dk (source build — this can take several minutes)"
