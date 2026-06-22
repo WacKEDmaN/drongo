@@ -144,6 +144,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .lbbtns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
  #gallerygrid .grid{margin-top:4px}
  .gal-empty{color:var(--mut);font:12px var(--mono)}
+ .help h3{font:600 13px var(--mono);color:var(--ac2);margin:15px 0 4px}
+ .help pre{background:#03060a;border:1px solid var(--bd);border-radius:7px;padding:9px 11px;font:12.5px/1.5 var(--mono);color:#bfe9d6;overflow:auto;margin:0 0 4px;white-space:pre-wrap;word-break:break-word}
  .swrow{display:flex;align-items:center;gap:13px;margin:12px 0}
  .swrow .lbl{font:13px var(--mono);color:var(--fg)} .swrow .sub{color:var(--mut);font:11.5px var(--mono)}
  .sw{position:relative;display:inline-block;width:44px;height:24px;flex:none}
@@ -191,6 +193,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <button data-t=gallery>Gallery</button>
   <button data-t=files>Files</button>
   <button data-t=control>Control</button>
+  <button data-t=help>Help</button>
  </nav>
  <div class=themes id=themes></div>
 </header>
@@ -268,16 +271,16 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=files class="tab">
-  <h2>📦 Package requests <span class=meta>— system (apt) packages the agent has asked for</span></h2>
-  <div class="card"><div id=pkgwrap class=meta>loading…</div></div>
   <h2>Files — browse the agent's workspace</h2>
   <div class="card"><div id=fbwrap class=meta>loading…</div></div>
+  <h2>📦 Package requests <span class=meta>— system (apt) packages the agent has asked for</span></h2>
+  <div class="card"><div id=pkgwrap class=meta>loading…</div></div>
  </section>
 
  <section id=gallery class="tab">
   <h2>Gallery — images it has generated <span class=meta id=galcount></span></h2>
   <div id=gallerygrid>
-   {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/file/images/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
+   {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/file/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
    {% else %}<p class="meta">No images yet — it fills this in as it makes creative_image projects.</p>{% endif %}
   </div>
  </section>
@@ -453,6 +456,42 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
   </div>
  </section>
+
+ <section id=help class="tab">
+  <h2>Cheat sheet — SSH &amp; admin</h2>
+  <div class="card help">
+   <h3>✏️ Edit your API keys / secrets</h3>
+   <pre>sudo nano {{ hp.env }}</pre>
+   <p class=meta>API keys, Discord webhook &amp; the dashboard password live here. (Or just use Control → Settings.) After editing, restart.</p>
+   <h3>⚙️ Edit config (model, limits, etc.)</h3>
+   <pre>sudo nano {{ hp.cfg }}</pre>
+   <h3>🔄 Restart after a change</h3>
+   <pre>sudo systemctl restart drongo drongo-web</pre>
+   <h3>⬆️ Pull &amp; deploy the latest code</h3>
+   <pre>cd ~/drongo &amp;&amp; git pull &amp;&amp; sudo ./update.sh</pre>
+   <h3>🩺 Health check</h3>
+   <pre>sudo drongo doctor</pre>
+   <h3>📜 Watch it live</h3>
+   <pre>journalctl -u drongo -f</pre>
+   <h3>♻️ Wipe all projects (keeps settings)</h3>
+   <pre>sudo drongo reset</pre>
+   <h3>📦 Install requested packages</h3>
+   <pre>sudo bash {{ hp.base }}/pkg-installer.sh</pre>
+   <h3>🕹️ Z80 / Amstrad toolchain · 🖼️ local image gen</h3>
+   <pre>sudo {{ hp.code }}/system/retro-toolchain.sh
+sudo {{ hp.code }}/system/image-gen.sh</pre>
+   <h3>📁 Where things live</h3>
+   <table class=usaget>
+    <tr><th>what</th><th>path</th></tr>
+    <tr><td>secrets / API keys</td><td>{{ hp.env }}</td></tr>
+    <tr><td>config</td><td>{{ hp.cfg }}</td></tr>
+    <tr><td>code (read-only)</td><td>{{ hp.code }}</td></tr>
+    <tr><td>workspace (projects, images)</td><td>{{ hp.ws }}</td></tr>
+    <tr><td>runtime / state</td><td>{{ hp.base }}</td></tr>
+   </table>
+   <p class=meta>Pause/Stop/Restart and all settings are also on the Control tab — no SSH needed for most of it.</p>
+  </div>
+ </section>
 </main>
 <div id=toast></div>
 <div class=modal id=modal onclick="if(event.target===this)this.classList.remove('show')">
@@ -594,11 +633,22 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    const list=document.createElement('div');
    if(path)list.appendChild(fbRow('📁 ..',()=>loadFiles(path.split('/').slice(0,-1).join('/'))));
    if(!entries.length){const p=document.createElement('div');p.className='meta';p.textContent='(empty)';list.appendChild(p);}
-   entries.forEach(e=>list.appendChild(fbRow((e.dir?'📁 ':'📄 ')+e.name,
-     ()=>{e.dir?loadFiles(e.path):openFile(e);}, e.dir?null:e.size)));
+   entries.forEach(e=>{
+     const row=document.createElement('div');row.className='fbrow';
+     const a=document.createElement('a');a.href='#';a.textContent=(e.dir?'📁 ':(e.img?'🖼 ':'📄 '))+e.name;
+     a.onclick=ev=>{ev.preventDefault();e.dir?loadFiles(e.path):openFile(e);};
+     row.appendChild(a);
+     if(!e.dir){
+       if(ALLOW_RUN&&(e.path.endsWith('.py')||e.path.endsWith('.sh'))&&e.path.indexOf('projects/')===0){
+         const b=document.createElement('button');b.className='runbtn';b.textContent='▶ run';
+         b.onclick=()=>runpy(e.path,null);row.appendChild(b);}
+       const s=document.createElement('span');s.className='meta';s.textContent=fmtSize(e.size);row.appendChild(s);}
+     list.appendChild(row);});
    w.appendChild(list);}
- function openFile(e){const url='/file/'+e.path.split('/').map(encodeURIComponent).join('/');
-   if(e.view)viewfile(e.path); else window.open(url,'_blank');}
+ function openFile(e){
+   if(e.img){_images=[e.path];openLightbox(0);return;}   // view images in the lightbox
+   if(e.view){viewfile(e.path);return;}                  // text in the modal
+   window.open('/file/'+e.path.split('/').map(encodeURIComponent).join('/'),'_blank');}
  function loadPkgs(){const w=$('#pkgwrap');if(!w)return;
    fetch('/api/pkgs').then(r=>r.json()).then(d=>renderPkgs(d.requests||[],d.installed||[])).catch(()=>{});}
  function renderPkgs(reqs,installed){const w=$('#pkgwrap');w.replaceChildren();
@@ -650,7 +700,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  const ALLOW_RUN={{ allow_run|tojson }};
  let lastSig={{ jsig|tojson }};
  let _images={{ images|tojson }},_lbi=0;
- const imgURL=n=>'/file/images/'+encodeURIComponent(n);
+ const imgURL=n=>'/file/'+String(n).split('/').map(encodeURIComponent).join('/');
  function renderGallery(images){_images=images||[];
    const wrap=$('#gallerygrid'); const cnt=$('#galcount'); if(cnt)cnt.textContent=_images.length?('· '+_images.length):'';
    if(!wrap)return; wrap.replaceChildren();
@@ -925,12 +975,15 @@ def create_app(cfg, mem: Memory) -> Flask:
         running_root = getattr(os, "geteuid", lambda: -1)() == 0
         integ_ok = integ["hash_ok"] and (running_root or not integ["writable_by_me"])
         sv, pkey = _settings_view(cfg, mem)
+        cfgp = cfg.source_path or "/etc/drongo/config.yaml"
+        hp = {"cfg": cfgp, "env": os.path.join(os.path.dirname(cfgp), "drongo.env"),
+              "code": "/opt/drongo", "ws": str(cfg.workspace), "base": str(cfg.base_dir)}
         return render_template_string(
             PAGE, name=name, journal=rows,
             projects=[r for r in rows if r["kind"] == "cycle"],
-            images=_ls(cfg.images, (".png", ".jpg", ".jpeg")),
+            images=_gallery_images(cfg),
             usage=_usage_view(), allow_run=allow_run,
-            sv=sv, pkey_json=json.dumps(pkey),
+            sv=sv, pkey_json=json.dumps(pkey), hp=hp,
             alive=age is not None and age < 1800,
             hb=(f"{int(age)}s ago" if age is not None else ""),
             safe=bool(mem.recall("safe_mode")),
@@ -984,8 +1037,7 @@ def create_app(cfg, mem: Memory) -> Flask:
     def api_journal():
         # The heavier payload (cards + gallery) — the client only fetches this
         # when journal_sig from /api/system changes, so new projects pop in live.
-        return {"journal": _journal(60),
-                "images": _ls(cfg.images, (".png", ".jpg", ".jpeg"))}
+        return {"journal": _journal(60), "images": _gallery_images(cfg)}
 
     @app.route("/api/hardware")
     def api_hardware():
@@ -1438,6 +1490,25 @@ def _ls(directory, exts):
     files = [f.name for f in p.iterdir() if f.suffix.lower() in exts]
     files.sort(key=lambda n: (p / n).stat().st_mtime, reverse=True)
     return files
+
+
+_IMG_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+
+
+def _gallery_images(cfg):
+    """Every image the agent has made: the images/ gallery PLUS any images it
+    saved inside its projects/ (fractals, generative art, etc.). Newest first,
+    workspace-relative paths so /file/<path> serves them."""
+    root = Path(cfg.workspace)
+    found = []
+    for base in (Path(cfg.images), Path(cfg.projects)):
+        if not base.exists():
+            continue
+        for f in base.rglob("*"):
+            if f.is_file() and f.suffix.lower() in _IMG_EXTS:
+                found.append(f)
+    found.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+    return [str(f.relative_to(root)).replace(os.sep, "/") for f in found[:200]]
 
 
 def serve(cfg, mem):
