@@ -42,6 +42,8 @@ DEFAULTS = {
         "cleanup_enabled": True,     # janitor: remove build junk + stale empty folders
         "cleanup_interval_seconds": 1800,
         "self_critique": True,       # one self-review before a project is accepted as done
+        "idea_candidates": 2,        # deep-think: dream up this many ideas, keep the most novel
+        "git_history": True,         # snapshot projects/ to git after each build
     },
     "llm": {
         "prefer": "cloud_first",   # cloud_first | local_first

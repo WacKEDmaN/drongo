@@ -212,6 +212,26 @@ class Memory:
                 return s
         return None
 
+    def add_note(self, topic, content) -> bool:
+        content = str(content or "").strip()
+        if not content:
+            return False
+        v = self.recall("notes")
+        v = v if isinstance(v, list) else []
+        v.append({"topic": str(topic or "").strip()[:80], "content": content[:2000],
+                  "ts": time.time()})
+        self.remember("notes", v[-50:])
+        return True
+
+    def search_notes(self, query, limit=5) -> list:
+        q = str(query or "").lower().strip()
+        v = self.recall("notes")
+        v = v if isinstance(v, list) else []
+        if not q:
+            return v[-limit:]
+        hits = [n for n in v if q in (n.get("topic", "") + " " + n.get("content", "")).lower()]
+        return hits[-limit:]
+
     def set_mission(self, text):
         self.remember("mission", str(text or "").strip())
 

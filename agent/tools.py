@@ -83,6 +83,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
             "make_dashboard": "dashboard", "send_alert": "alerts",
             "remember": "files", "recall": "files",
             "save_skill": "files", "recall_skill": "files",
+            "save_note": "files", "recall_notes": "files",
         }.get(nm, nm)
         if t.get(section, {}).get("enabled", True):
             enabled[nm] = tl
@@ -521,6 +522,8 @@ def housekeep(cfg, empty_dir_age=3600) -> str:
         if not os.path.isdir(root):
             continue
         for base, dirs, files in os.walk(root, topdown=False):
+            if ".git" in base.split(os.sep):       # never touch git internals
+                continue
             for f in files:
                 if f in _JUNK_NAMES or f.lower().endswith(_JUNK_EXTS):
                     try:
@@ -724,6 +727,24 @@ def recall_skill(ctx: ToolContext, name: str = "", **_):
         return "saved skills: " + (", ".join(names) if names else "(none yet)")
     s = ctx.mem.get_skill(name)
     return f"# {s['name']} — {s['desc']}\n{s['code']}" if s else f"no skill named '{name}'"
+
+
+@tool("save_note",
+      "Save a durable research finding or fact you learned (an API shape, how a "
+      "sensor works, a useful URL), to recall in future projects.",
+      "topic: str, content: str")
+def save_note(ctx: ToolContext, topic: str = "", content: str = "", **_):
+    return (f"noted '{topic}'" if ctx.mem.add_note(topic, content)
+            else "ERROR: a note needs some content")
+
+
+@tool("recall_notes",
+      "Search your saved research notes by keyword (blank = your most recent notes).",
+      "query: str = ''")
+def recall_notes(ctx: ToolContext, query: str = "", **_):
+    hits = ctx.mem.search_notes(query)
+    return "\n\n".join(f"# {n.get('topic') or '(note)'}\n{n['content'][:600]}"
+                       for n in hits) or "no matching notes"
 
 
 @tool("remember", "Store a fact in long-term memory.", "key: str, value: str")

@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 import re
 import signal
+import subprocess
 from collections import Counter
 import socket
 import sys
@@ -71,10 +73,11 @@ Rules:
 - DOCUMENT every project: alongside the code write a short README.md (in the same
   projects/ folder) covering what it is, how to run it, what it needs, and how to
   use it. Keep code commented where it helps.
-- GROW & REUSE your toolkit. Before building, glance at recall_skill for a pattern
-  you've saved; when you get a non-trivial, reusable snippet working (a canvas game
-  loop, reading a sensor, an API call), save it with save_skill so future projects
-  are faster and more reliable.
+- GROW & REUSE your knowledge. Before building, glance at recall_skill (saved code
+  patterns) and recall_notes (saved facts/findings); when you get a reusable snippet
+  working save it with save_skill, and when you learn something useful from research
+  (an API shape, how a sensor works) save it with save_note — so you compound over
+  time instead of relearning.
 - TIDY UP after yourself. Keep each project in ONE folder under projects/<name>/.
   Delete scratch, temp, downloaded, or experimental files you no longer need with
   delete_path — don't leave half-baked junk or empty folders lying around. A
@@ -271,16 +274,47 @@ class AgentLoop:
                     f"Recently built (newest first): {recent_lines}{steer}{hw_hint}\n\n"
                     "Propose your next project now — genuinely different from the list above.")
         system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
-        text, provider = self.router.complete(system, user, temperature=0.9)
+
+        def _one():
+            text, provider = self.router.complete(system, user, temperature=0.95)
+            obj = extract_json(text) or {}
+            return {"task_type": obj.get("task_type", "experiment"),
+                    "title": obj.get("title") or "Untitled project",
+                    "description": obj.get("description", text[:300]),
+                    "provider": provider}
+
+        # Deep-think: dream up a few candidates and keep the most NOVEL one. An
+        # explicit human suggestion skips this (we build exactly what was asked).
+        n = 1 if suggestion else max(1, int(self.cfg.get("loop", "idea_candidates", default=2)))
+        cands = []
+        for _ in range(n):
+            try:
+                cands.append(_one())
+            except AllProvidersFailed:
+                if cands:
+                    break
+                raise
         if not suggestion and self.mem.recall("new_hardware"):
             self.mem.remember("new_hardware", None)   # consumed once ideation succeeds
-        obj = extract_json(text) or {}
-        return {
-            "task_type": obj.get("task_type", "experiment"),
-            "title": obj.get("title") or "Untitled project",
-            "description": obj.get("description", text[:300]),
-            "provider": provider,
-        }
+        best = self._pick_idea(cands, recent)
+        if len(cands) > 1:
+            self.mem.push_step("info", f"🧠 weighed {len(cands)} ideas → {best['title']}")
+        return best
+
+    def _pick_idea(self, cands, recent):
+        """Pick the most novel candidate: reward an unused task_type, penalise
+        title words it has used recently."""
+        if len(cands) <= 1:
+            return cands[0]
+        recent_types = {r["task_type"] for r in recent}
+        recent_words = set()
+        for r in recent:
+            recent_words.update(re.findall(r"[a-z0-9]{4,}", (r["title"] or "").lower()))
+        def score(c):
+            s = 3 if c["task_type"] not in recent_types else 0
+            words = set(re.findall(r"[a-z0-9]{4,}", (c["title"] or "").lower()))
+            return s - len(words & recent_words)
+        return max(cands, key=score)
 
     # ---- execution (ReAct) --------------------------------------------
     def execute(self, task: dict, ctx: tools.ToolContext, messages=None):
@@ -470,6 +504,28 @@ class AgentLoop:
         if new:
             log.info("new hardware detected: %s", new)
 
+    def _git(self, cwd, *args):
+        return subprocess.run(["git", "-C", cwd, *args], capture_output=True,
+                              text=True, timeout=30)
+
+    def _git_snapshot(self, title):
+        """Version the projects/ tree after each build so it (and the human) can
+        diff/roll back. Best-effort: a no-op commit (nothing changed) is fine."""
+        if not self.cfg.get("loop", "git_history", default=True):
+            return
+        proj = str(self.cfg.projects)
+        if not os.path.isdir(proj):
+            return
+        try:
+            if not os.path.isdir(os.path.join(proj, ".git")):
+                self._git(proj, "init", "-q")
+                self._git(proj, "config", "user.email", "drongo@localhost")
+                self._git(proj, "config", "user.name", "DRONGO")
+            self._git(proj, "add", "-A")
+            self._git(proj, "commit", "-q", "-m", f"build: {title[:60]}")
+        except Exception as e:
+            log.warning("git snapshot failed: %s", e)
+
     def _janitor(self):
         """Throttled cleanup of build junk + stale empty folders it left behind."""
         if not self.cfg.get("loop", "cleanup_enabled", default=True):
@@ -567,6 +623,7 @@ class AgentLoop:
             self.mem.add_lesson(lesson)
             self.mem.add_journal("cycle", task["title"], note, task_type=task["task_type"],
                                  artifacts=all_artifacts, provider=provider, ok=True)
+            self._git_snapshot(task["title"])
             self._alert_done(task, note)
             log.info("Completed '%s' in %d attempt(s), %ds.", task["title"], attempt, elapsed)
             return {"ok": True}
@@ -590,6 +647,7 @@ class AgentLoop:
                                  note + f"\n\n(couldn't finish after {attempt} attempts)",
                                  task_type=task["task_type"], artifacts=all_artifacts,
                                  provider=provider, ok=False)
+            self._git_snapshot(task["title"])
             self._alert_problem(f"Couldn't finish '{task['title']}' after {attempt} attempts - moving on.")
             log.info("Gave up on '%s' after %d attempts.", task["title"], attempt)
             return {"ok": True}
