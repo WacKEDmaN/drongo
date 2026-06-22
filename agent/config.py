@@ -63,7 +63,10 @@ DEFAULTS = {
                   "max_output_chars": 6000},
         "files": {"enabled": True, "max_file_chars": 60000},
         "web": {"enabled": True, "timeout": 30, "max_chars": 8000},
-        "images": {"enabled": True, "provider": "pollinations"},
+        # provider: pollinations (free cloud) | local (run local_cmd). local_cmd is
+        # a template with {prompt} and {out} placeholders, e.g.
+        #   /opt/imggen/sd -m /opt/imggen/model.gguf -p {prompt} -o {out} --steps 4 -W 512 -H 512
+        "images": {"enabled": True, "provider": "pollinations", "local_cmd": "", "timeout": 600},
         "sensors": {"enabled": True},
         "dashboard": {"enabled": True},
         "alerts": {"enabled": True},
@@ -217,6 +220,10 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
                 p["enabled"] = bool(o["enabled"])
             if o.get("model"):
                 p["model"] = o["model"]
+    img = settings.get("images") or {}
+    for k in ("provider", "local_cmd", "timeout"):
+        if k in img:
+            cfg.data.setdefault("tools", {}).setdefault("images", {})[k] = img[k]
     for k, v in (settings.get("alerts") or {}).items():
         if isinstance(v, dict):
             cfg.data.setdefault("alerts", {}).setdefault(k, {}).update(v)

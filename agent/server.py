@@ -389,6 +389,17 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     </div>
    </div>
 
+   <div class="panel" data-panel=set-images>
+    <button class=phead onclick="togglePanel(this)">Image generation<span class=chev>▾</span></button>
+    <div class=pbody>
+     <label>Provider<select id=s_imgprov>
+       <option value=pollinations {{ 'selected' if sv.img_provider=='pollinations' }}>pollinations (free cloud — fast)</option>
+       <option value=local {{ 'selected' if sv.img_provider=='local' }}>local (offline — slow on this box)</option></select></label>
+     <label>Local command — {prompt} and {out} are filled in (shell-quoted)<input id=s_imgcmd value="{{ sv.img_cmd }}" placeholder="/opt/imggen/sd -m /opt/imggen/model.gguf -p {prompt} -o {out} --steps 4 -W 512 -H 512"></label>
+     <p class="meta">Run <code>sudo /opt/drongo/system/image-gen.sh</code> to build a local generator, then switch the provider to “local”.</p>
+    </div>
+   </div>
+
    <div class="panel" data-panel=set-providers>
     <button class=phead onclick="togglePanel(this)">Providers &amp; API keys<span class=chev>▾</span></button>
     <div class=pbody>
@@ -730,7 +741,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    const rt=gn('s_timeout'); if(rt!=null)llm.request_timeout=rt;
    const lt=gn('s_localtimeout'); if(lt!=null)llm.local_timeout=lt;
    const interests=(gv('s_interests')||'').split('\\n').map(x=>x.trim()).filter(Boolean);
-   const s={loop,llm,alerts:{notify_every_cycle:gc('s_notify'),
+   const images={provider:gv('s_imgprov')}; const ic=gv('s_imgcmd'); if(ic)images.local_cmd=ic;
+   const s={loop,llm,images,alerts:{notify_every_cycle:gc('s_notify'),
      ntfy:{topic:gv('s_ntfy'),enabled:!!gv('s_ntfy')},led:{enabled:!!ll}},env,interests};
    const persona=gv('s_persona'); if(persona)s.identity={persona};
    fetch('/settings',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1377,6 +1389,8 @@ def _settings_view(cfg, mem):
         "max_tokens": llm_db.get("max_tokens", cfg.get("llm", "max_tokens", default=2048)),
         "req_timeout": llm_db.get("request_timeout", cfg.get("llm", "request_timeout", default=120)),
         "local_timeout": llm_db.get("local_timeout", cfg.get("llm", "local_timeout", default=300)),
+        "img_provider": (s.get("images") or {}).get("provider", cfg.get("tools", "images", "provider", default="pollinations")),
+        "img_cmd": (s.get("images") or {}).get("local_cmd", cfg.get("tools", "images", "local_cmd", default="")),
         "min_call": llm_db.get("min_call_interval_seconds", cfg.get("llm", "min_call_interval_seconds", default=3)),
         "prefer": llm_db.get("prefer", cfg.get("llm", "prefer", default="cloud_first")),
         "notify": al_db.get("notify_every_cycle", cfg.get("alerts", "notify_every_cycle", default=False)),

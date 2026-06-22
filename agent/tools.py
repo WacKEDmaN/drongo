@@ -12,6 +12,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -344,23 +345,20 @@ def generate_image(ctx: ToolContext, prompt: str = "", filename: str = "", **_):
     provider = ctx.cfg.get("tools", "images", "provider", default="pollinations")
     out_path = Path(ctx.cfg.images) / filename
     try:
-        if provider == "pollinations":
-            enc = urllib.parse.quote(prompt[:600])
-            url = (f"https://image.pollinations.ai/prompt/{enc}"
-                   f"?width=768&height=768&nologo=true&seed={int(time.time())%100000}")
-            r = requests.get(url, timeout=120)
-            r.raise_for_status()
-            data = r.content
-        else:
+        if provider == "local":
+            return _generate_image_local(ctx, prompt, filename, out_path)
+        if provider != "pollinations":
             return f"ERROR: unknown image provider '{provider}'"
+        enc = urllib.parse.quote(prompt[:600])
+        url = (f"https://image.pollinations.ai/prompt/{enc}"
+               f"?width=768&height=768&nologo=true&seed={int(time.time())%100000}")
+        r = requests.get(url, timeout=120)
+        r.raise_for_status()
+        data = r.content
         # Make sure we actually got a picture, not an error page / rate-limit
         # notice — otherwise we'd save HTML as a broken .png and claim success.
         ctype = r.headers.get("Content-Type", "").lower()
-        real_ext = (".jpg" if data[:3] == b"\xff\xd8\xff"
-                    else ".png" if data[:8] == b"\x89PNG\r\n\x1a\n"
-                    else ".gif" if data[:6] in (b"GIF87a", b"GIF89a")
-                    else ".webp" if data[:4] == b"RIFF"
-                    else None)
+        real_ext = _image_ext(data)
         if not (real_ext or ctype.startswith("image/")) or len(data) < 512:
             snippet = data[:120].decode("utf-8", "replace").strip()
             return (f"ERROR: image service returned {ctype or 'no content-type'} "
@@ -378,6 +376,39 @@ def generate_image(ctx: ToolContext, prompt: str = "", filename: str = "", **_):
                 f"gallery — the task is done; do NOT also describe the image in text.")
     except Exception as e:
         return f"ERROR: {e}"
+
+
+def _image_ext(data: bytes):
+    return (".jpg" if data[:3] == b"\xff\xd8\xff"
+            else ".png" if data[:8] == b"\x89PNG\r\n\x1a\n"
+            else ".gif" if data[:6] in (b"GIF87a", b"GIF89a")
+            else ".webp" if data[:4] == b"RIFF"
+            else None)
+
+
+def _generate_image_local(ctx, prompt, filename, out_path):
+    """Run a LOCAL image generator (e.g. stable-diffusion.cpp) via the configured
+    images.local_cmd template. {prompt} and {out} are shell-quoted (injection-safe)."""
+    tmpl = ctx.cfg.get("tools", "images", "local_cmd", default="")
+    if not tmpl:
+        return ("ERROR: images.provider is 'local' but tools.images.local_cmd is not set. "
+                "Run system/image-gen.sh or point local_cmd at your generator.")
+    cmd = tmpl.replace("{prompt}", shlex.quote(prompt[:600])).replace("{out}", shlex.quote(str(out_path)))
+    to = int(ctx.cfg.get("tools", "images", "timeout", default=600))
+    try:
+        proc = subprocess.run(cmd, shell=True, cwd=ctx.workspace, capture_output=True,
+                              text=True, timeout=to, env=_project_env(ctx.cfg),
+                              preexec_fn=safeguard.posix_limits(cpu_seconds=to + 30))
+    except subprocess.TimeoutExpired:
+        return f"ERROR: local image generation timed out after {to}s (it's slow on this box)."
+    if not out_path.exists() or out_path.stat().st_size < 512:
+        return f"ERROR: local generator produced no image. stderr: {(proc.stderr or '')[:300]}"
+    if not _image_ext(out_path.read_bytes()[:8]):
+        return f"ERROR: local generator output isn't a recognised image. stderr: {(proc.stderr or '')[:200]}"
+    rel = f"images/{filename}"
+    ctx.add_artifact(rel, f"image: {prompt[:60]}")
+    return (f"saved a real image to {rel} via the local generator. It is now in the "
+            f"gallery — the task is done; do NOT also describe the image in text.")
 
 
 # ----------------------------------------------------------------------
