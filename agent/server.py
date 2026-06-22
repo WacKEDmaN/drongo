@@ -89,6 +89,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .stat::after{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--ac);opacity:.45}
  .stat .v{font:600 23px/1.2 var(--mono);color:var(--fg);margin-top:3px} .stat .k{color:var(--mut);font:11px var(--mono);text-transform:uppercase;letter-spacing:.1em}
  .bar{height:5px;border-radius:3px;background:#05090d;margin-top:9px;overflow:hidden;border:1px solid var(--bd)}.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--ac2),var(--ac));box-shadow:0 0 10px rgba(var(--ac-rgb),.5)}
+ #projlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:14px;align-items:start}
+ .pnum{color:var(--ac);font-weight:600}
+ .fbbar{font:12.5px var(--mono);margin-bottom:10px;color:var(--mut)} .fbbar a{color:var(--ac2)}
+ .fbrow{display:flex;justify-content:space-between;gap:10px;padding:5px 2px;border-bottom:1px solid var(--bd);font:13px var(--mono)}
+ .fbrow:last-child{border:0} .fbrow a{color:var(--fg);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .fbrow a:hover{color:var(--ac)} .fbrow .meta{flex:none}
  .chip{display:inline-block;font:11px var(--mono);padding:3px 9px;border-radius:20px;border:1px solid var(--bd2);color:var(--mut);margin:0 5px 5px 0;background:rgba(255,255,255,.02)}
  .chip.fix{color:var(--bad);border-color:rgba(255,93,108,.45);background:rgba(255,93,108,.08)}
  .act{display:inline-block;font:600 12px var(--mono);background:rgba(255,255,255,.03);color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:6px 12px;cursor:pointer;margin:6px 6px 0 0;transition:.15s;text-decoration:none}
@@ -178,6 +183,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <button class="on" data-t=home>Home</button>
   <button data-t=projects>Projects</button>
   <button data-t=gallery>Gallery</button>
+  <button data-t=files>Files</button>
   <button data-t=control>Control</button>
  </nav>
  <div class=themes id=themes></div>
@@ -233,7 +239,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <div id=projlist>
   {% for j in projects %}
    <div class="card" data-id="{{ j.id }}">
-     <h3>{{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
+     <h3><span class=pnum>#{{ j.id }}</span> {{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
      <div class="meta"><span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span>{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
      <p>{{ j.body }}</p>
      {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith(('.py', '.sh')) and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
@@ -248,6 +254,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
   {% else %}<p class="meta">No finished projects yet.</p>{% endfor %}
   </div>
+ </section>
+
+ <section id=files class="tab">
+  <h2>Files — browse the agent's workspace</h2>
+  <div class="card"><div id=fbwrap class=meta>loading…</div></div>
  </section>
 
  <section id=gallery class="tab">
@@ -420,6 +431,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    history.replaceState(null,'','#'+t);
    if(t==='control')loadHW();
+   if(t==='files')loadFiles('');
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
@@ -499,6 +511,27 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      if(d.ok){renderHW(d.info);toast(d.new&&d.new.length?('found '+d.new.length+' new device(s) ✓'):'scan complete ✓');}
      else toast(d.error||'scan failed');})
    .catch(e=>toast('scan failed')).finally(()=>{if(b){b.disabled=false;b.textContent='⟳ Scan for hardware';}});}
+ function fmtSize(n){return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';}
+ function loadFiles(path){const w=$('#fbwrap');if(!w)return;
+   fetch('/api/files?path='+encodeURIComponent(path||'')).then(r=>r.json()).then(d=>{
+     if(!d.ok){w.textContent=d.error||'error';return;} renderFiles(d.path||'',d.entries||[]);}).catch(()=>{w.textContent='error';});}
+ function fbCrumb(path){const bar=document.createElement('div');bar.className='fbbar';
+   const mk=(label,p)=>{const a=document.createElement('a');a.href='#';a.textContent=label;a.onclick=e=>{e.preventDefault();loadFiles(p);};return a;};
+   bar.appendChild(mk('workspace',''));let acc='';
+   (path?path.split('/'):[]).forEach(part=>{bar.appendChild(document.createTextNode(' / '));acc=acc?acc+'/'+part:part;bar.appendChild(mk(part,acc));});
+   return bar;}
+ function fbRow(label,onclick,size){const r=document.createElement('div');r.className='fbrow';
+   const a=document.createElement('a');a.href='#';a.textContent=label;a.onclick=e=>{e.preventDefault();onclick();};r.appendChild(a);
+   if(size!=null){const s=document.createElement('span');s.className='meta';s.textContent=fmtSize(size);r.appendChild(s);}return r;}
+ function renderFiles(path,entries){const w=$('#fbwrap');w.replaceChildren();w.appendChild(fbCrumb(path));
+   const list=document.createElement('div');
+   if(path)list.appendChild(fbRow('📁 ..',()=>loadFiles(path.split('/').slice(0,-1).join('/'))));
+   if(!entries.length){const p=document.createElement('div');p.className='meta';p.textContent='(empty)';list.appendChild(p);}
+   entries.forEach(e=>list.appendChild(fbRow((e.dir?'📁 ':'📄 ')+e.name,
+     ()=>{e.dir?loadFiles(e.path):openFile(e);}, e.dir?null:e.size)));
+   w.appendChild(list);}
+ function openFile(e){const url='/file/'+e.path.split('/').map(encodeURIComponent).join('/');
+   if(e.view)viewfile(e.path); else window.open(url,'_blank');}
  function viewfile(path){$('#modaltitle').textContent='📄 '+path;$('#modalout').textContent='loading…';
    $('#fixbtn').style.display='none';$('#modal').classList.add('show');
    fetch('/file/'+path.split('/').map(encodeURIComponent).join('/'))
@@ -555,7 +588,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    const m=document.createElement('span');m.className='meta';m.textContent=(j.task_type||j.kind||'')+' · '+(fmtLocal(j.ts)||j.when);
    r.appendChild(dot);r.appendChild(t);r.appendChild(m);return r;}
  function mkProjCard(j){const c=document.createElement('div');c.className='card';c.dataset.id=j.id;
-   const h=document.createElement('h3');h.textContent=j.title+' ';
+   const h=document.createElement('h3');
+   const num=document.createElement('span');num.className='pnum';num.textContent='#'+j.id;h.appendChild(num);
+   h.appendChild(document.createTextNode(' '+j.title+' '));
    if(!j.ok){const pill=document.createElement('span');pill.className='pill bad';pill.textContent='unfinished';h.appendChild(pill);}
    c.appendChild(h);
    const m=document.createElement('div');m.className='meta';m.textContent=(fmtLocal(j.ts)||j.when)+(j.provider?' · via '+j.provider:'');c.appendChild(m);
@@ -848,6 +883,33 @@ def create_app(cfg, mem: Memory) -> Flask:
     @app.route("/api/hardware")
     def api_hardware():
         return {"ok": True, "info": _hw_view(mem.recall("hardware"))}
+
+    @app.route("/api/files")
+    def api_files():
+        rel = (request.args.get("path") or "").strip().lstrip("/")
+        root = os.path.realpath(str(ws))
+        try:
+            full = os.path.realpath(safeguard.safe_join(str(ws), rel)) if rel else root
+        except Exception:
+            return {"ok": False, "error": "bad path"}, 400
+        if full != root and not full.startswith(root + os.sep):
+            return {"ok": False, "error": "outside workspace"}, 403
+        if not os.path.isdir(full):
+            return {"ok": False, "error": "not a folder"}, 404
+        img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg")
+        entries = []
+        for name in sorted(os.listdir(full)):
+            p = os.path.join(full, name)
+            isd = os.path.isdir(p)
+            low = name.lower()
+            entries.append({"name": name,
+                            "path": os.path.relpath(p, root).replace(os.sep, "/"),
+                            "dir": isd,
+                            "size": 0 if isd else (os.path.getsize(p) if os.path.isfile(p) else 0),
+                            "view": (not isd) and low.endswith(TEXT_EXTS),
+                            "img": (not isd) and low.endswith(img_exts)})
+        entries.sort(key=lambda e: (not e["dir"], e["name"].lower()))
+        return {"ok": True, "path": rel, "entries": entries}
 
     @app.route("/control/scan", methods=["POST"])
     def control_scan():

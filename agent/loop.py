@@ -598,7 +598,7 @@ class AgentLoop:
                 arts = fix.get("artifacts") or []
                 task = {
                     "task_type": "fix",
-                    "title": f"Fix: {fix.get('title', 'a previous project')}",
+                    "title": f"Fix #{fix.get('id')}: {fix.get('title', 'a previous project')}",
                     "description": (
                         f"A previous project, '{fix.get('title')}', was flagged for "
                         f"fixing. Human's note: \"{fix.get('note') or 'broken / needs work'}\". "
