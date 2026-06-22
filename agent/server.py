@@ -144,6 +144,21 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  #hwbody .row{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--bd);font:12.5px var(--mono)}
  #hwbody .row span{color:var(--mut);flex:none} #hwbody .row b{color:var(--fg);text-align:right;word-break:break-all}
  #hwbody .hd{color:var(--ac);font:11px var(--mono);text-transform:uppercase;letter-spacing:.1em;margin:10px 0 2px}
+ .nowcard{border-color:var(--ac);box-shadow:0 0 22px rgba(51,230,164,.16),inset 0 0 30px rgba(51,230,164,.05)}
+ .nowlbl{font:11px var(--mono);text-transform:uppercase;letter-spacing:.14em;color:var(--ac)}
+ .nowtitle{font:600 18px/1.3 var(--mono);color:var(--fg);margin:3px 0}
+ .evlist{display:flex;flex-direction:column}
+ .ev{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--bd);font:12.5px var(--mono)}
+ .ev:last-child{border:0}
+ .evd{width:7px;height:7px;border-radius:50%;flex:none;background:var(--ok);box-shadow:0 0 7px var(--ok)}
+ .evd.bad{background:var(--warn);box-shadow:0 0 7px var(--warn)}
+ .evt{flex:1;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .ev .meta{flex:none}
+ .panel{border:1px solid var(--bd);border-radius:12px;margin:12px 0;background:linear-gradient(180deg,var(--card2),var(--card))}
+ .phead{width:100%;text-align:left;background:transparent;border:0;color:var(--fg);font:600 13px var(--mono);text-transform:uppercase;letter-spacing:.08em;padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+ .phead:hover{color:var(--ac)} .phead .chev{color:var(--mut);transition:transform .2s}
+ .panel.open .phead .chev{transform:rotate(180deg);color:var(--ac)}
+ .pbody{display:none;padding:0 16px 16px} .panel.open .pbody{display:block}
 </style></head><body>
 <header>
  <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
@@ -153,7 +168,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  <span class="pill {{ 'ok' if integ_ok else 'bad' }}">guard {{ 'ok' if integ_ok else 'CHECK' }}</span>
  <nav>
   <button class="on" data-t=home>Home</button>
-  <button data-t=system>System</button>
   <button data-t=projects>Projects</button>
   <button data-t=gallery>Gallery</button>
   {% if allow_terminal %}<button data-t=terminal>Terminal</button>{% endif %}
@@ -164,25 +178,28 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
  <section id=home class="tab on"><div class=homewrap>
   <div class=homemain>
-   <div id=workingon>{% if working_on %}<div class="card"><b>⏳ Working on:</b> {{ working_on.title }}
-     <span class=meta>({{ working_on.type }} · attempt {{ working_on.attempt }})</span></div>{% endif %}</div>
-   <h2>Recent activity</h2>
-   <div id=homelist>
-   {% for j in journal %}
-    <div class="card">
-      <h3>{{ j.title }} <span class="meta">· {{ j.kind }}{% if j.task_type %} · {{ j.task_type }}{% endif %}</span></h3>
-      <div class="meta">{{ j.when }}{% if j.provider %} · via {{ j.provider }}{% endif %}{% if not j.ok %} · ⚠ unfinished{% endif %}</div>
-      <p>{{ j.body }}</p>
-      {% for a in j.arts %}{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% endfor %}
-    </div>
-   {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
+   <div id=workingon>{% if working_on %}<div class="card nowcard"><div class=nowlbl>▶ Working on</div>
+     <div class=nowtitle>{{ working_on.title }}</div>
+     <span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
+   <h2>System</h2>
+   <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div>
+   <p class="meta" id=sysmodel></p>
+
+   <h2>Hardware <span class=meta id=hwts></span></h2>
+   <div class="card">
+    <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
+    <p class="meta">Probes USB, I²C (addresses), SPI, 1-wire, cameras &amp; GPIO. Anything newly attached becomes the agent's next project idea.</p>
+    <div id=hwbody class=meta>loading…</div>
    </div>
+
+   <h2>Recent activity</h2>
+   <div class=card><div id=homelist class=evlist>
+   {% for j in journal %}
+    <div class=ev><span class="evd{{ '' if j.ok else ' bad' }}"></span><span class=evt>{{ j.title }}</span><span class=meta>{{ j.task_type or j.kind }} · {{ j.when }}</span></div>
+   {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
+   </div></div>
   </div>
   <aside class=homeside>
-   <div class=card>
-    <h3 style="margin-top:0">Live</h3>
-    <div id=homestats class=meta>loading…</div>
-   </div>
    <div class=card>
     <h3 style="margin-top:0">LLM usage today</h3>
     <table class=usaget id=usagetbl>
@@ -192,19 +209,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
   </aside>
  </div></section>
-
- <section id=system class="tab">
-  <h2>Host</h2>
-  <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div>
-  <p class="meta" id=sysmodel></p>
-
-  <h2>Hardware <span class=meta id=hwts></span></h2>
-  <div class="card">
-   <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
-   <p class="meta">Probes USB, I²C (addresses), SPI, 1-wire, cameras &amp; GPIO. Anything newly attached becomes the agent's next project idea.</p>
-   <div id=hwbody class=meta>loading…</div>
-  </div>
- </section>
 
  <section id=projects class="tab">
   <div class="card">
@@ -260,45 +264,53 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  {% endif %}
 
  <section id=control class="tab">
-  <h2>Controls</h2>
-  <div class="card">
-   <button class="act big" onclick="ctl('run')">▶ Run a cycle now</button>
-   <button class="act big" onclick="ctl('pause')">⏸ Pause</button>
-   <button class="act big" onclick="ctl('resume')">⏵ Resume</button>
-   <button class="act big" onclick="ctl('stop')">⏹ Stop (dormant)</button>
-   <button class="act big danger" onclick="if(confirm('Restart the agent?'))ctl('restart')">⟳ Restart</button>
-   <p class="meta">Pause/Stop just idle it (removable). Restart relaunches via systemd.
-     Flagged fixes are worked before new projects.</p>
-   <p class="meta" id=fixq></p>
+  <div class="panel open" data-panel=ctl>
+   <button class=phead onclick="togglePanel(this)">Agent controls<span class=chev>▾</span></button>
+   <div class=pbody>
+    <button class="act big" onclick="ctl('run')">▶ Run a cycle now</button>
+    <button class="act big" onclick="ctl('pause')">⏸ Pause</button>
+    <button class="act big" onclick="ctl('resume')">⏵ Resume</button>
+    <button class="act big" onclick="ctl('stop')">⏹ Stop (dormant)</button>
+    <button class="act big danger" onclick="if(confirm('Restart the agent?'))ctl('restart')">⟳ Restart</button>
+    <p class="meta">Pause/Stop just idle it (removable). Restart relaunches via systemd.
+      Flagged fixes are worked before new projects.</p>
+    <p class="meta" id=fixq></p>
+   </div>
   </div>
 
-  <h2>Discord alerts <span class="meta">— instant, no restart</span></h2>
-  <div class="card">
-   <div class=swrow>
-    <label class=sw><input type=checkbox id=al_agent {{ 'checked' if alerts_agent_on }} onchange="toggleAlerts('agent',this.checked)"><span class=sl></span></label>
-    <div><div class=lbl>Agent alerts</div><div class=sub>“project complete” + problems (and the LED, if wired). Turn off to stop the per-project spam.</div></div>
+  <div class="panel open" data-panel=alerts>
+   <button class=phead onclick="togglePanel(this)">Discord alerts <span class=chev>▾</span></button>
+   <div class=pbody>
+    <div class=swrow>
+     <label class=sw><input type=checkbox id=al_agent {{ 'checked' if alerts_agent_on }} onchange="toggleAlerts('agent',this.checked)"><span class=sl></span></label>
+     <div><div class=lbl>Agent alerts</div><div class=sub>“project complete” + problems (and the LED, if wired). Turn off to stop the per-project spam.</div></div>
+    </div>
+    <div class=swrow>
+     <label class=sw><input type=checkbox id=al_observer {{ 'checked' if alerts_observer_on }} onchange="toggleAlerts('observer',this.checked)"><span class=sl></span></label>
+     <div><div class=lbl>Observer alerts</div><div class=sub>crash-loops, rollbacks &amp; host-health from the root watchdog/updater. Best left on.</div></div>
+    </div>
+    <p class="meta">Both take effect immediately — only notifications are silenced.</p>
    </div>
-   <div class=swrow>
-    <label class=sw><input type=checkbox id=al_observer {{ 'checked' if alerts_observer_on }} onchange="toggleAlerts('observer',this.checked)"><span class=sl></span></label>
-    <div><div class=lbl>Observer alerts</div><div class=sub>crash-loops, rollbacks &amp; host-health from the root watchdog/updater. Best left on.</div></div>
-   </div>
-   <p class="meta">Both take effect immediately. The agent stays unaffected otherwise — only notifications are silenced.</p>
   </div>
 
-  <h2>LLM providers <span class="meta">— instant on/off, keeps your keys</span></h2>
-  <div class="card">
-   {% for p in sv.providers %}
-   <div class=swrow>
-    <label class=sw><input type=checkbox id="prov_{{ p.name }}" {{ 'checked' if p.name not in providers_off }} onchange="toggleProvider('{{ p.name }}',this.checked)"><span class=sl></span></label>
-    <div><div class=lbl>{{ p.name }} <span class=meta>{{ p.model }}</span></div>
-      <div class=sub>{% if p.key_env and not p.key_set %}no key set — {% endif %}off = the router skips it until you flip it back on</div></div>
+  <div class="panel" data-panel=providers>
+   <button class=phead onclick="togglePanel(this)">LLM providers<span class=chev>▾</span></button>
+   <div class=pbody>
+    {% for p in sv.providers %}
+    <div class=swrow>
+     <label class=sw><input type=checkbox id="prov_{{ p.name }}" {{ 'checked' if p.name not in providers_off }} onchange="toggleProvider('{{ p.name }}',this.checked)"><span class=sl></span></label>
+     <div><div class=lbl>{{ p.name }} <span class=meta>{{ p.model }}</span></div>
+       <div class=sub>{% if p.key_env and not p.key_set %}no key set — {% endif %}off = the router skips it until you flip it back on</div></div>
+    </div>
+    {% endfor %}
+    <p class="meta">Use this when a provider is exhausted but still erroring (a free daily quota the bot can't see). Instant, survives restarts; keys and models untouched.</p>
    </div>
-   {% endfor %}
-   <p class="meta">Use this when a provider is exhausted but still erroring (e.g. a free daily quota the bot can't see). It survives restarts; keys and models are untouched.</p>
   </div>
 
-  <h2>Settings <span class="meta">— stored on the agent; “Save &amp; Restart” to apply</span></h2>
-  <div class="card set">
+  <div class="panel" data-panel=settings>
+   <button class=phead onclick="togglePanel(this)">Settings <span class=chev>▾</span></button>
+   <div class="pbody set">
+   <p class="meta" style="margin-top:0">Stored on the agent; “Save &amp; Restart” to apply.</p>
    <h3>Personality &amp; interests</h3>
    <label>Persona — how it behaves and talks<textarea id=s_persona rows=5>{{ sv.persona }}</textarea></label>
    <label>Interests — one per line; it picks its projects from these (add / edit / remove freely)<textarea id=s_interests rows=7>{{ sv.interests_text }}</textarea></label>
@@ -333,6 +345,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <button class="act big" onclick="saveSettings(false)">Save</button>
      <button class="act big danger" onclick="saveSettings(true)">Save &amp; Restart</button>
    </div>
+   </div>
   </div>
  </section>
 </main>
@@ -360,8 +373,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    history.replaceState(null,'','#'+t);
    if(t==='terminal'){const i=$('#terminput');if(i)setTimeout(()=>i.focus(),0);}
-   if(t==='system')loadHW();
+   if(t==='home')loadHW();
  }
+ function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
+   try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
+ function restorePanels(){document.querySelectorAll('.panel').forEach(p=>{
+   let v=null;try{v=localStorage.getItem('panel:'+p.dataset.panel);}catch(e){}
+   if(v==='1')p.classList.add('open');else if(v==='0')p.classList.remove('open');});}
  document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
  if(location.hash){const t=location.hash.slice(1); if($('#'+t)) showTab(t);}
  function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
@@ -467,14 +485,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  function mkArtLink(a){const l=document.createElement('a');l.className='art';l.textContent='▸ '+a.label;
    if(a.view){l.href='#';l.addEventListener('click',e=>{e.preventDefault();viewfile(a.path);});}
    else{l.href=fileURL(a.path);l.target='_blank';} return l;}
- function mkHomeCard(j){const c=document.createElement('div');c.className='card';
-   const h=document.createElement('h3');h.textContent=j.title+' ';
-   const sub=document.createElement('span');sub.className='meta';
-   sub.textContent='· '+j.kind+(j.task_type?' · '+j.task_type:'');h.appendChild(sub);c.appendChild(h);
-   const m=document.createElement('div');m.className='meta';
-   m.textContent=j.when+(j.provider?' · via '+j.provider:'')+(j.ok?'':' · ⚠ unfinished');c.appendChild(m);
-   const p=document.createElement('p');p.textContent=j.body||'';c.appendChild(p);
-   (j.arts||[]).forEach(a=>c.appendChild(mkArtLink(a)));return c;}
+ function mkHomeCard(j){const r=document.createElement('div');r.className='ev';
+   const dot=document.createElement('span');dot.className='evd'+(j.ok?'':' bad');
+   const t=document.createElement('span');t.className='evt';t.textContent=j.title||'(untitled)';
+   const m=document.createElement('span');m.className='meta';m.textContent=(j.task_type||j.kind||'')+' · '+j.when;
+   r.appendChild(dot);r.appendChild(t);r.appendChild(m);return r;}
  function mkProjCard(j){const c=document.createElement('div');c.className='card';c.dataset.id=j.id;
    const h=document.createElement('h3');h.textContent=j.title+' ';
    if(!j.ok){const pill=document.createElement('span');pill.className='pill bad';pill.textContent='unfinished';h.appendChild(pill);}
@@ -503,10 +518,10 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    if(projs.length)projs.forEach(j=>list.appendChild(mkProjCard(j)));
    else{const p=document.createElement('p');p.className='meta';p.textContent='No finished projects yet.';list.appendChild(p);}}
  function renderWorking(w){const el=$('#workingon'); if(!el)return; el.replaceChildren();
-   if(w){const c=document.createElement('div');c.className='card';
-     const b=document.createElement('b');b.textContent='⏳ Working on: ';c.appendChild(b);
-     c.appendChild(document.createTextNode((w.title||'')+' '));
-     const m=document.createElement('span');m.className='meta';m.textContent='('+w.type+' · attempt '+w.attempt+')';c.appendChild(m);el.appendChild(c);}}
+   if(w){const c=document.createElement('div');c.className='card nowcard';
+     const l=document.createElement('div');l.className='nowlbl';l.textContent='▶ Working on';c.appendChild(l);
+     const t=document.createElement('div');t.className='nowtitle';t.textContent=w.title||'(untitled)';c.appendChild(t);
+     const m=document.createElement('span');m.className='meta';m.textContent=(w.type||'')+' · attempt '+w.attempt;c.appendChild(m);el.appendChild(c);}}
  function renderUsage(usage){const t=$('#usagetbl'); if(!t)return;
    let h='<tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>';
    if(usage&&usage.length)usage.forEach(u=>{h+='<tr><td>'+esc(u.provider)+'</td><td>'+(u.day_count||0)+'</td><td>'+(u.total||0)+'</td><td>'+esc(u.cool||'—')+'</td></tr>';});
@@ -553,11 +568,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      return '<div class=stat><div class=k>'+k+'</div><div class=v>'+v+'</div>'+bar+'</div>';
    }).join('');
    $('#sysmodel').textContent=(s.model||'')+(s.date?'  ·  '+s.date:'');
-   const t0=(s.temps&&s.temps[0])?(s.temps[0].c+'°C'):'—';
-   const rows=[['status',status],['time',s.time||'—'],['date',s.date||''],['uptime',s.uptime||'—'],
-     ['cpu',pct(s.cpu_pct)],['mem',pct(s.mem_pct)],['disk',pct(s.disk_pct)],['temp',t0],
-     ['load',(s.load||[]).join(' ')||'—']];
-   $('#homestats').innerHTML=rows.map(([k,v])=>'<div class=row><span>'+k+'</span><b>'+v+'</b></div>').join('');
    $('#fixq').textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
    if(d.usage)renderUsage(d.usage);
    renderWorking(d.working_on);
@@ -568,7 +578,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
        renderHome(jd.journal||[]); renderProjects(jd.journal||[]); renderGallery(jd.images||[]);}).catch(()=>{});
    }
  }).catch(()=>{});}
- renderGallery(_images); loadHW(); refresh(); setInterval(refresh,4000);
+ renderGallery(_images); restorePanels(); loadHW(); refresh(); setInterval(refresh,4000);
  (function(){const i=$('#terminput');if(i)i.addEventListener('keydown',e=>{
      if(e.key==='Enter'){e.preventDefault();termRun();}
      else if(e.key==='ArrowUp'){if(_thi>0){_thi--;i.value=_thist[_thi]||'';}e.preventDefault();}
