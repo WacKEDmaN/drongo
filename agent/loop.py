@@ -13,6 +13,7 @@ import logging
 import random
 import re
 import signal
+from collections import Counter
 import socket
 import sys
 import time
@@ -97,12 +98,42 @@ IDEATE_SYSTEM = """{persona}
 
 Decide your next self-directed project. It should be small enough to finish in
 a handful of steps on a low-power Rock Pi, but genuinely useful or delightful.
-Avoid repeating recent projects. Prefer variety across games, images, scripts,
-hardware dashboards, and short research notes.
+
+NOVELTY IS THE POINT. Look hard at what you've recently built and deliberately do
+something DIFFERENT — a different task_type AND a different subject. Variety is
+across games, generative images, utilities, research notes, retro/Z80, creative
+toys — not ten versions of the same idea.
+Specifically: do NOT keep building hardware/temperature/CPU/sensor things. Reading
+the box's own stats is fun ONCE; if you've done it recently, that subject is OFF
+the table this round. Don't bolt a temp/CPU readout onto an unrelated project
+either. When in doubt, pick the kind of thing you've done LEAST.
 
 Reply with ONE JSON object only:
   {{"task_type": "<one of: {types}>", "title": "<short title>", "description": "<what to build and why, 1-3 sentences>"}}
 """
+
+# Generic project-word noise to ignore when spotting what subjects it overuses.
+_THEME_STOP = {
+    "the", "and", "for", "with", "your", "that", "this", "from", "into", "its",
+    "dashboard", "monitor", "monitoring", "simple", "small", "tool", "app", "web",
+    "page", "real", "time", "live", "data", "using", "based", "system", "project",
+    "mini", "little", "interactive", "generator", "viewer", "tracker", "display",
+    "visualiser", "visualizer", "status", "report",
+}
+
+
+def _recurring_themes(titles):
+    """Subject words that appear across 2+ recent titles — what it keeps reusing
+    (e.g. 'temp', 'cpu', 'sensor'), so ideation can be told to steer away."""
+    counts = Counter()
+    for t in titles:
+        seen = set()
+        for w in re.findall(r"[a-z0-9]{3,}", (t or "").lower()):
+            if w in _THEME_STOP or w in seen:
+                continue
+            seen.add(w)
+            counts[w] += 1
+    return [w for w, n in counts.most_common(5) if n >= 2]
 
 
 def extract_json(text: str):
@@ -159,26 +190,42 @@ class AgentLoop:
 
     # ---- ideation ------------------------------------------------------
     def ideate(self, suggestion: str = "") -> dict:
-        recent = self.mem.recent_task_titles(self.cfg.get("loop", "max_recent_tasks", default=12))
+        recent = self.mem.recent_projects(self.cfg.get("loop", "max_recent_tasks", default=12))
         interests = self.cfg.get("interests", default=[])
         hw = self.mem.recall("hardware")
-        hw_hint = ""
         if hw:
             hw_hint = (f"\nKnown hardware: model={hw.get('model')}, "
                        f"i2c={hw.get('i2c_buses')}, 1-wire={hw.get('onewire')}, "
                        f"cameras={hw.get('video_devices')}, "
                        f"thermals={[t.get('type') for t in hw.get('thermals', [])]}.")
         else:
-            hw_hint = "\nYou have not scanned the hardware yet — a sensor dashboard could start with discover_sensors."
+            hw_hint = "\n(You haven't scanned your hardware yet — discover_sensors lists what's attached, if a project ever needs it.)"
         if suggestion:
             user = (f"Your human has asked for this NEXT: \"{suggestion}\"\n"
                     f"Build exactly that. Pick the best-matching task_type and flesh it "
                     f"out into a concrete, finishable project.{hw_hint}\n\n"
                     "Propose it now.")
         else:
+            recent_lines = "; ".join(f"[{r['task_type']}] {r['title']}" for r in recent) or "nothing yet"
+            used = Counter(r["task_type"] for r in recent if r["task_type"])
+            unused = [t for t in TASK_TYPES if t not in used]
+            overused = [t for t, n in used.items() if n >= 3]
+            themes = _recurring_themes(r["title"] for r in recent)
+            steer = ""
+            if unused:
+                steer += f"\nYou have NOT done these types recently — strongly prefer one: {', '.join(unused)}."
+            if overused:
+                steer += f"\nYou have OVER-DONE these types — avoid them now: {', '.join(overused)}."
+            if themes:
+                steer += (f"\nYou keep reusing these subjects: {', '.join(themes)}. Pick a DIFFERENT "
+                          f"subject this time — do NOT just bolt CPU/temperature/sensor readouts onto "
+                          f"another project.")
+            last_type = recent[0]["task_type"] if recent else ""
+            if last_type:
+                steer += f"\nYour LAST project was a {last_type}; make this a different type."
             user = (f"Your interests: {interests}\n"
-                    f"Recent projects (don't repeat): {recent}{hw_hint}\n\n"
-                    "Propose your next project now.")
+                    f"Recently built (newest first): {recent_lines}{steer}{hw_hint}\n\n"
+                    "Propose your next project now — genuinely different from the list above.")
         system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
         text, provider = self.router.complete(system, user, temperature=0.9)
         obj = extract_json(text) or {}

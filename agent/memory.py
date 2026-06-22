@@ -114,6 +114,15 @@ class Memory:
         ).fetchall()
         return [r["title"] for r in rows if r["title"]]
 
+    def recent_projects(self, limit=12):
+        """Recently FINISHED/attempted projects with their type — richer than
+        titles alone so ideation can steer away from what it keeps building."""
+        rows = self._conn.execute(
+            "SELECT title, task_type FROM journal WHERE kind='cycle' ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [{"title": r["title"] or "", "task_type": r["task_type"] or ""} for r in rows]
+
     # ---- tags & the fix queue -----------------------------------------
     def set_tags(self, journal_id, tags):
         self._conn.execute("UPDATE journal SET tags=? WHERE id=?",
