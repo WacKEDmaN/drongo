@@ -217,6 +217,15 @@ class Memory:
                 return s
         return None
 
+    def remove_skill(self, name) -> bool:
+        name = str(name or "").strip()
+        v = self.skills()
+        filtered = [s for s in v if s.get("name") != name]
+        if len(filtered) == len(v):
+            return False
+        self.remember("skills", filtered)
+        return True
+
     def add_note(self, topic, content) -> bool:
         content = str(content or "").strip()
         if not content:

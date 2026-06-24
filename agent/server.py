@@ -184,7 +184,15 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
  .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:344px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
  .think .tl{padding:1px 0} .think .t-think{color:var(--mut)} .think .t-tool{color:var(--ac2)} .think .t-ok{color:var(--ac)} .think .t-warn{color:var(--warn)} .think .t-info{color:var(--fg)}
-</style></head><body>
+  .skill-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;margin:15px 0}
+  .skill-card {position:relative;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--bd);border-radius:12px;padding:18px;display:flex;flex-direction:column;height:240px;overflow:hidden;transition:border-color .18s,box-shadow .18s,transform .18s}
+  .skill-card:hover {border-color:var(--ac);box-shadow:0 8px 30px rgba(var(--ac-rgb),.15);transform:translateY(-2px)}
+  .skill-card h3 {margin:0 0 4px;font:600 16px/1.3 var(--mono);color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .skill-desc {color:var(--mut);font-size:13px;line-height:1.5;margin-bottom:10px;flex-grow:1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+  .skill-meta {font:11px var(--mono);color:var(--ac2);margin-bottom:10px}
+  .skill-actions {display:flex;gap:8px;align-items:center;margin-top:auto}
+  .skill-code-preview {font:11px var(--mono);background:rgba(0,0,0,0.25);border:1px solid var(--bd);padding:6px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mut);margin-bottom:10px}
+ </style></head><body>
 <header>
  <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
  <span id=p_status class="pill">booting</span>
@@ -194,6 +202,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  <nav>
   <button class="on" data-t=home>Home</button>
   <button data-t=projects>Projects</button>
+  <button data-t=skills>Skills</button>
   <button data-t=gallery>Gallery</button>
   <button data-t=files>Files</button>
   <button data-t=control>Control</button>
@@ -279,9 +288,31 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <div class="card"><div id=fbwrap class=meta>loading…</div></div>
   <h2>📦 Package requests <span class=meta>— system (apt) packages the agent has asked for</span></h2>
   <div class="card"><div id=pkgwrap class=meta>loading…</div></div>
- </section>
+  </section>
 
- <section id=gallery class="tab">
+  <section id=skills class="tab">
+   <h2>Skills — code blocks the agent can recall &amp; reuse</h2>
+   <div id=skills-container class="meta">loading…</div>
+
+   <div class="panel open" id="skill-editor-panel" data-panel="skill-editor" style="margin-top:20px">
+    <button class=phead onclick="togglePanel(this)">Add / Edit Skill <span class=chev>▾</span></button>
+    <div class="pbody set" style="padding-top:10px">
+     <input type=hidden id=skill_is_edit value="0">
+     <label>Skill Name <span class=meta>(alphanumeric, dashes, and underscores only, max 60 chars)</span>
+       <input type=text id=skill_name placeholder="e.g. scrape_wikipedia" required></label>
+     <label>Description <span class=meta>(what does this skill do?)</span>
+       <input type=text id=skill_desc placeholder="e.g. Scrapes page summary and infobox from Wikipedia."></label>
+     <label>Python Code <span class=meta>(the reusable code or functions)</span>
+       <textarea id=skill_code rows=12 placeholder="def scrape_wikipedia(title):&#10;    # code here" style="font-family: var(--mono);" required></textarea></label>
+     <div style="margin-top:12px; display:flex; gap:10px">
+       <button class="act big" onclick="saveSkill()">💾 Save Skill</button>
+       <button class="act big danger" onclick="clearSkillForm()">Cancel / Clear</button>
+     </div>
+    </div>
+   </div>
+  </section>
+
+  <section id=gallery class="tab">
   <h2>Gallery — images it has generated <span class=meta id=galcount></span></h2>
   <div id=gallerygrid>
    {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/img/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
@@ -525,6 +556,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    history.replaceState(null,'','#'+t);
    if(t==='control')loadHW();
    if(t==='files'){loadFiles('');loadPkgs();}
+   if(t==='skills')loadSkills();
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
@@ -694,6 +726,61 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    .then(r=>r.ok?r.text():Promise.reject(r.status))
    .then(t=>{$('#modalout').textContent=(t||'(empty file)').slice(0,200000);})
    .catch(e=>{$('#modalout').textContent='ERROR: could not read file ('+e+')';});}
+  function loadSkills(){const w=$('#skills-container');if(!w)return;
+    w.innerHTML='<div class="meta">loading…</div>';
+    fetch('/api/skills').then(r=>r.json()).then(d=>{
+      if(!d.ok){w.innerHTML='<div class="meta">'+(d.error||'error')+'</div>';return;}
+      renderSkills(d.skills||[]);}).catch(()=>{w.innerHTML='<div class="meta">error</div>';});}
+  function renderSkills(skills){const w=$('#skills-container');w.replaceChildren();
+    if(!skills.length){const p=document.createElement('p');p.className='meta';p.textContent='No skills saved yet. Use the form below to add one, or the agent can save_skill during runs.';w.appendChild(p);return;}
+    const grid=document.createElement('div');grid.className='skill-grid';
+    skills.forEach(s=>{
+      const card=document.createElement('div');card.className='skill-card';
+      const title=document.createElement('h3');title.textContent=s.name;card.appendChild(title);
+      const meta=document.createElement('div');meta.className='skill-meta';
+      const dstr=s.ts?new Date(s.ts*1000).toLocaleString():'unknown';
+      meta.textContent='Saved: '+dstr;card.appendChild(meta);
+      const desc=document.createElement('div');desc.className='skill-desc';desc.textContent=s.desc||'(No description)';card.appendChild(desc);
+      const lines=(s.code||'').split('\n');
+      const ptxt=lines.slice(0,3).join('\n')+(lines.length>3?'\n…':'');
+      const prev=document.createElement('pre');prev.className='skill-code-preview';prev.textContent=ptxt;card.appendChild(prev);
+      const acts=document.createElement('div');acts.className='skill-actions';
+      const bv=document.createElement('button');bv.className='act';bv.textContent='👁 View Code';bv.onclick=()=>viewSkill(s.name,s.code,s.desc);
+      const be=document.createElement('button');be.className='act';be.textContent='✏ Edit';be.onclick=()=>populateSkillForm(s.name,s.desc,s.code);
+      const bd=document.createElement('button');bd.className='act danger';bd.textContent='🗑 Delete';bd.onclick=()=>deleteSkill(s.name);
+      acts.append(bv,be,bd);card.appendChild(acts);grid.appendChild(card);});
+    w.appendChild(grid);}
+  function viewSkill(name,code,desc){
+    $('#modaltitle').textContent='🛠 Skill: '+name;
+    $('#modalout').textContent=(desc?'# '+desc+'\n\n':'')+code;
+    $('#fixbtn').style.display='none';$('#modal').classList.add('show');}
+  function populateSkillForm(name,desc,code){
+    $('#skill_name').value=name;$('#skill_name').readOnly=true;
+    $('#skill_desc').value=desc||'';$('#skill_code').value=code||'';
+    $('#skill_is_edit').value='1';
+    const p=$('#skill-editor-panel');if(p&&!p.classList.contains('open'))p.classList.add('open');
+    p.scrollIntoView({behavior:'smooth'});}
+  function clearSkillForm(){
+    $('#skill_name').value='';$('#skill_name').readOnly=false;
+    $('#skill_desc').value='';$('#skill_code').value='';
+    $('#skill_is_edit').value='0';}
+  function saveSkill(){
+    const name=$('#skill_name').value.trim();
+    const desc=$('#skill_desc').value.trim();
+    const code=$('#skill_code').value.trim();
+    if(!name||!code){toast('Name and Python code are required');return;}
+    fetch('/control/save_skill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,desc,code})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){toast('Skill saved ✓');clearSkillForm();loadSkills();}
+      else{toast(d.error||'failed');}})
+    .catch(()=>toast('error'));}
+  function deleteSkill(name){
+    if(!confirm('Delete skill "'+name+'"?'))return;
+    fetch('/control/delete_skill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){toast('Deleted ✓');loadSkills();}
+      else{toast(d.error||'failed');}})
+    .catch(()=>toast('error'));}
  function delproj(id,btn){if(!confirm('Delete this project and its files? This cannot be undone.'))return;
    fetch('/control/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})})
    .then(r=>r.json()).then(d=>{if(d.ok){const c=btn.closest('.card');if(c)c.remove();
@@ -1388,6 +1475,34 @@ def create_app(cfg, mem: Memory) -> Flask:
         off = mem.set_provider_enabled(name, on)
         log.info("provider toggle: %s -> %s", name, "on" if on else "off")
         return {"ok": True, "name": name, "on": on, "off": off}
+
+    @app.route("/api/skills")
+    def api_skills():
+        return {"ok": True, "skills": mem.skills()}
+
+    @app.route("/control/save_skill", methods=["POST"])
+    def control_save_skill():
+        d = request.get_json(silent=True) or {}
+        name = re.sub(r"[^a-zA-Z0-9_-]", "", (d.get("name") or "").strip())[:60]
+        desc = (d.get("desc") or "").strip()[:200]
+        code = (d.get("code") or "").strip()
+        if not name or not code:
+            return {"ok": False, "error": "name and code are required"}, 400
+        if mem.add_skill(name, desc, code):
+            log.info("skill '%s' saved from dashboard", name)
+            return {"ok": True}
+        return {"ok": False, "error": "failed to save skill"}, 500
+
+    @app.route("/control/delete_skill", methods=["POST"])
+    def control_delete_skill():
+        d = request.get_json(silent=True) or {}
+        name = (d.get("name") or "").strip()
+        if not name:
+            return {"ok": False, "error": "name is required"}, 400
+        if mem.remove_skill(name):
+            log.info("skill '%s' deleted from dashboard", name)
+            return {"ok": True}
+        return {"ok": False, "error": "skill not found"}, 404
 
     @app.route("/run", methods=["POST"])
     def run_py():
