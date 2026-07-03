@@ -1,4 +1,4 @@
-# DRONGO
+# DRONGO - *lobotomized*
 
 **Digital Resource-Optimizing Neural Gadget for Overthinking** — a self-directed,
 autonomous maker-agent for the **Rock Pi 4C+ (RK3399)** running headless Debian.
