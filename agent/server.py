@@ -714,6 +714,17 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      b.textContent=(p.mode===m?'● ':'○ ')+m;if(p.mode===m)b.style.borderColor='var(--ac)';
      b.onclick=()=>setPolicy({mode:m});modeRow.appendChild(b);});
    w.appendChild(modeRow);
+   // Root-owned hard allow-list — read-only here (edit over SSH as root).
+   const hard=document.createElement('div');hard.style.marginBottom='10px';
+   const hl=document.createElement('div');hl.className='meta';hl.style.marginBottom='4px';
+   hl.textContent='🔒 hard-allowed (root — edit '+(p.root_path||'/etc/drongo/pkg-allow.conf')+' over SSH):';
+   hard.appendChild(hl);
+   if((p.root_allow||[]).length){(p.root_allow).forEach(a=>{const c=document.createElement('span');
+     c.className='chip';c.textContent=a;hard.appendChild(c);});}
+   else{const s=document.createElement('span');s.className='meta';s.textContent='(none set)';hard.appendChild(s);}
+   w.appendChild(hard);
+   const dl=document.createElement('div');dl.className='meta';dl.style.marginBottom='4px';
+   dl.textContent='dashboard-allowed (editable here):';w.appendChild(dl);
    const chips=document.createElement('div');
    (p.allow||[]).forEach(a=>{const c=document.createElement('span');c.className='chip';c.style.cursor='pointer';
      c.textContent=a+' ✕';c.title='remove';c.onclick=()=>setPolicy({remove:a});chips.appendChild(c);});
@@ -1222,9 +1233,26 @@ def create_app(cfg, mem: Memory) -> Flask:
         name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
         return {"ok": mem.delete_skill(name)}
 
+    def _root_allow():
+        """The root-owned hard allow-list (read-only here — /etc/drongo is
+        root-owned, so the drongo dashboard can display it but not edit it)."""
+        etc = os.path.dirname(cfg.source_path or "/etc/drongo/config.yaml")
+        path = os.path.join(etc, "pkg-allow.conf")
+        pats = []
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for ln in fh:
+                    ln = ln.split("#", 1)[0].strip()
+                    if ln:
+                        pats.append(ln)
+        except Exception:
+            pass
+        return pats, path
+
     @app.route("/api/pkg_policy")
     def api_pkg_policy():
-        return {"ok": True, **mem.pkg_policy()}
+        root_allow, path = _root_allow()
+        return {"ok": True, **mem.pkg_policy(), "root_allow": root_allow, "root_path": path}
 
     @app.route("/control/pkg_policy", methods=["POST"])
     def control_pkg_policy():

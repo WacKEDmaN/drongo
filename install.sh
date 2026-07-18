@@ -144,6 +144,24 @@ if [ ! -f "$ETC/config.yaml" ]; then
 fi
 [ -f "$ETC/drongo.env" ]   || cp "$INSTALL/system/drongo.env.example"   "$ETC/drongo.env"
 [ -f "$ETC/observer.env" ] || cp "$INSTALL/system/observer.env.example" "$ETC/observer.env"
+# Root-owned HARD package allow-list. Lives in /etc (root-owned) so the agent
+# user can NEVER edit it — only you, over SSH. Packages/globs here are always
+# installable by the agent, on top of whatever you allow live on the dashboard.
+if [ ! -f "$ETC/pkg-allow.conf" ]; then
+  cat > "$ETC/pkg-allow.conf" <<'PKGALLOW'
+# DRONGO hard package allow-list (root-owned; the agent CANNOT edit this file).
+# One apt package name or glob per line; '#' starts a comment. Packages matching
+# a line here are ALWAYS installable by the agent, in addition to anything you
+# allow live on the dashboard (Files -> Install policy).
+# Uncomment / add what you trust it to install unattended, e.g.:
+# build-essential
+# sdcc
+# pasmo
+# z88dk
+# libboost-*
+PKGALLOW
+fi
+chmod 644 "$ETC/pkg-allow.conf"
 # Auto-generate a strong dashboard password so the LAN UI is protected out of the
 # box (kept if you already set one). Without it the dashboard is localhost-only.
 if grep -q '^DRONGO_WEB_PASSWORD=$' "$ETC/drongo.env" 2>/dev/null; then

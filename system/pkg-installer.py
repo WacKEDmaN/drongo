@@ -41,6 +41,10 @@ from pathlib import Path
 RUNTIME = os.environ.get("DRONGO_RUNTIME", "/var/lib/drongo/runtime")
 DB = os.environ.get("DRONGO_DB", f"{RUNTIME}/state/agent.db")
 AGENT_USER = os.environ.get("DRONGO_USER", "drongo")
+ETC = os.environ.get("DRONGO_ETC", "/etc/drongo")
+# Root-owned HARD allow-list: the agent user can't edit this (it lives in /etc,
+# root-owned), so these grants are tamper-proof — unlike the dashboard list.
+ROOT_ALLOW = Path(ETC) / "pkg-allow.conf"
 DONE_DIR = Path(RUNTIME) / "workspace" / ".pkg-installed"
 STATE = Path(os.environ.get("DRONGO_OBS_STATE", "/var/lib/drongo/observer")) / "pkg-installer.json"
 
@@ -87,7 +91,23 @@ def read_db_ro():
     return reqs, policy
 
 
-def permitted(name: str, policy: dict) -> bool:
+def read_root_allow():
+    """Parse the root-owned hard allow-list: one apt name/glob per line, # comments."""
+    pats = []
+    try:
+        for ln in ROOT_ALLOW.read_text().splitlines():
+            ln = ln.split("#", 1)[0].strip()
+            if ln:
+                pats.append(ln)
+    except Exception:
+        pass
+    return pats
+
+
+def permitted(name: str, policy: dict, root_allow=()) -> bool:
+    # Tamper-proof root list wins first; then the (soft, dashboard-editable) policy.
+    if any(fnmatch.fnmatch(name, p) for p in root_allow):
+        return True
     if policy["mode"] == "auto":
         return True
     return any(fnmatch.fnmatch(name, pat) for pat in policy["allow"])
@@ -119,11 +139,12 @@ def main():
     reqs, policy = read_db_ro()
     if not reqs:
         return
+    root_allow = read_root_allow()
     seen = list(dict.fromkeys(reqs))                     # de-dup, keep order
     for n in seen:
         if not valid_pkg(n):
             log(f"REJECTED invalid package name: {n!r}")
-    todo = [n for n in seen if valid_pkg(n) and permitted(n, policy)]
+    todo = [n for n in seen if valid_pkg(n) and permitted(n, policy, root_allow)]
     if not todo:
         log(f"{len(seen)} request(s); none permitted by policy (mode={policy['mode']}).")
         return

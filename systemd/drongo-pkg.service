@@ -10,6 +10,7 @@ EnvironmentFile=-/etc/drongo/observer.env
 Environment=PYTHONUTF8=1
 Environment=DRONGO_RUNTIME=/var/lib/drongo/runtime
 Environment=DRONGO_USER=drongo
+Environment=DRONGO_ETC=/etc/drongo
 # Installs ONLY validated package names permitted by the dashboard policy.
 # It never runs an arbitrary command (see system/pkg-installer.py).
 ExecStart=/usr/bin/python3 /opt/drongo/system/pkg-installer.py
