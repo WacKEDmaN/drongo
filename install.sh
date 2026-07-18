@@ -188,8 +188,11 @@ fi
 # ---------------------------------------------------------------------------
 say "1/10  Base packages"
 export DEBIAN_FRONTEND=noninteractive
-# Wait (up to 5 min) for a freshly-booted image's apt-daily / unattended-upgrades
-# to release the dpkg lock, instead of failing or hanging forever on it.
+# Stop the distro's background apt (apt-daily / unattended-upgrades) so it can't
+# hold the dpkg lock mid-install and stall us (re-enabled by a reboot), and wait
+# (up to 5 min) for any in-progress one to release the lock rather than hanging.
+systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
 APT="apt-get -o DPkg::Lock::Timeout=300"
 $APT update -y
 $APT install -y --no-install-recommends \
@@ -356,7 +359,9 @@ cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/d
 
 # nice/ionice keeps these heavy source builds from starving the box — so your
 # SSH session stays responsive instead of dropping while they compile.
-LOAD="nice -n 15"; command -v ionice >/dev/null 2>&1 && LOAD="ionice -c3 nice -n 15"
+# best-effort LOW priority (class 2, prio 7) — deprioritised but NOT starved. (An
+# idle class -c3 can get zero I/O on a busy SD and stall apt/downloads entirely.)
+LOAD="nice -n 15"; command -v ionice >/dev/null 2>&1 && LOAD="ionice -c2 -n7 nice -n 15"
 
 # Optional Z80/Amstrad cross-dev toolchain (sdcc, z88dk, CPCtelera, pasmo).
 if [ "$RETRO" -eq 1 ]; then

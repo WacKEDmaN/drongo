@@ -36,6 +36,14 @@ warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
 
 export DEBIAN_FRONTEND=noninteractive
 
+# apt that WAITS (up to 5 min) for the dpkg lock instead of hanging silently on
+# it, and stop the distro's background apt so it can't grab the lock mid-build.
+# (A fresh image's apt-daily/unattended-upgrades holding the lock is the usual
+# reason "1/4 apt packages" sits there with no activity.)
+APT="apt-get -o DPkg::Lock::Timeout=300"
+systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+
 # Cap build parallelism by RAM. z88dk/CPCtelera/SDCC compile heavy C++; a full
 # `-j$(nproc)` (6 on the RK3399) exhausts a 4GB board's RAM, thrashes, and can
 # take the box (and your SSH session) down. MAKEFLAGS caps the sub-makes; one
@@ -51,16 +59,16 @@ echo "    building with -j${JOBS} (RAM ${_ram_mb}MB) to avoid OOM"
 # first; on failure, fall back to installing each package on its own so every
 # package that DOES exist still gets in.
 apt_install() {
-  apt-get install -y --no-install-recommends "$@" && return 0
+  $APT install -y --no-install-recommends "$@" && return 0
   warn "batch install hit a snag — retrying each package individually"
   local p
   for p in "$@"; do
-    apt-get install -y --no-install-recommends "$p" || warn "  skipped (unavailable?): $p"
+    $APT install -y --no-install-recommends "$p" || warn "  skipped (unavailable?): $p"
   done
 }
 
 say "1/4  apt packages (sdcc, pasmo + build deps for z88dk & CPCtelera)"
-apt-get update -y || warn "apt update failed"
+$APT update -y || warn "apt update failed"
 # Ready-to-use compilers/assemblers + fetch tools.
 apt_install sdcc pasmo build-essential git curl wget unzip m4 dos2unix pkg-config
 # Build-from-source deps shared by z88dk and CPCtelera's bundled SDCC:
@@ -72,9 +80,11 @@ apt_install sdcc pasmo build-essential git curl wget unzip m4 dos2unix pkg-confi
 apt_install libxml2-dev zlib1g-dev libgmp3-dev libpng-dev bison flex ragel re2c \
             libboost-dev libboost-graph-dev texinfo libfreeimage-dev
 # CPCtelera's bundled tools need the Mono runtime. Kept separate from the above so
-# a mono hiccup can't block the compilers. mono-complete is the safe catch-all.
-apt-get install -y mono-complete \
-  || apt-get install -y mono-runtime libmono-system-drawing4.0-cil \
+# a mono hiccup can't block the compilers. mono-complete is the safe catch-all,
+# but it's a LARGE download (~250MB) — slow on a Pi, so expect a quiet stretch.
+echo "    installing Mono for CPCtelera (large download — be patient)…"
+$APT install -y mono-complete \
+  || $APT install -y mono-runtime libmono-system-drawing4.0-cil \
   || warn "mono failed to install — CPCtelera tools that need it won't run"
 
 # --- z88dk -----------------------------------------------------------------
