@@ -541,6 +541,35 @@ class AgentLoop:
                 self.mem.push_step("ok", f"🧠 learned a skill: {sk['name']}")
                 log.info("harvested skill '%s' from '%s'", sk["name"], task["title"])
 
+    # ---- dataset curation ---------------------------------------------
+    def curate_dataset(self, task, outcome, ctx):
+        """Append a training example to a JSONL corpus the agent accumulates for
+        OFF-BOX fine-tuning. The Pi can't train a model, but it CAN curate its own
+        successful work into a dataset you can later fine-tune elsewhere (a rented
+        GPU / a cloud fine-tune API). Chat-format so it drops straight into most
+        tools. Best-effort — never breaks a cycle."""
+        try:
+            code = []
+            for a in (ctx.artifacts or [])[:3]:
+                p = a.get("path", "")
+                if p.rsplit(".", 1)[-1].lower() in ("py", "c", "cpp", "h", "js", "html", "css", "sh"):
+                    try:
+                        full = safeguard.safe_join(str(self.cfg.workspace), p)
+                        with open(full, "r", encoding="utf-8", errors="replace") as fh:
+                            code.append(f"/* {p} */\n{fh.read(2500)}")
+                    except Exception:
+                        pass
+            assistant = outcome + (("\n\n" + "\n\n".join(code)) if code else "")
+            ex = {"messages": [
+                {"role": "user", "content": f"{task['title']}: {task['description']}"},
+                {"role": "assistant", "content": assistant[:8000]}]}
+            d = Path(self.cfg.workspace) / "dataset"
+            d.mkdir(parents=True, exist_ok=True)
+            with open(d / "train.jsonl", "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(ex) + "\n")
+        except Exception as e:
+            log.warning("dataset curate failed: %s", e)
+
     # ---- reflection ----------------------------------------------------
     def reflect(self, task, outcome, ctx):
         """Returns (journal_note, lesson). The lesson is a one-line takeaway fed
@@ -716,6 +745,7 @@ class AgentLoop:
             note, lesson = self.reflect(task, outcome, ctx)
             self.mem.add_lesson(lesson)
             self.harvest_skill(task, ctx)        # grow the reusable skills library
+            self.curate_dataset(task, outcome, ctx)   # collect a fine-tuning example
             self.mem.add_journal("cycle", task["title"], note, task_type=task["task_type"],
                                  artifacts=all_artifacts, provider=provider, ok=True)
             self._git_snapshot(task["title"])
@@ -787,6 +817,11 @@ class AgentLoop:
         self.mem.remember("safe_mode", self.safe_mode)
         self.mem.clear_cooldowns()   # fresh start: re-try every provider now
         self._ensure_project_venv()
+        try:                         # index my own code/docs into the knowledge base
+            n = self.mem.index_repo(PROJECT_ROOT)
+            log.info("indexed %d of my own files into the knowledge base", n)
+        except Exception as e:
+            log.warning("repo index failed: %s", e)
         watchdog.notify_ready()
         watchdog.heartbeat(self.cfg, force=True)
 

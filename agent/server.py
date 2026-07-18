@@ -297,6 +297,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
  <section id=brain class="tab">
   <h2>🧠 Brain — what DRONGO has learned</h2>
+  <div class="card"><div id=kbsummary class=meta>loading…</div></div>
   <div class="card">
    <div class=th>Import a skill</div>
    <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL to download from. Imported code is stored, never auto-run.</p>
@@ -751,6 +752,12 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
  function loadBrain(){const w=$('#skillwrap');if(!w)return;
    fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';});}
  function renderBrain(d){
+   const kb=$('#kbsummary');
+   if(kb){kb.replaceChildren();
+     const s=document.createElement('span');
+     s.textContent='📚 Knowledge base: '+(d.repo_files||0)+' repo files indexed · '+((d.skills||[]).length)+' skills · '+((d.notes||[]).length)+' notes · '+((d.lessons||[]).length)+' lessons · '+(d.dataset_examples||0)+' training examples. ';
+     kb.appendChild(s);
+     if(d.dataset_examples){const a=document.createElement('a');a.href='/file/dataset/train.jsonl';a.target='_blank';a.className='act';a.textContent='⬇ dataset (JSONL)';kb.appendChild(a);}}
    const sk=$('#skillwrap');sk.replaceChildren();
    const skills=d.skills||[];$('#skillcount').textContent='('+skills.length+')';
    if(!skills.length){const p=document.createElement('div');p.className='meta';p.textContent='No skills yet — DRONGO harvests one from each finished project, or import your own above.';sk.appendChild(p);}
@@ -1204,8 +1211,18 @@ def create_app(cfg, mem: Memory) -> Flask:
 
     @app.route("/api/knowledge")
     def api_knowledge():
+        ds = cfg.workspace / "dataset" / "train.jsonl"
+        n_ds = 0
+        try:
+            if ds.exists():
+                with open(ds, "r", encoding="utf-8", errors="replace") as fh:
+                    n_ds = sum(1 for _ in fh)
+        except Exception:
+            pass
         return {"ok": True, "skills": mem.skills(), "notes": mem.notes(),
-                "lessons": mem.recent_lessons(limit=25)}
+                "lessons": mem.recent_lessons(limit=25),
+                "repo_files": len(mem.recall("repo_index") or []),
+                "dataset_examples": n_ds}
 
     @app.route("/control/skill_import", methods=["POST"])
     def control_skill_import():

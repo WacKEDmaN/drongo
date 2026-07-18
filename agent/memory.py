@@ -6,7 +6,9 @@ can share it without a server process.
 
 from __future__ import annotations
 
+import glob
 import json
+import os
 import re
 import sqlite3
 import time
@@ -255,11 +257,12 @@ class Memory:
         return set(re.findall(r"[a-z0-9]{3,}", str(text or "").lower()))
 
     def relevant_knowledge(self, query, k=5) -> list:
-        """Lightweight RAG: rank everything the agent has learned — skills, notes
-        and lessons — by word-overlap with `query` and return the top-k most
-        relevant, each {kind, title, text}. Pure stdlib (no embeddings/vectors) so
-        it stays light on the Pi; good enough to surface 'have I done this before?'
-        knowledge into a build."""
+        """Lightweight RAG: rank everything the agent knows — its own SKILLS,
+        NOTES, LESSONS, indexed REPO files (its own code/docs) and past PROJECTS —
+        by word-overlap with `query`, and return the top-k most relevant, each
+        {kind, title, text}. Pure stdlib (no embeddings/vectors) so it stays light
+        on the Pi; good enough to surface 'have I done/seen this before?' into a
+        build and to make the repo the agent's first-class context."""
         q = self._tokens(query)
         if not q:
             return []
@@ -279,9 +282,56 @@ class Memory:
                 continue
             scored.append((len(q & self._tokens(l.get("txt", ""))),
                            {"kind": "lesson", "title": "", "text": l.get("txt", "")}))
+        for r in (self.recall("repo_index") or []):
+            if not isinstance(r, dict):
+                continue
+            toks = self._tokens(f"{r.get('path','')} {r.get('summary','')}")
+            scored.append((len(q & toks), {"kind": "repo", "title": r.get("path", ""),
+                                           "text": (r.get("summary", "") or "")[:280]}))
+        for j in self.recent_journal(60, kind="cycle"):
+            toks = self._tokens(f"{j.get('title','')} {j.get('body','')}")
+            scored.append((len(q & toks), {"kind": "project", "title": j.get("title", ""),
+                                           "text": (j.get("body", "") or "")[:200]}))
         scored = [x for x in scored if x[0] > 0]
         scored.sort(key=lambda x: x[0], reverse=True)
         return [d for _, d in scored[:k]]
+
+    def index_repo(self, repo_dir, patterns=("agent/*.py", "system/*.py", "*.md",
+                                             "config.example.yaml")) -> int:
+        """Index the agent's OWN codebase + docs into the knowledge base, so
+        relevant_knowledge / recall_knowledge can surface 'how does my own X work?'
+        — the repo becomes first-class context. Cheap; called once at startup (and
+        after a self-update). Reads only (the code dir is read-only to the agent)."""
+        entries = []
+        base = str(repo_dir)
+        for pat in patterns:
+            for path in sorted(glob.glob(os.path.join(base, pat))):
+                rel = os.path.relpath(path, base).replace(os.sep, "/")
+                try:
+                    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                        text = fh.read(20000)
+                except Exception:
+                    continue
+                summ = self._summarize_source(rel, text)
+                if summ:
+                    entries.append({"path": rel, "summary": summ[:400]})
+        self.remember("repo_index", entries)
+        return len(entries)
+
+    @staticmethod
+    def _summarize_source(rel, text) -> str:
+        low = rel.lower()
+        if low.endswith(".py"):
+            m = re.search(r'"""(.+?)"""', text, re.S)
+            doc = (m.group(1).strip().splitlines()[0] if m else "")[:160]
+            defs = re.findall(r'^\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)', text, re.M)
+            names = ", ".join(dict.fromkeys(defs))[:200]
+            joiner = " — " if doc and names else ""
+            return (doc + joiner + (("defines: " + names) if names else "")).strip()
+        if low.endswith((".md", ".yaml", ".yml")):
+            lines = [ln.strip("# ").strip() for ln in text.splitlines() if ln.strip()]
+            return " · ".join(lines[:3])[:300]
+        return text.strip()[:200]
 
     def request_package(self, name, reason) -> bool:
         name = str(name or "").strip()[:60]
