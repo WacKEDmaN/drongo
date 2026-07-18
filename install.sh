@@ -5,8 +5,13 @@
 #  Beginner steps:
 #    1. Flash Debian to the Pi, boot it, and SSH in.
 #    2. Get this code onto the Pi (git clone <your fork>  OR  unzip it).
-#    3. Run:   sudo ./install.sh --strip-desktop
-#    4. Follow the printed "NEXT" steps. That's it.
+#    3. Run:   sudo ./install.sh
+#    4. Answer the few setup questions, then follow the printed "NEXT" steps.
+#
+#  It's INTERACTIVE by default: it asks about the desktop, the local model, the
+#  retro toolchain and the image generator. Every question has a sensible default
+#  (just press Enter). Pass a flag to pre-answer, or --yes to accept all defaults
+#  without prompting (handy for scripted installs).
 #
 #  What it sets up ("Local Autonomy, Global Isolation"):
 #    * code at /opt/drongo       - root-owned, READ-ONLY to the agent
@@ -16,11 +21,12 @@
 #    * SoC hardware watchdog armed (reboots the board if the kernel wedges)
 #    * external root observer + privileged updater (the "Dead Man's Switch")
 #
-#  Flags:  --strip-desktop   stop the GUI to free RAM (reversible; nothing is
-#                            uninstalled — just disables the graphical target)
-#          --model NAME       force a specific Ollama model (default: auto by RAM)
-#          --retro            also install the Z80/Amstrad cross-dev toolchain
-#                            (sdcc, z88dk, CPCtelera, pasmo) — heavy source builds
+#  Flags (all optional — skip the matching question):
+#    --strip-desktop   stop the GUI to free RAM (reversible; nothing uninstalled)
+#    --model NAME      use a specific Ollama model (default: auto-picked by RAM)
+#    --retro           install the Z80/Amstrad toolchain (sdcc/z88dk/CPCtelera)
+#    --imggen          build the local image generator (OnnxStream — slow on a Pi)
+#    --yes, -y         accept all defaults, don't prompt (non-interactive)
 # ===========================================================================
 set -euo pipefail
 
@@ -28,9 +34,13 @@ INSTALL=/opt/drongo
 RUNTIME=/var/lib/drongo/runtime
 ETC=/etc/drongo
 AGENT_USER=drongo
-MODEL=""              # empty => auto-pick from RAM below
-STRIP_DESKTOP=0
-RETRO=0               # --retro => also install the Z80/Amstrad cross-dev toolchain
+# Empty = "not chosen yet" -> ask interactively (or fall back to a default when
+# there's no terminal). A flag pre-answers the matching question.
+MODEL=""
+STRIP_DESKTOP=""
+RETRO=""
+IMGGEN=""
+ASSUME_YES=0
 
 # --- friendly failure: tell the beginner exactly where it broke ------------
 trap 'rc=$?; [ $rc -ne 0 ] && printf "\n\033[1;31m[install] FAILED (exit %s) near line %s.\033[0m\nRead the message just above, fix it, then re-run:  sudo ./install.sh\n" "$rc" "$LINENO"' EXIT
@@ -39,9 +49,11 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --strip-desktop) STRIP_DESKTOP=1 ;;
     --retro) RETRO=1 ;;
+    --imggen) IMGGEN=1 ;;
     --model) [ $# -ge 2 ] || { echo "--model needs a value, e.g. --model qwen2.5:1.5b-instruct"; exit 1; }
              MODEL="$2"; shift ;;
-    -h|--help) sed -n '2,25p' "$0"; trap - EXIT; exit 0 ;;
+    --yes|-y) ASSUME_YES=1 ;;
+    -h|--help) sed -n '2,30p' "$0"; trap - EXIT; exit 0 ;;
     *) echo "unknown flag: $1  (try --help)"; exit 1 ;;
   esac
   shift
@@ -49,6 +61,43 @@ done
 
 say()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
+
+# ASCII-only banner (no Unicode, so it survives a broken locale / dumb terminal).
+banner() {
+  printf '\033[1;36m'
+  cat <<'ART'
+
+    ____   ____    ___   _   _   ____    ___
+   |  _ \ |  _ \  / _ \ | \ | | / ___|  / _ \
+   | | | || |_) || | | ||  \| || |  _  | | | |
+   | |_| ||  _ < | |_| || |\  || |_| | | |_| |
+   |____/ |_| \_\ \___/ |_| \_| \____|  \___/
+ART
+  printf '\033[0m\033[1;90m   Digital Resource-Optimizing Neural Gadget for Overthinking\033[0m\n'
+  printf '\033[1;90m   autonomous maker-agent  ~  Local Autonomy, Global Isolation\033[0m\n'
+}
+
+# Interactive prompts. Open the controlling terminal ONCE on fd 3 (so sequential
+# questions read sequential answers, and it works even under `curl | sudo bash`);
+# with no terminal — or --yes — every question falls back to its default.
+_TTY=0
+if [ "$ASSUME_YES" -ne 1 ] && [ -r /dev/tty ]; then exec 3</dev/tty && _TTY=1; fi
+confirm() {  # confirm "Question?" Y|N   -> exit 0 = yes, 1 = no
+  local q="$1" def="${2:-N}" ans hint
+  [ "$def" = "Y" ] && hint="[Y/n]" || hint="[y/N]"
+  if [ "$_TTY" -ne 1 ]; then [ "$def" = "Y" ]; return; fi
+  read -rp "    $q $hint " ans <&3 || ans=""
+  ans="${ans:-$def}"
+  case "$ans" in [Yy]*) return 0;; *) return 1;; esac
+}
+ask() {      # ask "Prompt" "default"   -> echoes the answer
+  local q="$1" def="$2" ans
+  if [ "$_TTY" -ne 1 ]; then printf '%s' "$def"; return; fi
+  read -rp "    $q [$def]: " ans <&3 || ans=""
+  printf '%s' "${ans:-$def}"
+}
+
+banner
 
 # ---------------------------------------------------------------------------
 say "0/10  Pre-flight checks"
@@ -66,14 +115,35 @@ fi
 avail_mb=$(df -Pm / | awk 'NR==2{print $4}')
 [ "${avail_mb:-0}" -ge 3000 ] || warn "Only ${avail_mb}MB free on / - a model may not fit. ~3GB+ recommended."
 
-# Pick a model that fits this board's RAM (4C+ ships as 1/2/4 GB)
+# Suggest a model that fits this board's RAM (4C+ ships as 1/2/4 GB)
 ram_mb=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
-if [ -z "$MODEL" ]; then
-  if   [ "$ram_mb" -ge 3000 ]; then MODEL="qwen2.5:3b-instruct"
-  elif [ "$ram_mb" -ge 1500 ]; then MODEL="qwen2.5:1.5b-instruct"
-  else                              MODEL="qwen2.5:0.5b-instruct"; fi
+if   [ "$ram_mb" -ge 3000 ]; then DEF_MODEL="qwen2.5:3b-instruct"
+elif [ "$ram_mb" -ge 1500 ]; then DEF_MODEL="qwen2.5:1.5b-instruct"
+else                              DEF_MODEL="qwen2.5:0.5b-instruct"; fi
+echo "    RAM: ${ram_mb}MB  ->  suggested local model: $DEF_MODEL"
+
+# ---------------------------------------------------------------------------
+# Interactive choices. Each is skipped if a flag already answered it; with no
+# terminal (or --yes) every unanswered question falls back to its default.
+if [ "$_TTY" -eq 1 ]; then
+  say "Setup — a few quick choices (press Enter to take the default)"
+  if [ -z "$MODEL" ]; then MODEL="$(ask 'Local Ollama model' "$DEF_MODEL")"; fi
+  if [ -z "$STRIP_DESKTOP" ]; then
+    if confirm 'Disable the desktop GUI to free RAM (recommended if headless)?' N; then STRIP_DESKTOP=1; else STRIP_DESKTOP=0; fi
+  fi
+  if [ -z "$RETRO" ]; then
+    if confirm 'Install the retro Z80/Amstrad toolchain (sdcc/z88dk/CPCtelera - heavy source builds)?' N; then RETRO=1; else RETRO=0; fi
+  fi
+  if [ -z "$IMGGEN" ]; then
+    if confirm 'Build the local image generator (OnnxStream - slow on a Pi)?' N; then IMGGEN=1; else IMGGEN=0; fi
+  fi
 fi
-echo "    RAM: ${ram_mb}MB  ->  local model: $MODEL   (override with --model)"
+# Resolve anything still unanswered (non-interactive / --yes / flag absent).
+MODEL="${MODEL:-$DEF_MODEL}"
+STRIP_DESKTOP="${STRIP_DESKTOP:-0}"
+RETRO="${RETRO:-0}"
+IMGGEN="${IMGGEN:-0}"
+echo "    chosen: model=$MODEL  strip-desktop=$STRIP_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
 
 # ---------------------------------------------------------------------------
 say "1/10  Base packages"
@@ -231,8 +301,14 @@ cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/d
 
 # Optional Z80/Amstrad cross-dev toolchain (sdcc, z88dk, CPCtelera, pasmo).
 if [ "$RETRO" -eq 1 ]; then
-  say "Retro toolchain (--retro): sdcc / z88dk / CPCtelera / pasmo"
+  say "Retro toolchain: sdcc / z88dk / CPCtelera / pasmo"
   bash "$INSTALL/system/retro-toolchain.sh" || warn "retro toolchain had problems (see above) — re-run sudo $INSTALL/system/retro-toolchain.sh"
+fi
+
+# Optional local image generator (OnnxStream). Slow on a Pi; cloud stays default.
+if [ "$IMGGEN" -eq 1 ]; then
+  say "Local image generator: OnnxStream (this can take a while to build)"
+  bash "$INSTALL/system/image-gen.sh" || warn "image generator had problems (see above) — re-run sudo $INSTALL/system/image-gen.sh"
 fi
 
 # ---------------------------------------------------------------------------
