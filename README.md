@@ -34,11 +34,15 @@ git clone <your-fork-url> drongo && cd drongo     # preferred (enables self-upda
 
 **2. Install (one command):**
 ```bash
-sudo ./install.sh --strip-desktop
+sudo ./install.sh
 ```
-It checks your system, picks a model that fits your RAM, sets everything up, and ends
-with a **health check**. When it prints `✓ DRONGO is installed and running`, it's live —
-already working on the local model, no keys required.
+It shows a banner, then **asks a few quick setup questions** — local model, disable the
+desktop to free RAM?, install the retro toolchain?, build the local image generator? —
+each with a sensible default, so you can just press **Enter** through them. Then it checks
+your system, sets everything up, and ends with a **health check**. When it prints
+`✓ DRONGO is installed and running`, it's live — already working on the local model, no
+keys required. *(Prefer flags? `--strip-desktop --retro --imggen --model NAME` still
+pre-answer the questions, and `--yes` accepts every default without prompting.)*
 
 **3. Did it work?**
 ```bash
@@ -62,10 +66,12 @@ can also hand-edit `/etc/drongo/drongo.env` — see [Alerts](#alerts--discord-or
 | Capability | How |
 |---|---|
 | Decides what to do | Self-directed ideation each cycle, avoids repeating itself |
-| Writes & runs scripts | Sandboxed `shell` + file tools, confined to its workspace |
-| Makes images | Keyless, free generation (Pollinations) into a gallery |
+| Writes & runs scripts | Sandboxed `shell` + file tools, each project kept in its own `projects/<name>/` folder |
+| Makes images | Keyless, free generation (Pollinations) into a gallery; optional local generator (OnnxStream) |
 | Builds games / dashboards | HTML/JS written to the workspace, served by the dashboard |
 | Senses its hardware | Scans i2c/spi/1-wire/thermals/USB/cameras, builds dashboards |
+| Learns & reuses skills | Auto-harvests a reusable snippet from each finished project, retrieves relevant skills/notes/lessons (lightweight RAG), and can **download** skill packs |
+| Installs its own packages | Requests apt packages; a scoped root helper installs the ones you allow (policy + hard allow-list) |
 | Updates itself | **Request-based**, applied by a privileged root updater with rollback |
 | Alerts you | Discord webhook, a GPIO LED you wire up, ntfy, or any command — pick any combo |
 | Stays alive | systemd + in-agent watchdog + external observer + SoC hardware watchdog |
@@ -127,6 +133,12 @@ every free provider is simultaneously rate-limited, so spend stays minimal; rais
 if you want more of it. More free options (GitHub Models, NVIDIA NIM) are
 commented in `config.example.yaml`.
 
+> Providers can be **added, removed and re-ordered live from the dashboard**
+> (Control → Settings), and the router **backs off and auto-retries** a failing
+> provider (429 / 5xx / 404) instead of wedging — so a retired model id no longer
+> stalls the agent until you restart it. Gemini defaults to `gemini-flash-latest`,
+> which tracks Google's current Flash model so it won't 404 when a version is retired.
+
 Add ~**2 GB zram or swap** (on NVMe, not SD) for headroom — see *Tuning* below.
 
 ---
@@ -168,18 +180,28 @@ outward**; each outer layer is owned by root and recovers the one inside it.
 
 ```bash
 # 1. Flash Debian (Armbian/Radxa) to eMMC/NVMe, boot headless, SSH in.
-# 2. Get the code and run the installer as root:
+# 2. Get the code and run the installer as root — it asks a few setup questions:
 git clone <your-fork-url> drongo && cd drongo
-sudo ./install.sh --strip-desktop          # disables the GUI to free RAM (reversible, nothing uninstalled)
-                                           # omit the flag to leave the desktop running
-                                           # add --retro to also build the Z80/Amstrad toolchain
+sudo ./install.sh
+#   You'll be asked (each with a default; Enter accepts it):
+#     • local Ollama model        • disable the desktop to free RAM?
+#     • install the retro toolchain?   • build the local image generator?
+#   Prefer non-interactive? Pass flags to pre-answer, --yes to take all defaults:
+#     sudo ./install.sh --yes --strip-desktop --retro
 ```
 
-> **Retro / 8-bit dev (optional):** `sudo ./install.sh --retro` (or `sudo
-> ./system/retro-toolchain.sh` any time) installs **sdcc**, **z88dk**, **CPCtelera**
-> and **pasmo** so the agent can build for the Amstrad CPC, ZX Spectrum and Z80
-> (incl. SymbOS assembly). z88dk + CPCtelera compile from source, so it's a heavy,
-> best-effort step — it won't break the base install, and you can re-run it.
+> **Retro / 8-bit dev (optional):** answer **yes** to the retro prompt (or pass
+> `--retro`, or run `sudo ./system/retro-toolchain.sh` any time). It installs
+> **sdcc**, **z88dk**, **CPCtelera** and **pasmo** so the agent can build for the
+> Amstrad CPC, ZX Spectrum and Z80 (incl. SymbOS assembly). z88dk + CPCtelera
+> compile from source, so it's a heavy, best-effort step — it won't break the base
+> install, and you can re-run it (on failure it saves the build log to
+> `/opt/retro/*-build.log` so the error is recoverable).
+
+> **Local image generator (optional):** answer **yes** to the image-gen prompt (or
+> `--imggen`, or `sudo ./system/image-gen.sh`) to build **OnnxStream** into
+> `/opt/imggen`. It's slow on a Pi — the keyless cloud generator stays the default;
+> set image `provider: local` in Settings once it's built.
 
 The installer (see [`install.sh`](install.sh)) does everything: packages, the
 `drongo` user, `/opt/drongo` (root-owned) + `/var/lib/drongo` (agent-writable),
@@ -224,24 +246,31 @@ sudo drongo doctor
 7. **Hardware watchdog:** add `RuntimeWatchdogSec=20s` to `/etc/systemd/system.conf`.
 8. **Services:** copy `systemd/*.{service,timer}` to `/etc/systemd/system/`,
    `daemon-reload`, enable `drongo`, `drongo-web`, `drongo-observer.timer`,
-   `drongo-update.timer`.
+   `drongo-update.timer`, `drongo-pkg.timer`.
 
 ---
 
 ## Operating it
 
 Most of this is now in the **dashboard** at `http://<pi-ip>:8080/` (password-protected,
-LAN-only) — four tabs:
+LAN-only):
 
-- **Home** — current activity, what it's working on, image gallery.
-- **System** — live host stats (time, uptime, CPU, RAM, disk, load, temps), auto-refreshing.
+- **Home** — current activity, a live "thinking" stream, what it's working on, live host
+  stats, the LLM-usage table (with cooldowns), and recent journal.
 - **Projects** — everything it built (HTML games/dashboards open in a click), each with
   **tags** and a **🔧 Fix this** button — flag a broken one and the agent works it *before*
   starting anything new.
-- **Control** — Run-now / Pause / Resume / Stop / Restart buttons, **plus a full
-  Settings panel**: API keys, Discord webhook, ntfy topic, LED pin, per-provider
-  enable/model, and all the cooldown/loop timers. Saved settings live in the agent's
-  DB and apply on the next restart ("Save & Restart" does both).
+- **Gallery** — every image it has generated (PNG/PPM), in a lightbox.
+- **Files** — browse the agent's workspace, view/run files, see its **package requests**,
+  and set the **Install policy** (see [Letting it install packages](#letting-it-install-packages-scoped)).
+- **Brain** — everything it has *learned*: saved **skills** (with a code view + delete),
+  research **notes**, and **lessons**. Import a skill by pasting JSON or downloading a pack
+  from a URL.
+- **Control** — Run-now / Pause / Resume / Stop / Restart, **plus a full Settings panel**:
+  API keys, **add / remove / re-order LLM providers**, per-provider enable/model, Discord /
+  ntfy / LED, and all the cooldown/loop timers. Saved settings live in the agent's DB and
+  apply on the next restart ("Save & Restart" does both).
+- **Help** — an SSH/admin cheat-sheet (where the key files live, the common commands).
 
 > Note: the dashboard is plain HTTP on your LAN (behind the password), so keys you
 > type into Settings cross the LAN in clear — same as the login itself. Fine for a
@@ -264,6 +293,40 @@ LAN-only) — four tabs:
 
 The agent only pushes an alert when it finishes something with artifacts (set
 `alerts.notify_every_cycle: true` for a ping every cycle).
+
+---
+
+## Letting it install packages (scoped)
+
+The agent can't `sudo`, and its sandbox blocks it from touching the system — so when it
+needs an apt package (a compiler, a C library, a CLI tool) it **requests** one, and a small
+**root helper** (`drongo-pkg`, on a 2-minute timer) installs it *only if your policy allows*.
+The helper never runs an arbitrary command — only `apt-get install` of a **validated package
+name** (no options, no paths, no local `.deb`) — so it can't be tricked into arbitrary root.
+
+Two allow-lists decide what's permitted (a package installs if **either** matches, or the
+mode is `auto`):
+
+- **Dashboard list** — Files → **Install policy**. `manual` + an allow-list you edit live in
+  the browser, or `auto` (install any valid package it asks for). Convenient, but editable by
+  the same user the agent runs as, so treat it as a *soft* control.
+- **Hard list** — `/etc/drongo/pkg-allow.conf`, **root-owned so the agent can't touch it**.
+  One package/glob per line; edit it over SSH. The dashboard shows it **read-only**. This is
+  the tamper-proof baseline.
+
+Default is `manual` with an empty list, so out of the box it installs **nothing** until you
+allow something. Watch it work with `journalctl -u drongo-pkg -f`.
+
+---
+
+## Skills & self-learning (the Brain tab)
+
+DRONGO builds a library it reuses over time. When a project finishes it **auto-harvests** one
+reusable code snippet into its **skills**; it saves research **notes** and one-line **lessons**;
+and before each build it pulls the most relevant of those back into context (a lightweight,
+embeddings-free RAG). You can manage all of it on the **Brain** tab — view/delete skills, and
+**import** your own by pasting `{"name","description","code"}` JSON or giving a public URL to a
+skill (or a `{"skills":[…]}` pack). Downloaded code is *stored*, never auto-run.
 
 ---
 
@@ -316,7 +379,7 @@ Designed so **only you, on your LAN**, can reach it — and nothing from the int
 | Dashboard | 8080 | **Password-protected** (HTTP Basic) **+ LAN-only** (kernel-enforced). No internet. |
 | Ollama (model) | 11434 | **localhost only** (`OLLAMA_HOST=127.0.0.1`) — never on the LAN. |
 | SSH | 22 | Yours, managed by you. The optional firewall limits it to the LAN. |
-| The agent / observer / updater | — | **No listeners.** They only make *outbound* calls. |
+| The agent / observer / updater / pkg-installer | — | **No listeners.** They only make *outbound* calls. |
 
 **How "only me" is enforced (defence in depth):**
 1. **Password** — the installer auto-generates a strong `DRONGO_WEB_PASSWORD` (shown at the
@@ -342,10 +405,12 @@ Designed so **only you, on your LAN**, can reach it — and nothing from the int
 SSH tunnel: `ssh -L 8080:localhost:8080 <pi>` then browse `http://localhost:8080/`. Nothing is
 exposed on the LAN at all.
 
-> Honest notes: the dashboard is read-only (no buttons that change anything), so there's nothing
-> to CSRF. The SSRF guard resolves DNS at fetch time — a determined DNS-rebinding attacker is out
-> of scope for a home maker box. And whoever can SSH to the Pi controls it — protect SSH (keys, not
-> passwords) as you would any server.
+> Honest notes: the dashboard's controls sit behind the password + kernel LAN-lock, and they only
+> ever flip DB flags or write files the agent already manages (add/remove providers, set the
+> package policy, import a skill, flag a project) — **never arbitrary root** — so a same-LAN
+> request's blast radius is small. The SSRF guard resolves DNS at fetch time — a determined
+> DNS-rebinding attacker is out of scope for a home maker box. And whoever can SSH to the Pi
+> controls it — protect SSH (keys, not passwords) as you would any server.
 
 ---
 
@@ -423,19 +488,23 @@ agent/
   config.py       config loading + runtime paths
   loop.py         the autonomous ideate→act→reflect loop + safe mode
   llm.py          multi-provider router (cloud-first, local fallback, rate limits)
-  tools.py        shell, files, web, image-gen, sensors, dashboards, alerts
+  tools.py        shell, files, web, image-gen, sensors, dashboards, alerts,
+                  skills/notes/knowledge (RAG), scoped package requests
   safeguard.py    ★ tamper-resistant safety core (install root:root 0444)
   watchdog.py     heartbeats, systemd notify, crash-loop self-defence
-  memory.py       SQLite journal / kv / provider usage
+  memory.py       SQLite journal / kv / provider usage / skills / pkg policy
   alerts.py       multi-channel: Discord / LED (GPIO) / ntfy / command
-  server.py       read-only web dashboard
+  server.py       web dashboard (views + control panel)
 system/
   observer.py     external root "Dead Man's Switch" (liveness, rollback, health)
   updater.py      privileged root self-updater (pull, verify, re-seal, rollback)
+  pkg-installer.py scoped root apt-installer (validated names, policy + hard allow-list)
   firewall.sh     OPTIONAL inbound nftables lockdown (SSH-safe, LAN-only)
+  retro-toolchain.sh OPTIONAL Z80/Amstrad toolchain (sdcc/z88dk/CPCtelera/pasmo)
+  image-gen.sh    OPTIONAL local image generator (OnnxStream)
   *.env.example   environment templates for /etc/drongo
-systemd/          hardened units + timers
-install.sh        one-shot installer / hardener (preflight, RAM-aware, self-checking)
+systemd/          hardened units + timers (agent, web, observer, updater, pkg)
+install.sh        interactive installer / hardener (preflight, RAM-aware, self-checking)
 uninstall.sh      clean removal (keeps data unless --purge)
 config.example.yaml
 ```
