@@ -42,8 +42,10 @@ llm:
   request_timeout: 120
   min_call_interval_seconds: 3   # min gap between LLM calls; raise if you still hit rate limits
   # Providers are tried TOP-TO-BOTTOM. Free tiers first; paid Claude is a capped
-  # last resort reached only when every free provider is rate-limited; the local
-  # model is the never-fail floor below it. A provider with no API key is skipped.
+  # last resort reached only when every free provider is rate-limited. The local
+  # model is an OPTIONAL never-fail floor, OFF by default (the free cloud tiers are
+  # the default brain) — add it with the installer's local-model prompt or --local.
+  # A provider with no API key is skipped, so add the keys you have and ignore the rest.
   providers:
     # ---- Cerebras: extremely fast, generous free tier --------------------
     #   404 "model not found"? Model ids change — list yours and update below:
@@ -113,13 +115,17 @@ llm:
       thinking: null               # set "adaptive" for higher quality (more tokens/cost)
       enabled: true
 
-    # ---- Local Ollama: the guaranteed never-fail fallback (no limits) ----
+    # ---- Local Ollama: OPTIONAL never-fail fallback (OFF by default) ------
+    #   The free cloud providers above are the default. To add a local floor,
+    #   answer yes to the installer's "install a local fallback model?" prompt
+    #   (or pass --local) — it installs Ollama, pulls the model and flips the
+    #   'enabled' below to true. Or set it true here yourself and pull a model.
     - name: local
       base_url: http://localhost:11434/v1
       api_key_env: null
       model: "qwen2.5:3b-instruct"
       local: true
-      enabled: true
+      enabled: false   # LOCAL_ENABLED  (installer flips to true when you add a local model)
 
     # ---- More free options you can enable (add the key, flip enabled) ----
     # Easiest from the dashboard: Control → Settings → Providers → Add (presets).
@@ -139,6 +145,11 @@ llm:
     #   base_url: https://integrate.api.nvidia.com/v1
     #   api_key_env: NVIDIA_API_KEY
     #   model: meta/llama-3.3-70b-instruct
+    #   enabled: false
+    # - name: pollinations    # Pollinations — free, but needs a free 'pk_' token (no card)
+    #   base_url: https://gen.pollinations.ai/v1    # get a token at https://auth.pollinations.ai
+    #   api_key_env: POLLINATIONS_API_KEY
+    #   model: openai          # 'openai' | 'mistral' | 'llama' ... (see their model list)
     #   enabled: false
 
 # ---------------------------------------------------------------------------

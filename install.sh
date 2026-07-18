@@ -21,9 +21,13 @@
 #    * SoC hardware watchdog armed (reboots the board if the kernel wedges)
 #    * external root observer + privileged updater (the "Dead Man's Switch")
 #
+#  The brain is the FREE CLOUD providers by default (add keys in the wizard). A
+#  local Ollama model is an optional never-fail fallback, OFF unless you ask for it.
+#
 #  Flags (all optional — skip the matching question):
+#    --local           also install a local fallback model (Ollama); off by default
+#    --model NAME      install a local fallback using this Ollama model (implies --local)
 #    --strip-desktop   stop the GUI to free RAM (reversible; nothing uninstalled)
-#    --model NAME      use a specific Ollama model (default: auto-picked by RAM)
 #    --retro           install the Z80/Amstrad toolchain (sdcc/z88dk/CPCtelera)
 #    --imggen          build the local image generator (OnnxStream — slow on a Pi)
 #    --yes, -y         accept all defaults, don't prompt (non-interactive)
@@ -37,6 +41,7 @@ AGENT_USER=drongo
 # Empty = "not chosen yet" -> ask interactively (or fall back to a default when
 # there's no terminal). A flag pre-answers the matching question.
 MODEL=""
+WANT_LOCAL=""         # install a local Ollama fallback model? off by default (cloud-first)
 STRIP_DESKTOP=""
 RETRO=""
 IMGGEN=""
@@ -50,8 +55,9 @@ while [ $# -gt 0 ]; do
     --strip-desktop) STRIP_DESKTOP=1 ;;
     --retro) RETRO=1 ;;
     --imggen) IMGGEN=1 ;;
+    --local) WANT_LOCAL=1 ;;
     --model) [ $# -ge 2 ] || { echo "--model needs a value, e.g. --model qwen2.5:1.5b-instruct"; exit 1; }
-             MODEL="$2"; shift ;;
+             MODEL="$2"; WANT_LOCAL=1; shift ;;     # asking for a model means you want local
     --yes|-y) ASSUME_YES=1 ;;
     -h|--help) sed -n '2,30p' "$0"; trap - EXIT; exit 0 ;;
     *) echo "unknown flag: $1  (try --help)"; exit 1 ;;
@@ -127,7 +133,10 @@ echo "    RAM: ${ram_mb}MB  ->  suggested local model: $DEF_MODEL"
 # terminal (or --yes) every unanswered question falls back to its default.
 if [ "$_TTY" -eq 1 ]; then
   say "Setup — a few quick choices (press Enter to take the default)"
-  if [ -z "$MODEL" ]; then MODEL="$(ask 'Local Ollama model' "$DEF_MODEL")"; fi
+  if [ -z "$WANT_LOCAL" ]; then
+    if confirm 'Install a LOCAL fallback model (Ollama)? ~2GB RAM+disk; the free cloud providers are the default brain.' N; then WANT_LOCAL=1; else WANT_LOCAL=0; fi
+  fi
+  if [ "$WANT_LOCAL" = 1 ] && [ -z "$MODEL" ]; then MODEL="$(ask 'Local Ollama model' "$DEF_MODEL")"; fi
   if [ -z "$STRIP_DESKTOP" ]; then
     if confirm 'Disable the desktop GUI to free RAM (recommended if headless)?' N; then STRIP_DESKTOP=1; else STRIP_DESKTOP=0; fi
   fi
@@ -139,11 +148,12 @@ if [ "$_TTY" -eq 1 ]; then
   fi
 fi
 # Resolve anything still unanswered (non-interactive / --yes / flag absent).
+WANT_LOCAL="${WANT_LOCAL:-0}"
 MODEL="${MODEL:-$DEF_MODEL}"
 STRIP_DESKTOP="${STRIP_DESKTOP:-0}"
 RETRO="${RETRO:-0}"
 IMGGEN="${IMGGEN:-0}"
-echo "    chosen: model=$MODEL  strip-desktop=$STRIP_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
+echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
 
 # ---------------------------------------------------------------------------
 say "1/10  Base packages"
@@ -209,8 +219,12 @@ say "6/10  Config + secrets (kept if they already exist)"
 if [ ! -f "$ETC/config.yaml" ]; then
   cp "$INSTALL/config.example.yaml" "$ETC/config.yaml"
   sed -i 's#^base_dir:.*#base_dir: "/var/lib/drongo/runtime"#' "$ETC/config.yaml"
-  # Point the local provider at the model we're actually pulling.
-  sed -i "s#qwen2.5:3b-instruct#$MODEL#g" "$ETC/config.yaml"
+  # Local model is OFF by default (cloud-first). Only if you asked for one, point
+  # it at the model we're pulling and flip the local provider on.
+  if [ "$WANT_LOCAL" -eq 1 ]; then
+    sed -i "s#qwen2.5:3b-instruct#$MODEL#g" "$ETC/config.yaml"
+    sed -i 's/enabled: false\( *# LOCAL_ENABLED\)/enabled: true\1/' "$ETC/config.yaml"
+  fi
 fi
 [ -f "$ETC/drongo.env" ]   || cp "$INSTALL/system/drongo.env.example"   "$ETC/drongo.env"
 [ -f "$ETC/observer.env" ] || cp "$INSTALL/system/observer.env.example" "$ETC/observer.env"
@@ -259,13 +273,15 @@ chown -R "$AGENT_USER:$AGENT_USER" /var/lib/drongo
 chmod 700 "$RUNTIME"
 
 # ---------------------------------------------------------------------------
-say "8/10  Ollama + local model ($MODEL)"
-if ! command -v ollama >/dev/null 2>&1; then
-  curl -fsSL https://ollama.com/install.sh | sh
-fi
-systemctl enable --now ollama 2>/dev/null || true
-mkdir -p /etc/systemd/system/ollama.service.d
-cat > /etc/systemd/system/ollama.service.d/lowmem.conf <<'EOF'
+say "8/10  Local model (optional)"
+if [ "$WANT_LOCAL" -eq 1 ]; then
+  echo "    installing Ollama + pulling $MODEL"
+  if ! command -v ollama >/dev/null 2>&1; then
+    curl -fsSL https://ollama.com/install.sh | sh
+  fi
+  systemctl enable --now ollama 2>/dev/null || true
+  mkdir -p /etc/systemd/system/ollama.service.d
+  cat > /etc/systemd/system/ollama.service.d/lowmem.conf <<'EOF'
 [Service]
 Environment=OLLAMA_NUM_PARALLEL=1
 Environment=OLLAMA_MAX_LOADED_MODELS=1
@@ -273,10 +289,16 @@ Environment=OLLAMA_KEEP_ALIVE=10m
 # Keep the model server bound to localhost only - nothing on the LAN should reach it.
 Environment=OLLAMA_HOST=127.0.0.1
 EOF
-systemctl daemon-reload
-systemctl restart ollama 2>/dev/null || true
-say "    pulling $MODEL (first time can take several minutes)..."
-ollama pull "$MODEL" || warn "model pull failed - run 'ollama pull $MODEL' later, then 'systemctl restart drongo'"
+  systemctl daemon-reload
+  systemctl restart ollama 2>/dev/null || true
+  echo "    pulling $MODEL (first time can take several minutes)..."
+  ollama pull "$MODEL" || warn "model pull failed - run 'ollama pull $MODEL' later, then 'systemctl restart drongo'"
+else
+  echo "    cloud-only — no local model installed (that's the default)."
+  echo "    Add one anytime:  sudo ./install.sh --local"
+  warn "You MUST add at least one provider key in the wizard (or /etc/drongo/drongo.env),"
+  warn "or the agent has no brain until you do."
+fi
 
 # ---------------------------------------------------------------------------
 say "9/10  Arm the SoC hardware watchdog (reboots board if the kernel wedges)"
@@ -324,10 +346,15 @@ fi
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 trap - EXIT
+if [ "$WANT_LOCAL" -eq 1 ]; then
+  BRAIN="It works on the LOCAL model out of the box, plus any cloud keys you add in the wizard."
+else
+  BRAIN="Brain = FREE CLOUD providers — add at least one key in the wizard (next) or it idles until you do."
+fi
 printf '\n\033[1;32mDRONGO is installed and running.\033[0m\n'
 cat <<EOF
 
-  IT ALREADY WORKS on the local model (and on whatever you set in the wizard).
+  $BRAIN
 
     Re-run the setup wizard any time:   sudo $INSTALL/configure.sh
     (Discord webhook, LED pin, API keys — it restarts DRONGO for you.)

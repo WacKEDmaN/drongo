@@ -609,6 +609,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    cerebras:{name:'cerebras2',url:'https://api.cerebras.ai/v1',model:'gpt-oss-120b',keyenv:'CEREBRAS_API_KEY'},
    groq:{name:'groq2',url:'https://api.groq.com/openai/v1',model:'llama-3.3-70b-versatile',keyenv:'GROQ_API_KEY'},
    gemini:{name:'gemini2',url:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-flash-latest',keyenv:'GEMINI_API_KEY'},
+   pollinations:{name:'pollinations',url:'https://gen.pollinations.ai/v1',model:'openai',keyenv:'POLLINATIONS_API_KEY'},
    mistral:{name:'mistral2',url:'https://api.mistral.ai/v1',model:'mistral-small-latest',keyenv:'MISTRAL_API_KEY'},
    together:{name:'together',url:'https://api.together.xyz/v1',model:'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',keyenv:'TOGETHER_API_KEY'},
    openrouter:{name:'openrouter2',url:'https://openrouter.ai/api/v1',model:'meta-llama/llama-3.1-8b-instruct:free',keyenv:'OPENROUTER_API_KEY'}};
