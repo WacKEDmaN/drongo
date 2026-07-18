@@ -100,8 +100,11 @@ def cmd_doctor(args):
 
     import subprocess as _sp
     from . import __version__
-    gh = _sp.run(f"git -C '{pkg_root}' rev-parse --short HEAD", shell=True,
-                 capture_output=True, text=True).stdout.strip() or "n/a"
+    try:
+        gh = _sp.run(f"git -C '{pkg_root}' rev-parse --short HEAD", shell=True,
+                     capture_output=True, text=True, timeout=10).stdout.strip() or "n/a"
+    except Exception:
+        gh = "n/a"                       # never let doctor hang on a wedged git
     print(f"Version:     {__version__}  (git {gh})  from {pkg_root}")
     print(f"Config:      {cfg.source_path or '(defaults only)'}")
     print(f"Base dir:    {cfg.base_dir}")

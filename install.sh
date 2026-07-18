@@ -110,6 +110,15 @@ say "0/10  Pre-flight checks"
 [ "$(id -u)" -eq 0 ] || { echo "Please run me with sudo:  sudo ./install.sh"; exit 1; }
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
+# A long install over SSH is KILLED if the connection drops (common on SD boards /
+# flaky wifi). Running inside tmux/screen makes it survive a disconnect — strongly
+# recommended, especially with --retro (source builds take a long time).
+if [ "$_TTY" -eq 1 ] && [ -z "${TMUX:-}${STY:-}" ]; then
+  warn "TIP: if your SSH drops mid-install it gets killed. Run it inside tmux so it survives:"
+  warn "       tmux new -s drongo      # then: sudo ./install.sh   (Ctrl-b d detaches)"
+  warn "     Reconnect later with:  tmux attach -t drongo"
+fi
+
 # Internet (we must download packages + the model)
 if ! curl -fsS --max-time 10 https://ollama.com >/dev/null 2>&1; then
   warn "Couldn't reach the internet. The installer needs it to download packages"
@@ -156,32 +165,23 @@ IMGGEN="${IMGGEN:-0}"
 echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
 
 # ---------------------------------------------------------------------------
-# Swap headroom BEFORE any heavy work. A 4GB board — especially one still running
-# a desktop — can exhaust RAM during apt/pip (and a model pull), FREEZE, and drop
-# your SSH session; once the hardware watchdog is armed (step 9), a long freeze
-# even hard-reboots the board. A 2GB swapfile prevents that. Added only when
-# there's no swap already; harmless on eMMC/NVMe.
-if ! grep -q '^/' /proc/swaps 2>/dev/null; then          # no real swap entry yet
-  # Size by free disk (bigger swap on tighter RAM), and never eat the disk the
-  # install needs. Skip if there isn't comfortable room.
-  if   [ "${avail_mb:-0}" -ge 6000 ]; then SWAP_MB=$([ "${ram_mb:-9999}" -lt 4096 ] && echo 3072 || echo 2048)
-  elif [ "${avail_mb:-0}" -ge 4500 ]; then SWAP_MB=2048
-  elif [ "${avail_mb:-0}" -ge 3500 ]; then SWAP_MB=1024
-  else SWAP_MB=0; fi
-  if [ "$SWAP_MB" -gt 0 ]; then
-    say "Swap headroom (${SWAP_MB}MB swapfile — prevents OOM lockups during install)"
-    _mkswap() {
-      fallocate -l "${SWAP_MB}M" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_MB" status=none 2>/dev/null || return 1
-      chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 || return 1
-      if ! swapon /swapfile 2>/dev/null; then          # a fallocated file may have holes -> redo with dd
-        dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_MB" status=none 2>/dev/null || return 1
-        chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile 2>/dev/null || return 1
-      fi
-      grep -q '^/swapfile ' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-    }
-    if _mkswap; then echo "    swap enabled."; else rm -f /swapfile; warn "couldn't set up swap — continuing (watch for OOM)"; fi
+# Memory headroom via ZRAM (compressed swap that lives in RAM) — deliberately NOT
+# a disk swapfile. Writing gigabytes to a slow SD card, and then swapping to it,
+# is itself enough to saturate the card, make the board unresponsive and drop
+# your SSH. zram adds headroom with ZERO disk I/O and zero SD wear. Best-effort;
+# skipped cleanly if the module isn't available.
+if ! grep -q '^/' /proc/swaps 2>/dev/null; then          # no swap yet
+  say "Memory headroom (zram compressed swap — no disk writes, SD-friendly)"
+  if modprobe zram 2>/dev/null && [ -e /sys/block/zram0 ]; then
+    echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+    echo $((2048*1024*1024)) > /sys/block/zram0/disksize 2>/dev/null || true
+    if mkswap /dev/zram0 >/dev/null 2>&1 && swapon -p 100 /dev/zram0 2>/dev/null; then
+      echo "    zram swap on (up to 2GB, compressed in RAM)."
+    else
+      warn "couldn't enable zram — continuing (a headless cloud-only box rarely needs swap)."
+    fi
   else
-    warn "low free disk — skipping swap. On a 4GB board, heavy builds may OOM."
+    warn "zram unavailable — continuing without extra swap (no disk swapfile on SD)."
   fi
 fi
 
