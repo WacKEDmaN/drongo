@@ -72,6 +72,8 @@ can also hand-edit `/etc/drongo/drongo.env` — see [Alerts](#alerts--discord-or
 | Builds games / dashboards | HTML/JS written to the workspace, served by the dashboard |
 | Senses its hardware | Scans i2c/spi/1-wire/thermals/USB/cameras, builds dashboards |
 | Learns from its work | Indexes its own repo + past projects, auto-harvests reusable skills, retrieves relevant knowledge (RAG), downloads skill packs, and curates a fine-tuning dataset |
+| Talk to it & steer it | A **Chat** tab — ask what it's doing or tell it what to build next, any time (even mid-project); teaching it facts saves them to memory |
+| Shows its token usage | Per-provider tokens (in/out) + totals, charted live, with the latest call's count by the thinking stream |
 | Installs its own packages | Requests apt packages; a scoped root helper installs the ones you allow (policy + hard allow-list) |
 | Updates itself | **Request-based**, applied by a privileged root updater with rollback |
 | Alerts you | Discord webhook, a GPIO LED you wire up, ntfy, or any command — pick any combo |
@@ -247,8 +249,13 @@ sudo drongo doctor
 Most of this is now in the **dashboard** at `http://<pi-ip>:8080/` (password-protected,
 LAN-only):
 
-- **Home** — current activity, a live "thinking" stream, what it's working on, live host
-  stats, the LLM-usage table (with cooldowns), and recent journal.
+- **Home** — current activity, a live "thinking" stream (with the latest call's token
+  count), what it's working on, live host stats, the LLM-usage table, a **per-provider
+  token-usage chart** (in/out + totals), and recent journal.
+- **Chat** — **talk to DRONGO and steer it, any time — even while it's building.** It
+  answers in the web process (so it's instant), and can act on you: "build X next" queues
+  that project, a standing preference becomes its mission, and teaching it a fact saves it
+  to memory. See [Chat & steering](#chat--steering).
 - **Projects** — everything it built (HTML games/dashboards open in a click), each with
   **tags** and a **🔧 Fix this** button — flag a broken one and the agent works it *before*
   starting anything new.
@@ -289,6 +296,22 @@ The agent only pushes an alert when it finishes something with artifacts (set
 
 ---
 
+## Chat & steering
+
+The **Chat** tab is a conversation with DRONGO itself — not a raw model window. It's
+answered by the **dashboard process**, separate from the agent loop, so it replies
+instantly **even while the agent is mid-project**. Beyond answering, it can act on you:
+
+- **"build a snake game next"** → queued as its next project (jumps the loop's queue).
+- **"focus on retro stuff from now on"** → becomes its standing **mission** (biases ideation).
+- **"remember I prefer tabs over spaces"** → saved to memory as a note it retrieves later.
+
+So the same box lets you *ask what it's doing* and *steer where it goes* — and teaching it
+things is a genuine learning channel (chat facts land in its knowledge base). Token usage
+for every call is metered per-provider and charted on Home.
+
+---
+
 ## Letting it install packages (scoped)
 
 The agent can't `sudo`, and its sandbox blocks it from touching the system — so when it
@@ -321,7 +344,8 @@ DRONGO accumulates a knowledge base it reuses over time — the realistic form o
 - **Skills** — when a project finishes it **auto-harvests** one reusable code snippet into
   its library. Import your own on the **Brain** tab by pasting `{"name","description","code"}`
   JSON, or **download** a skill (or a `{"skills":[…]}` pack) from a URL — stored, never auto-run.
-- **Notes & lessons** — research findings and one-line takeaways it saves as it works.
+- **Notes & lessons** — research findings and one-line takeaways it saves as it works,
+  **plus anything you teach it in [Chat](#chat--steering)** (facts you tell it are saved and retrieved).
 - **Its own repo** — at boot it **indexes its own code + docs** (`agent/*.py`, `system/*.py`,
   the docs) so it can answer "how does my own X work?" — the repository is its first-class context.
 - **Retrieval (RAG)** — before each build it pulls the most relevant of *all* of the above,
