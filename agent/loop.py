@@ -47,8 +47,11 @@ Respond with EXACTLY ONE JSON object and nothing else. Two shapes are allowed:
 Rules:
 - Output raw JSON only. No markdown, no code fences, no prose around it.
 - Build something real and finished, not a stub. Test it when you can.
-- Save games/scripts under projects/, images go to the gallery via generate_image,
-  dashboards via make_dashboard. Keep everything inside the workspace.
+- Your files are auto-consolidated into your project's Working folder (shown
+  above) — just use plain relative names like "index.html" or "src/main.c" and
+  they land there; don't invent your own top-level folders or write to the
+  workspace root. Images go to the gallery via generate_image; dashboards via
+  make_dashboard.
 - IMAGES: when a task wants a picture, you MUST call generate_image — it fetches a
   REAL raster image and saves it to the gallery for your human to see. Never
   "describe" an image in words, and never substitute ASCII art or a hand-written
@@ -348,6 +351,10 @@ class AgentLoop:
         the model returns the "final" form. Pass `messages` to RESUME a project
         across cycles instead of starting it over."""
         registry = tools.build_registry(ctx)
+        # Every file this project writes is auto-consolidated into one folder, so
+        # it can't scatter loose files across the workspace root. Derived from the
+        # title (stable) so a resumed project keeps using the same folder.
+        ctx.project_dir = "projects/" + tools.project_slug(task.get("title"))
         if messages is None:
             system = EXEC_SYSTEM.format(persona=self.persona,
                                         tools=tools.tools_prompt(registry))
@@ -366,6 +373,10 @@ class AgentLoop:
             plan_txt = ("\n\nYour plan:\n" + plan + "\nExecute it, adapting as needed.") if plan else ""
             task_msg = (f"Project type: {task['task_type']}\n"
                         f"Title: {task['title']}\n"
+                        f"Working folder: {ctx.project_dir}/  — ALL your files land here "
+                        f"automatically; use plain relative names like \"index.html\" or "
+                        f"\"src/main.c\". Reference them at this path (e.g. a live dashboard's "
+                        f"data URL is /data/{ctx.project_dir}/data.py).\n"
                         f"Goal: {task['description']}{skill_txt}{lesson_txt}{plan_txt}\n\nBegin.")
             messages = [{"role": "system", "content": system},
                         {"role": "user", "content": task_msg}]

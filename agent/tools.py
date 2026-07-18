@@ -39,6 +39,7 @@ class ToolContext:
     log: object
     safe_mode: bool = False
     artifacts: list = field(default_factory=list)  # collected per cycle
+    project_dir: str = ""    # e.g. "projects/snake-game" — bare writes land here
 
     @property
     def workspace(self):
@@ -171,10 +172,33 @@ def shell(ctx: ToolContext, command: str = "", **_):
         return f"ERROR: {e}"
 
 
+_OUTPUT_DIRS = ("projects/", "dashboards/", "images/")
+
+
+def project_slug(text: str, fallback: str = "project") -> str:
+    """A filesystem-safe folder name derived from a project title. Stable across
+    cycles so a resumed project keeps writing to the SAME folder."""
+    s = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return s[:40].strip("-") or fallback
+
+
+def _rooted(ctx: "ToolContext", path: str) -> str:
+    """Keep a project's files together. A path that isn't already under a known
+    output dir (projects/ dashboards/ images/) is placed inside THIS project's
+    folder, so the agent can't scatter loose files across the workspace root."""
+    p = (path or "").replace("\\", "/").strip().lstrip("/")
+    if not p or not ctx.project_dir:
+        return path
+    if p.lower().startswith(_OUTPUT_DIRS):
+        return p
+    return f"{ctx.project_dir}/{p}"
+
+
 @tool("write_file", "Create or overwrite a file in the workspace.",
       "path: str, content: str")
 def write_file(ctx: ToolContext, path: str = "", content: str = "", **_):
     try:
+        path = _rooted(ctx, path)
         full = safeguard.safe_join(ctx.workspace, path)
         Path(full).parent.mkdir(parents=True, exist_ok=True)
         with open(full, "w", encoding="utf-8") as fh:
@@ -582,6 +606,23 @@ def housekeep(cfg, empty_dir_age=3600) -> str:
                 try:
                     if not os.listdir(base) and (time.time() - os.path.getmtime(base)) > empty_dir_age:
                         os.rmdir(base); removed.append(os.path.basename(base) + "/")
+                except OSError:
+                    pass
+    # Also sweep build junk from the workspace ROOT — ONLY _JUNK_ items, so the
+    # control markers (PAUSE/STOP/UPDATE_REQUESTED), hardware.json and the
+    # projects/dashboards/images/state/logs/venv dirs are all left untouched.
+    ws = str(cfg.workspace)
+    if os.path.isdir(ws):
+        for name in os.listdir(ws):
+            p = os.path.join(ws, name)
+            if os.path.isdir(p) and name in _JUNK_NAMES and not os.path.islink(p):
+                try:
+                    shutil.rmtree(p); removed.append(name + "/")
+                except OSError:
+                    pass
+            elif os.path.isfile(p) and (name in _JUNK_NAMES or name.lower().endswith(_JUNK_EXTS)):
+                try:
+                    os.remove(p); removed.append(name)
                 except OSError:
                     pass
     if not removed:
