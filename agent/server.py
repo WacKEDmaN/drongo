@@ -1055,8 +1055,11 @@ def _hw_view(info):
     info = info or {}
     i2c = []
     for bus in info.get("i2c_buses", []) or []:
-        addrs = sorted(tools._i2c_addresses((info.get("i2c_scan") or {}).get(bus, "")))
-        i2c.append({"bus": bus, "addrs": ["0x" + a for a in addrs]})
+        devs = (info.get("i2c_devices") or {}).get(bus)
+        if devs is None:   # legacy blob from before the sysfs-only scan
+            devs = ["0x" + a for a in sorted(tools._i2c_addresses(
+                (info.get("i2c_scan") or {}).get(bus, "")))]
+        i2c.append({"bus": bus, "addrs": devs})
     usb = []
     for line in (info.get("usb") or "").splitlines():
         m = re.search(r"\bID\s+([0-9a-fA-F]{4}:[0-9a-fA-F]{4})\s*(.*)$", line.strip())

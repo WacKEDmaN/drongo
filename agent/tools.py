@@ -521,13 +521,23 @@ def collect_hardware() -> dict:
     info["block"] = _run("lsblk -o NAME,SIZE,TYPE,MOUNTPOINT 2>/dev/null")
     info["net"] = _run("ip -brief addr 2>/dev/null")
 
-    # i2c scan (only if i2c-tools present and buses exist)
-    i2c_scan = {}
-    if info["i2c_buses"] and _run("which i2cdetect"):
-        for bus in info["i2c_buses"]:
-            num = bus.replace("i2c-", "")
-            i2c_scan[bus] = _run(f"i2cdetect -y {num} 2>/dev/null")
-    info["i2c_scan"] = i2c_scan
+    # I2C devices the KERNEL already knows about — read from sysfs, ZERO bus
+    # traffic. NEVER actively probe with i2cdetect here: on this SoC the PMIC
+    # and the USB-C power-delivery controller (FUSB302) live on I2C, and firing
+    # probe transactions at the PD controller can drop VBUS — instantly freezing
+    # the whole board (no logs, needs a power cycle). Sysfs is safe and lists
+    # every driver-bound device; a NEW sensor still shows as a new /dev bus or
+    # USB/1-wire node, which the diff below catches.
+    i2c_devices = {}
+    for p in sorted(glob.glob("/sys/bus/i2c/devices/*-*")):
+        m = re.match(r"(\d+)-([0-9a-fA-F]{4})$", os.path.basename(p))
+        if not m:
+            continue
+        bus = "i2c-" + m.group(1)
+        addr = "0x" + (m.group(2).lstrip("0") or "0").lower()
+        name = _read_first(os.path.join(p, "name")) or "unknown"
+        i2c_devices.setdefault(bus, []).append(f"{addr} {name}")
+    info["i2c_devices"] = i2c_devices
     return info
 
 
@@ -562,7 +572,10 @@ def hardware_devices(info: dict) -> list:
         out.add("spi:" + s)
     for w in info.get("onewire") or []:
         out.add("1wire:" + w)
-    for bus, grid in (info.get("i2c_scan") or {}).items():
+    for bus, devs in (info.get("i2c_devices") or {}).items():
+        for d in devs:
+            out.add(f"i2c:{bus}@{d}")
+    for bus, grid in (info.get("i2c_scan") or {}).items():    # legacy pre-fix blobs
         for addr in _i2c_addresses(grid):
             out.add(f"i2c:{bus}@0x{addr}")
     return sorted(out)
@@ -749,6 +762,7 @@ def discover_sensors(ctx: ToolContext, **_):
         "model": info.get("model"),
         "thermals": info.get("thermals"),
         "i2c_buses": info.get("i2c_buses"),
+        "i2c_devices": info.get("i2c_devices"),
         "spi": info.get("spi_devices"),
         "onewire": info.get("onewire"),
         "cameras": info.get("video_devices"),
