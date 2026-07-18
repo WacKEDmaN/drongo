@@ -86,6 +86,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
             "remember": "files", "recall": "files",
             "save_skill": "files", "recall_skill": "files",
             "save_note": "files", "recall_notes": "files", "request_package": "files",
+            "recall_knowledge": "files",
         }.get(nm, nm)
         if t.get(section, {}).get("enabled", True):
             enabled[nm] = tl
@@ -836,6 +837,19 @@ def recall_notes(ctx: ToolContext, query: str = "", **_):
     hits = ctx.mem.search_notes(query)
     return "\n\n".join(f"# {n.get('topic') or '(note)'}\n{n['content'][:600]}"
                        for n in hits) or "no matching notes"
+
+
+@tool("recall_knowledge",
+      "Search EVERYTHING you've learned (saved skills, notes and lessons) for what's "
+      "most relevant to a query. Use it when starting or stuck on a project, to reuse "
+      "past work instead of redoing it.",
+      "query: str")
+def recall_knowledge(ctx: ToolContext, query: str = "", **_):
+    items = ctx.mem.relevant_knowledge(query, k=6)
+    if not items:
+        return "no relevant knowledge saved yet"
+    return "\n".join(f"[{d['kind']}] {d['title']}: {d['text']}".replace(": \n", "\n").rstrip(": ")
+                     for d in items)
 
 
 @tool("remember", "Store a fact in long-term memory.", "key: str, value: str")

@@ -7,6 +7,7 @@ can share it without a server process.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -236,6 +237,39 @@ class Memory:
             return v[-limit:]
         hits = [n for n in v if q in (n.get("topic", "") + " " + n.get("content", "")).lower()]
         return hits[-limit:]
+
+    @staticmethod
+    def _tokens(text) -> set:
+        return set(re.findall(r"[a-z0-9]{3,}", str(text or "").lower()))
+
+    def relevant_knowledge(self, query, k=5) -> list:
+        """Lightweight RAG: rank everything the agent has learned — skills, notes
+        and lessons — by word-overlap with `query` and return the top-k most
+        relevant, each {kind, title, text}. Pure stdlib (no embeddings/vectors) so
+        it stays light on the Pi; good enough to surface 'have I done this before?'
+        knowledge into a build."""
+        q = self._tokens(query)
+        if not q:
+            return []
+        scored = []
+        for s in self.skills():
+            toks = self._tokens(f"{s.get('name','')} {s.get('desc','')}")
+            scored.append((len(q & toks), {"kind": "skill", "title": s.get("name", ""),
+                                           "text": s.get("desc", "")}))
+        for n in (self.recall("notes") or []):
+            if not isinstance(n, dict):
+                continue
+            toks = self._tokens(f"{n.get('topic','')} {n.get('content','')}")
+            scored.append((len(q & toks), {"kind": "note", "title": n.get("topic", ""),
+                                           "text": (n.get("content", "") or "")[:280]}))
+        for l in (self.recall("lessons") or []):
+            if not isinstance(l, dict):
+                continue
+            scored.append((len(q & self._tokens(l.get("txt", ""))),
+                           {"kind": "lesson", "title": "", "text": l.get("txt", "")}))
+        scored = [x for x in scored if x[0] > 0]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [d for _, d in scored[:k]]
 
     def request_package(self, name, reason) -> bool:
         name = str(name or "").strip()[:60]

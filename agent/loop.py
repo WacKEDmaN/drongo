@@ -362,8 +362,16 @@ class AgentLoop:
             lesson_txt = ("\n\nLessons from past projects — apply them:\n"
                           + "\n".join("- " + l for l in lessons)) if lessons else ""
             sk = self.mem.skills()
-            skill_txt = ("\n\nYour saved skills (use recall_skill to get the code):\n"
-                         + "\n".join(f"- {s['name']}: {s['desc']}" for s in sk[:12])) if sk else ""
+            skill_txt = ("\n\nYour saved skills (call recall_skill(name) to get the full code):\n"
+                         + "\n".join(f"- {s['name']}: {s['desc']}" for s in sk[:15])) if sk else ""
+            # Lightweight RAG: surface the knowledge most RELEVANT to this task
+            # (past skills/notes/lessons) so it reuses what it already learned.
+            kb = self.mem.relevant_knowledge(f"{task['title']} {task['description']}", k=5)
+            if kb:
+                skill_txt += ("\n\nRelevant past knowledge — reuse it (recall_knowledge to search more):\n"
+                              + "\n".join(f"- [{d['kind']}] "
+                                          + (f"{d['title']}: " if d['title'] else "")
+                                          + d['text'] for d in kb))
             extras = self.mem.installed_extras()
             if extras:
                 skill_txt += "\n\nExtra system packages your human installed for you (use freely): " + ", ".join(extras[-20:]) + "."
@@ -488,6 +496,50 @@ class AgentLoop:
             return {"done": True, "issues": ""}      # never block on an LLM outage
         obj = extract_json(text) or {}
         return {"done": bool(obj.get("done", True)), "issues": str(obj.get("issues", ""))[:300]}
+
+    # ---- skill harvesting ---------------------------------------------
+    def harvest_skill(self, task, ctx):
+        """After a project finishes, extract ONE genuinely reusable code pattern
+        and save it to the skills library — so the library actually grows instead
+        of relying on the model to remember to call save_skill mid-build (it never
+        does). Best-effort: a skip, an LLM outage or bad JSON just means no skill
+        this time."""
+        code_exts = ("py", "c", "cpp", "cc", "h", "hpp", "js", "html", "css", "sh")
+        snippets = []
+        for a in (ctx.artifacts or [])[:6]:
+            p = a.get("path", "")
+            if not p or p.rsplit(".", 1)[-1].lower() not in code_exts:
+                continue
+            try:
+                full = safeguard.safe_join(str(self.cfg.workspace), p)
+                with open(full, "r", encoding="utf-8", errors="replace") as fh:
+                    snippets.append(f"### {p}\n{fh.read(4000)}")
+            except Exception:
+                continue
+        if not snippets:
+            return
+        have = ", ".join(s["name"] for s in self.mem.skills()) or "(none yet)"
+        system = (self.persona + "\nYou curate a REUSABLE skills library. From the project "
+                  "just finished, extract AT MOST ONE genuinely reusable, self-contained "
+                  "code pattern a FUTURE, different project could drop in — a function, "
+                  "class or tight helper, NOT the whole app and NOT project-specific glue. "
+                  "Skip if nothing is truly reusable; quality over quantity.")
+        user = (f"Project: {task['title']}\nGoal: {task['description']}\n"
+                f"Skills you already have (don't duplicate these): {have}\n\n"
+                "Files produced:\n" + ("\n\n".join(snippets))[:6000] + "\n\n"
+                "Reply with ONE JSON object and nothing else:\n"
+                '  {"skill": {"name": "<short-kebab-name>", "description": "<one line: '
+                'what it does + when to reuse it>", "code": "<the snippet only>"}}\n'
+                'or  {"skip": true}  if nothing here is worth saving.')
+        try:
+            text, _ = self.router.complete(system, user, temperature=0.3, max_tokens=800)
+        except AllProvidersFailed:
+            return
+        sk = (extract_json(text) or {}).get("skill")
+        if isinstance(sk, dict) and sk.get("name") and sk.get("code"):
+            if self.mem.add_skill(sk["name"], sk.get("description", ""), sk["code"]):
+                self.mem.push_step("ok", f"🧠 learned a skill: {sk['name']}")
+                log.info("harvested skill '%s' from '%s'", sk["name"], task["title"])
 
     # ---- reflection ----------------------------------------------------
     def reflect(self, task, outcome, ctx):
@@ -660,6 +712,7 @@ class AgentLoop:
             self.mem.remember("working_on", None)
             note, lesson = self.reflect(task, outcome, ctx)
             self.mem.add_lesson(lesson)
+            self.harvest_skill(task, ctx)        # grow the reusable skills library
             self.mem.add_journal("cycle", task["title"], note, task_type=task["task_type"],
                                  artifacts=all_artifacts, provider=provider, ok=True)
             self._git_snapshot(task["title"])
