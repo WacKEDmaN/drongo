@@ -184,7 +184,16 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
     """
     if not isinstance(settings, dict):
         return
-    ident = settings.get("identity") or {}
+
+    # A dashboard-saved settings blob could be partial or (after an interrupted
+    # save / manual DB edit) wrong-typed. This runs at EVERY startup, so a bad
+    # section must never crash the agent — coerce each to the expected type and
+    # skip anything that isn't.
+    def _d(key):     # a dict-typed section, or {}
+        v = settings.get(key)
+        return v if isinstance(v, dict) else {}
+
+    ident = _d("identity")
     for k in ("persona", "name"):
         if ident.get(k):
             cfg.data.setdefault("identity", {})[k] = ident[k]
@@ -192,12 +201,12 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
         cleaned = [str(x).strip() for x in settings["interests"] if str(x).strip()]
         if cleaned:
             cfg.data["interests"] = cleaned
-    for k, v in (settings.get("env") or {}).items():
+    for k, v in _d("env").items():
         if v not in (None, ""):
             os.environ[str(k)] = str(v)
-    for k, v in (settings.get("loop") or {}).items():
+    for k, v in _d("loop").items():
         cfg.data.setdefault("loop", {})[k] = v
-    llm = settings.get("llm") or {}
+    llm = _d("llm")
     for k in ("min_call_interval_seconds", "prefer", "temperature", "max_tokens",
               "request_timeout", "local_timeout"):
         if k in llm:
@@ -219,7 +228,8 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
         idx = {n: i for i, n in enumerate(order)}
         provs.sort(key=lambda p: idx.get(p.get("name"), len(idx) + 1))
     cfg.data["llm"]["providers"] = provs
-    pov = llm.get("providers") or {}
+    pov = llm.get("providers")
+    pov = pov if isinstance(pov, dict) else {}
     for p in cfg.data.get("llm", {}).get("providers", []) or []:
         o = pov.get(p.get("name"))
         if isinstance(o, dict):
@@ -227,11 +237,11 @@ def apply_overrides(cfg: "Config", settings: dict) -> None:
                 p["enabled"] = bool(o["enabled"])
             if o.get("model"):
                 p["model"] = o["model"]
-    img = settings.get("images") or {}
+    img = _d("images")
     for k in ("provider", "local_cmd", "timeout"):
         if k in img:
             cfg.data.setdefault("tools", {}).setdefault("images", {})[k] = img[k]
-    for k, v in (settings.get("alerts") or {}).items():
+    for k, v in _d("alerts").items():
         if isinstance(v, dict):
             cfg.data.setdefault("alerts", {}).setdefault(k, {}).update(v)
         else:

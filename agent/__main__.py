@@ -44,7 +44,14 @@ def _build(args):
     _setup_logging(cfg, logging.DEBUG if args.verbose else logging.INFO)
     mem = Memory(cfg.db_path)
     from .config import apply_overrides
-    apply_overrides(cfg, mem.recall("settings") or {})   # dashboard-saved settings
+    # Dashboard-saved settings are applied best-effort: a corrupt/partial blob
+    # must never stop the agent from booting (that would otherwise need a manual
+    # DB wipe). On any failure, fall back to the on-disk config for this boot.
+    try:
+        apply_overrides(cfg, mem.recall("settings") or {})
+    except Exception:
+        logging.getLogger("agent").exception(
+            "apply_overrides failed — ignoring dashboard settings this boot")
     router = Router(cfg, mem)
     alerter = Alerter(cfg)
     return cfg, mem, router, alerter
