@@ -8,9 +8,9 @@ a browser game, a generative image, a handy script, a live hardware dashboard,
 a short research note — builds it with real tools, and writes a journal entry
 you can read later from a web dashboard. It can ping you on **Discord** or
 **blink an LED** you wire to a GPIO when it makes something good. It runs on
-**free cloud LLMs first** and **falls back to a local
-model** so it never fully stops, and it is wrapped in serious, tamper-resistant
-safety rails so you can actually trust it with the keys.
+**free cloud LLMs** (with an **optional local model** as a never-fail fallback),
+and it is wrapped in serious, tamper-resistant safety rails so you can actually
+trust it with the keys.
 
 > Philosophy (from the project spec): **"Local Autonomy, Global Isolation."**
 
@@ -36,12 +36,13 @@ git clone <your-fork-url> drongo && cd drongo     # preferred (enables self-upda
 ```bash
 sudo ./install.sh
 ```
-It shows a banner, then **asks a few quick setup questions** — local model, disable the
-desktop to free RAM?, install the retro toolchain?, build the local image generator? —
-each with a sensible default, so you can just press **Enter** through them. Then it checks
-your system, sets everything up, and ends with a **health check**. When it prints
-`✓ DRONGO is installed and running`, it's live — already working on the local model, no
-keys required. *(Prefer flags? `--strip-desktop --retro --imggen --model NAME` still
+It shows a banner, then **asks a few quick setup questions** — install a local fallback
+model?, disable the desktop to free RAM?, install the retro toolchain?, build the local
+image generator? — each with a sensible default, so you can just press **Enter** through
+them. Then it checks your system, sets everything up, and ends with a **health check**.
+When it prints `✓ DRONGO is installed and running` it's live — running on the **free
+cloud providers** once you add a key in the wizard (step 4), or on a local model if you
+opted into one. *(Prefer flags? `--local --strip-desktop --retro --imggen --model NAME`
 pre-answer the questions, and `--yes` accepts every default without prompting.)*
 
 **3. Did it work?**
@@ -89,6 +90,10 @@ background work where latency doesn't matter, not for snappy chat.
 (SQLite, logs, artifacts, model files) and SD cards die from that. Put the Ollama
 models and `/var/lib/drongo` on the fastest storage you have.
 
+**A local model is OPTIONAL and OFF by default** — the free cloud tiers are the
+default brain. Add one only if you want an offline never-fail floor (answer *yes*
+to the installer's local-model prompt, or pass `--local`). If you do, here's the pick:
+
 **Local model — my pick:** **`qwen2.5:3b-instruct`** (Q4_K_M, ~2 GB).
 It's the best small model for *following instructions and emitting clean JSON*,
 which is exactly what the tool-calling loop needs. Alternatives:
@@ -114,7 +119,8 @@ If you'd rather be fully local/private and accept slower, simpler output, set
 
 **Providers wired in** (add the keys you want, skip the rest — a provider with
 no key is silently skipped). Tried top-to-bottom; **free first, paid Claude as a
-capped last resort, local as the never-fail floor**:
+capped last resort, and an optional local model as a never-fail floor** (local is
+**off by default** — add it with `--local`):
 
 | Provider | Cost | Get a key |
 |---|---|---|
@@ -123,15 +129,20 @@ capped last resort, local as the never-fail floor**:
 | **Google Gemini** | free tier | <https://aistudio.google.com/apikey> |
 | **Mistral** | free tier | <https://console.mistral.ai> |
 | **OpenRouter** | free models | <https://openrouter.ai/keys> |
+| **Pollinations** | free (needs a free `pk_` token — no card) | <https://auth.pollinations.ai> |
 | **Claude (Anthropic)** | **paid** — Haiku 4.5, last-resort, capped at 200 calls/day | <https://console.anthropic.com> |
-| **Local Ollama** | free, always available | (runs on the Pi) |
+| **Local Ollama** *(optional, off by default)* | free, no limits | `--local` at install, or flip it on in the config |
 
 Claude uses the **native Anthropic API** (not an OpenAI shim) and needs
 `pip install anthropic` (already in `requirements.txt`). It's reached only when
 every free provider is simultaneously rate-limited, so spend stays minimal; raise
 `daily_limit` or set `model: claude-sonnet-4-6` / `claude-opus-4-8` in the config
-if you want more of it. More free options (GitHub Models, NVIDIA NIM) are
-commented in `config.example.yaml`.
+if you want more of it. More free options (GitHub Models, NVIDIA NIM, Pollinations)
+are commented in `config.example.yaml`.
+
+> Heads-up on *keyless*: there's no longer a reliable no-key text provider —
+> Pollinations (once anonymous) now requires a free `pk_` token for text
+> generation. So "free" here means *free tier with a free key*, not *no key*.
 
 > Providers can be **added, removed and re-ordered live from the dashboard**
 > (Control → Settings), and the router **backs off and auto-retries** a failing
@@ -216,7 +227,9 @@ sudoedit /etc/drongo/drongo.env       # CEREBRAS / GROQ / GEMINI / MISTRAL / OPE
 sudo systemctl restart drongo drongo-web
 ```
 
-> No keys? It still runs — entirely on the **local model**.
+> **You need at least one provider now** — the free cloud tiers are the default brain
+> (the local model is optional). Add a free key above, or install a local floor with
+> `sudo ./install.sh --local`.
 
 Check on it:
 
@@ -242,7 +255,8 @@ sudo drongo doctor
 4. **Python:** `python3 -m venv /opt/drongo/.venv && .venv/bin/pip install -r requirements.txt`.
 5. **Seal the guard:** `python -m agent seal` then
    `chmod 0444 agent/safeguard.py*` and `chown root:root` them.
-6. **Ollama:** install, `ollama pull qwen2.5:3b-instruct`.
+6. **Ollama (optional — skip for cloud-only):** install, `ollama pull qwen2.5:3b-instruct`,
+   and set the `local` provider `enabled: true` in the config.
 7. **Hardware watchdog:** add `RuntimeWatchdogSec=20s` to `/etc/systemd/system.conf`.
 8. **Services:** copy `systemd/*.{service,timer}` to `/etc/systemd/system/`,
    `daemon-reload`, enable `drongo`, `drongo-web`, `drongo-observer.timer`,
@@ -441,7 +455,7 @@ sudo drongo doctor
 
 | Symptom | Likely cause → fix |
 |---|---|
-| `doctor` says **no LLM answered** | No keys *and* local model not ready. `ollama pull qwen2.5:3b-instruct` (or the size the installer chose), then `sudo systemctl restart drongo`. |
+| `doctor` says **no LLM answered** | No usable provider. Add at least one free key to `/etc/drongo/drongo.env` (local is optional/off by default), **or** add a local model: `sudo ./install.sh --local`. Then `sudo systemctl restart drongo`. |
 | Dashboard won't load at `:8080` | Service not up, or wrong IP. `systemctl status drongo-web`; find the IP with `hostname -I`. |
 | Dashboard asks for a password | That's intentional. It's in `/etc/drongo/drongo.env` (`DRONGO_WEB_PASSWORD`); log in with **any** username. Change it there, then `sudo systemctl restart drongo-web`. |
 | Dashboard only works on the Pi itself, not other devices | No password set ⇒ localhost-only. Set `DRONGO_WEB_PASSWORD` and restart `drongo-web` (the installer normally does this for you). |
