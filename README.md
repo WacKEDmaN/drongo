@@ -71,7 +71,7 @@ can also hand-edit `/etc/drongo/drongo.env` — see [Alerts](#alerts--discord-or
 | Makes images | Keyless, free generation (Pollinations) into a gallery; optional local generator (OnnxStream) |
 | Builds games / dashboards | HTML/JS written to the workspace, served by the dashboard |
 | Senses its hardware | Scans i2c/spi/1-wire/thermals/USB/cameras, builds dashboards |
-| Learns & reuses skills | Auto-harvests a reusable snippet from each finished project, retrieves relevant skills/notes/lessons (lightweight RAG), and can **download** skill packs |
+| Learns from its work | Indexes its own repo + past projects, auto-harvests reusable skills, retrieves relevant knowledge (RAG), downloads skill packs, and curates a fine-tuning dataset |
 | Installs its own packages | Requests apt packages; a scoped root helper installs the ones you allow (policy + hard allow-list) |
 | Updates itself | **Request-based**, applied by a privileged root updater with rollback |
 | Alerts you | Discord webhook, a GPIO LED you wire up, ntfy, or any command — pick any combo |
@@ -80,47 +80,23 @@ can also hand-edit `/etc/drongo/drongo.env` — see [Alerts](#alerts--discord-or
 
 ---
 
-## Hardware & model recommendation (read this first)
+## Hardware & the brain
 
 The RK3399 is a **6-core CPU (2×A72 + 4×A53), up to 4 GB RAM, no usable GPU/NPU
-for LLMs.** So local inference is **CPU-only and modest** — great for unattended
-background work where latency doesn't matter, not for snappy chat.
+for LLMs** — so DRONGO's brain is the **free cloud providers** below, and the heavy
+CPU work goes into its *projects* (fractals, sims, native code), not inference.
 
 **Storage:** use **eMMC or an NVMe SSD**, not a microSD. The agent writes a lot
-(SQLite, logs, artifacts, model files) and SD cards die from that. Put the Ollama
-models and `/var/lib/drongo` on the fastest storage you have.
+(SQLite, logs, artifacts) and SD cards die from that. Put `/var/lib/drongo` on the
+fastest storage you have.
 
-**A local model is OPTIONAL and OFF by default** — the free cloud tiers are the
-default brain. Add one only if you want an offline never-fail floor (answer *yes*
-to the installer's local-model prompt, or pass `--local`). If you do, here's the pick:
+**Optional local model:** want an offline never-fail fallback for when the cloud
+tiers are all rate-limited? It's **off by default** (~2 GB RAM) — add it with the
+installer's prompt or `--local`. Full guide: **[docs/local-model.md](docs/local-model.md)**.
 
-**Local model — my pick:** **`qwen2.5:3b-instruct`** (Q4_K_M, ~2 GB).
-It's the best small model for *following instructions and emitting clean JSON*,
-which is exactly what the tool-calling loop needs. Alternatives:
-
-| Model | When |
-|---|---|
-| `qwen2.5:3b-instruct` ⭐ | **Default.** Best all-round agentic 3B. |
-| `qwen2.5-coder:3b` | If you mostly want code/scripts/games. |
-| `hermes3:3b` | You specifically want a Hermes/Nous persona; solid too. |
-| `qwen2.5:1.5b-instruct` / `llama3.2:1b` | If 3B is too slow or RAM is tight. |
-
-> About *"OpenClaw"* — that isn't a real Ollama model, so it's likely a mix-up
-> (maybe **OpenHermes** or **OpenChat**?). Both Hermes and Qwen above are the
-> sensible, well-supported choices on this hardware. Stick with a **3B-class Q4**
-> model; anything 7B+ will swap and crawl on 4 GB.
-
-**Best use of the hybrid model:** let the **free cloud tiers do the heavy lifting**
-(Groq serves Llama-3.3-**70B** free and *fast* — night-and-day better than a local
-3B for creative writing and code), and let the **local 3B keep DRONGO alive** when
-the cloud is rate-limited or offline. That's the default (`prefer: cloud_first`).
-If you'd rather be fully local/private and accept slower, simpler output, set
-`llm.prefer: local_first` in the config.
-
-**Providers wired in** (add the keys you want, skip the rest — a provider with
-no key is silently skipped). Tried top-to-bottom; **free first, paid Claude as a
-capped last resort, and an optional local model as a never-fail floor** (local is
-**off by default** — add it with `--local`):
+**Providers wired in** (add the keys you want, skip the rest — a provider with no
+key is silently skipped). Tried top-to-bottom, **free first, paid Claude a capped
+last resort** (the optional local model sits below them all):
 
 | Provider | Cost | Get a key |
 |---|---|---|
@@ -150,7 +126,8 @@ are commented in `config.example.yaml`.
 > stalls the agent until you restart it. Gemini defaults to `gemini-flash-latest`,
 > which tracks Google's current Flash model so it won't 404 when a version is retired.
 
-Add ~**2 GB zram or swap** (on NVMe, not SD) for headroom — see *Tuning* below.
+Cloud-only, the 4 GB is comfortable (the agent is capped at `MemoryMax=1200M`).
+Running a **local model**? Add zram for headroom — see **[docs/local-model.md](docs/local-model.md)**.
 
 ---
 
@@ -216,8 +193,9 @@ sudo ./install.sh
 
 The installer (see [`install.sh`](install.sh)) does everything: packages, the
 `drongo` user, `/opt/drongo` (root-owned) + `/var/lib/drongo` (agent-writable),
-the venv, Ollama + the model, **locks the safeguard to 0444 and seals its hash**,
-**arms the SoC hardware watchdog**, and installs/enables all the systemd units.
+the venv, (optionally) Ollama + a local model, **locks the safeguard to 0444 and
+seals its hash**, **arms the SoC hardware watchdog**, and installs/enables all the
+systemd units.
 
 Then add your keys (and optionally a Discord webhook — see [Alerts](#alerts--discord-or-an-led)):
 
@@ -277,9 +255,10 @@ LAN-only):
 - **Gallery** — every image it has generated (PNG/PPM), in a lightbox.
 - **Files** — browse the agent's workspace, view/run files, see its **package requests**,
   and set the **Install policy** (see [Letting it install packages](#letting-it-install-packages-scoped)).
-- **Brain** — everything it has *learned*: saved **skills** (with a code view + delete),
-  research **notes**, and **lessons**. Import a skill by pasting JSON or downloading a pack
-  from a URL.
+- **Brain** — everything it has *learned*: a knowledge-base summary (repo files indexed /
+  skills / notes / lessons / training examples), saved **skills** (code view + delete),
+  **notes** and **lessons**. Import a skill by pasting JSON or downloading a pack from a URL,
+  and download the curated **training dataset** (JSONL).
 - **Control** — Run-now / Pause / Resume / Stop / Restart, **plus a full Settings panel**:
   API keys, **add / remove / re-order LLM providers**, per-provider enable/model, Discord /
   ntfy / LED, and all the cooldown/loop timers. Saved settings live in the agent's DB and
@@ -335,12 +314,23 @@ allow something. Watch it work with `journalctl -u drongo-pkg -f`.
 
 ## Skills & self-learning (the Brain tab)
 
-DRONGO builds a library it reuses over time. When a project finishes it **auto-harvests** one
-reusable code snippet into its **skills**; it saves research **notes** and one-line **lessons**;
-and before each build it pulls the most relevant of those back into context (a lightweight,
-embeddings-free RAG). You can manage all of it on the **Brain** tab — view/delete skills, and
-**import** your own by pasting `{"name","description","code"}` JSON or giving a public URL to a
-skill (or a `{"skills":[…]}` pack). Downloaded code is *stored*, never auto-run.
+DRONGO accumulates a knowledge base it reuses over time — the realistic form of
+"self-improving" on a Pi (it can't *train* a model on a 4 GB CPU board, so instead it
+**learns by retrieval** and **curates a dataset you can fine-tune off-box**):
+
+- **Skills** — when a project finishes it **auto-harvests** one reusable code snippet into
+  its library. Import your own on the **Brain** tab by pasting `{"name","description","code"}`
+  JSON, or **download** a skill (or a `{"skills":[…]}` pack) from a URL — stored, never auto-run.
+- **Notes & lessons** — research findings and one-line takeaways it saves as it works.
+- **Its own repo** — at boot it **indexes its own code + docs** (`agent/*.py`, `system/*.py`,
+  the docs) so it can answer "how does my own X work?" — the repository is its first-class context.
+- **Retrieval (RAG)** — before each build it pulls the most relevant of *all* of the above,
+  **plus its past projects**, back into context (lightweight, embeddings-free, so it's light on
+  the Pi). The agent can also search it on demand with the `recall_knowledge` tool.
+- **Training dataset** — every finished project appends a chat-format example (task → the
+  code it produced) to `workspace/dataset/train.jsonl`. The Pi **curates** the corpus; when you
+  want an actual fine-tuned model you run training **elsewhere** (a rented GPU / a cloud
+  fine-tune API) and point a provider at it. Download the JSONL from the Brain tab.
 
 ---
 
@@ -391,7 +381,7 @@ Designed so **only you, on your LAN**, can reach it — and nothing from the int
 | Service | Port | Exposure |
 |---|---|---|
 | Dashboard | 8080 | **Password-protected** (HTTP Basic) **+ LAN-only** (kernel-enforced). No internet. |
-| Ollama (model) | 11434 | **localhost only** (`OLLAMA_HOST=127.0.0.1`) — never on the LAN. |
+| Ollama (model) | 11434 | *Only if you enabled the local model.* **localhost only** (`OLLAMA_HOST=127.0.0.1`) — never on the LAN. |
 | SSH | 22 | Yours, managed by you. The optional firewall limits it to the LAN. |
 | The agent / observer / updater / pkg-installer | — | **No listeners.** They only make *outbound* calls. |
 
@@ -461,7 +451,7 @@ sudo drongo doctor
 | Dashboard only works on the Pi itself, not other devices | No password set ⇒ localhost-only. Set `DRONGO_WEB_PASSWORD` and restart `drongo-web` (the installer normally does this for you). |
 | Agent keeps restarting / `systemctl status drongo` shows **failed** | Read `journalctl -u drongo -n 50`. If it's a safeguard error, the installer's seal step didn't finish — just re-run `sudo ./install.sh`. |
 | **SAFE MODE** in the logs | It restarted too many times and threw the handbrake on. Fix the underlying error (logs), then `sudo systemctl restart drongo`; two clean cycles and it exits safe mode on its own. |
-| Whole board feels sluggish / OOM | Model too big for the RAM. `sudo ./install.sh --model qwen2.5:1.5b-instruct` (or `0.5b`), and add zram (see Tuning). |
+| Whole board feels sluggish / OOM | Only if you added a **local model** — it's too big. Drop to a smaller one and add zram (see [docs/local-model.md](docs/local-model.md)). Cloud-only shouldn't OOM. |
 | No Discord alerts | Check `DISCORD_WEBHOOK_URL` is set in `/etc/drongo/drongo.env` and `alerts.discord.enabled: true`. Test the webhook with `curl -d '{"content":"test"}' -H "Content-Type: application/json" <url>`. |
 | "pip: permission denied" / can't install packages | It needs its writable venv at `/var/lib/drongo/runtime/venv`. `sudo ./update.sh` (or a restart) creates it; after that `pip install …` and `python …` in its shell use that venv automatically. Native packages (numpy etc.) need ARM wheels or build tools; pure-Python (Flask, etc.) just works. |
 | LED never blinks | Wrong `chip`/`line` (check `gpioinfo`), LED wired backwards (try `active_high: false`), or `python-periphery` missing. Confirm the `drongo` user is in the `gpio` group (`id drongo`). |
@@ -482,15 +472,10 @@ ls /var/lib/drongo/runtime/workspace/   # everything it has built
 
 ## Tuning for 4 GB RAM
 
-```bash
-# zram swap (compressed RAM) — gives headroom without thrashing an SD card:
-sudo apt-get install -y zram-tools
-echo -e 'ALGO=zstd\nPERCENT=50' | sudo tee /etc/default/zramswap
-sudo systemctl restart zramswap
-```
-
-Keep `MemoryMax=1200M` (set in `drongo.service`) so the agent can never starve
-the OS or Ollama. Lower the model to `qwen2.5:1.5b-instruct` if you see swapping.
+Cloud-only, there's little to tune — the agent is capped at `MemoryMax=1200M`
+(in `drongo.service`) so it can never starve the OS, and with no local model the
+board sits comfortably. If you add a **local model**, see the RAM/zram/model-size
+tuning in **[docs/local-model.md](docs/local-model.md)**.
 
 ---
 
@@ -527,8 +512,11 @@ config.example.yaml
 
 ## Notes & honest limitations
 
-- A local 3B model is **not** going to write a flawless 2000-line game in one
-  pass. Cloud-first is on for a reason; the local model is the safety net.
+- The brain is the free cloud tiers; if they're **all** rate-limited at once and
+  you haven't enabled a local fallback, the agent idles and retries (it won't
+  wedge). Add a [local model](docs/local-model.md) if you want a guaranteed floor.
+- It **can't train a model on the Pi** (4 GB CPU) — the "learning" is retrieval
+  over its knowledge base + a curated dataset you fine-tune off-box. See the Brain tab.
 - The `shell` denylist is defence-in-depth, **not** a perfect jail — the real
   isolation is the unprivileged user + systemd sandbox. Keep `allow_sudo: false`.
 - Free cloud tiers change their limits often; tweak `rpm_limit`/`daily_limit`
