@@ -162,17 +162,27 @@ echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP 
 # even hard-reboots the board. A 2GB swapfile prevents that. Added only when
 # there's no swap already; harmless on eMMC/NVMe.
 if ! grep -q '^/' /proc/swaps 2>/dev/null; then          # no real swap entry yet
-  say "Swap headroom (2GB swapfile — prevents OOM lockups during install)"
-  _mkswap() {
-    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null || return 1
-    chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 || return 1
-    if ! swapon /swapfile 2>/dev/null; then          # a fallocated file may have holes -> redo with dd
-      dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null || return 1
-      chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile 2>/dev/null || return 1
-    fi
-    grep -q '^/swapfile ' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  }
-  if _mkswap; then echo "    swap enabled."; else rm -f /swapfile; warn "couldn't set up swap — continuing (watch for OOM)"; fi
+  # Size by free disk (bigger swap on tighter RAM), and never eat the disk the
+  # install needs. Skip if there isn't comfortable room.
+  if   [ "${avail_mb:-0}" -ge 6000 ]; then SWAP_MB=$([ "${ram_mb:-9999}" -lt 4096 ] && echo 3072 || echo 2048)
+  elif [ "${avail_mb:-0}" -ge 4500 ]; then SWAP_MB=2048
+  elif [ "${avail_mb:-0}" -ge 3500 ]; then SWAP_MB=1024
+  else SWAP_MB=0; fi
+  if [ "$SWAP_MB" -gt 0 ]; then
+    say "Swap headroom (${SWAP_MB}MB swapfile — prevents OOM lockups during install)"
+    _mkswap() {
+      fallocate -l "${SWAP_MB}M" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_MB" status=none 2>/dev/null || return 1
+      chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 || return 1
+      if ! swapon /swapfile 2>/dev/null; then          # a fallocated file may have holes -> redo with dd
+        dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_MB" status=none 2>/dev/null || return 1
+        chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile 2>/dev/null || return 1
+      fi
+      grep -q '^/swapfile ' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    }
+    if _mkswap; then echo "    swap enabled."; else rm -f /swapfile; warn "couldn't set up swap — continuing (watch for OOM)"; fi
+  else
+    warn "low free disk — skipping swap. On a 4GB board, heavy builds may OOM."
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -344,16 +354,20 @@ systemctl enable --now drongo.service drongo-web.service \
 # Convenience CLI: `sudo drongo doctor|configure|...` always targets /opt/drongo.
 cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/drongo
 
+# nice/ionice keeps these heavy source builds from starving the box — so your
+# SSH session stays responsive instead of dropping while they compile.
+LOAD="nice -n 15"; command -v ionice >/dev/null 2>&1 && LOAD="ionice -c3 nice -n 15"
+
 # Optional Z80/Amstrad cross-dev toolchain (sdcc, z88dk, CPCtelera, pasmo).
 if [ "$RETRO" -eq 1 ]; then
-  say "Retro toolchain: sdcc / z88dk / CPCtelera / pasmo"
-  bash "$INSTALL/system/retro-toolchain.sh" || warn "retro toolchain had problems (see above) — re-run sudo $INSTALL/system/retro-toolchain.sh"
+  say "Retro toolchain: sdcc / z88dk / CPCtelera / pasmo (low-priority build; be patient)"
+  $LOAD bash "$INSTALL/system/retro-toolchain.sh" || warn "retro toolchain had problems (see above) — re-run sudo $INSTALL/system/retro-toolchain.sh"
 fi
 
 # Optional local image generator (OnnxStream). Slow on a Pi; cloud stays default.
 if [ "$IMGGEN" -eq 1 ]; then
-  say "Local image generator: OnnxStream (this can take a while to build)"
-  bash "$INSTALL/system/image-gen.sh" || warn "image generator had problems (see above) — re-run sudo $INSTALL/system/image-gen.sh"
+  say "Local image generator: OnnxStream (low-priority build; this takes a while)"
+  $LOAD bash "$INSTALL/system/image-gen.sh" || warn "image generator had problems (see above) — re-run sudo $INSTALL/system/image-gen.sh"
 fi
 
 # ---------------------------------------------------------------------------

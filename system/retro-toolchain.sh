@@ -36,6 +36,15 @@ warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
 
 export DEBIAN_FRONTEND=noninteractive
 
+# Cap build parallelism by RAM. z88dk/CPCtelera/SDCC compile heavy C++; a full
+# `-j$(nproc)` (6 on the RK3399) exhausts a 4GB board's RAM, thrashes, and can
+# take the box (and your SSH session) down. MAKEFLAGS caps the sub-makes; one
+# job per ~1.5GB RAM keeps peak memory sane.
+_ram_mb=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2000)
+JOBS=1; [ "$_ram_mb" -ge 3000 ] && JOBS=2; [ "$_ram_mb" -ge 6000 ] && JOBS=4
+export MAKEFLAGS="-j${JOBS}"
+echo "    building with -j${JOBS} (RAM ${_ram_mb}MB) to avoid OOM"
+
 # Install as many of the named packages as are available, and NEVER let one
 # missing/renamed package abort the whole batch -- a plain `apt-get install A B C`
 # installs NONE of them if any single name is unavailable. Try the fast batch

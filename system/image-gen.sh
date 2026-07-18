@@ -33,6 +33,12 @@ warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p "$OPT"
 
+# Cap parallelism by RAM — XNNPACK/OnnxStream are huge C++ builds; a full
+# `-j$(nproc)` OOMs and freezes a 4GB board. One job per ~1.5GB RAM.
+_ram_mb=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 2000)
+JOBS=1; [ "$_ram_mb" -ge 3000 ] && JOBS=2; [ "$_ram_mb" -ge 6000 ] && JOBS=4
+export MAKEFLAGS="-j${JOBS}"
+
 say "1/4  build deps"
 apt-get update -y || warn "apt update failed"
 apt-get install -y --no-install-recommends git cmake build-essential wget ca-certificates \
@@ -49,7 +55,7 @@ else
         else warn "no XNNPACK_COMMIT set — building HEAD; if it fails, use the commit from OnnxStream's README"; fi
       mkdir -p build && cd build \
         && cmake -DXNNPACK_BUILD_TESTS=OFF -DXNNPACK_BUILD_BENCHMARKS=OFF .. \
-        && cmake --build . -j"$(nproc)" ) || warn "XNNPACK build failed"
+        && cmake --build . -j"${JOBS}" ) || warn "XNNPACK build failed"
   else
     warn "XNNPACK clone failed"
   fi
@@ -63,7 +69,7 @@ else
   if git clone https://github.com/vitoplantamura/OnnxStream.git "$OPT/OnnxStream"; then
     ( cd "$OPT/OnnxStream/src" && mkdir -p build && cd build \
         && cmake -DMAX_SPEED=ON -DXNNPACK_DIR="$OPT/XNNPACK" .. \
-        && cmake --build . -j"$(nproc)" ) || warn "OnnxStream build failed"
+        && cmake --build . -j"${JOBS}" ) || warn "OnnxStream build failed"
     sdbin="$(find "$OPT/OnnxStream/src/build" -name sd -type f 2>/dev/null | head -1)"
     [ -n "$sdbin" ] && cp "$sdbin" "$OPT/sd" || warn "build finished but no 'sd' binary found"
   else
