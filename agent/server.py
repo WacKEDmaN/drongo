@@ -196,6 +196,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <button data-t=projects>Projects</button>
   <button data-t=gallery>Gallery</button>
   <button data-t=files>Files</button>
+  <button data-t=brain>Brain</button>
   <button data-t=control>Control</button>
   <button data-t=help>Help</button>
  </nav>
@@ -287,6 +288,24 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/img/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
    {% else %}<p class="meta">No images yet — it fills this in as it makes creative_image projects.</p>{% endif %}
   </div>
+ </section>
+
+ <section id=brain class="tab">
+  <h2>🧠 Brain — what DRONGO has learned</h2>
+  <div class="card">
+   <div class=th>Import a skill</div>
+   <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL to download from. Imported code is stored, never auto-run.</p>
+   <input id=skillurl class=set placeholder="https://…/skills.json (public URL)">
+   <button class=act onclick="dlSkill()">⬇ Download from URL</button>
+   <textarea id=skilljson class=set placeholder='{"name":"my-skill","description":"what it does + when to reuse","code":"def f(): ..."}' style="min-height:88px"></textarea>
+   <button class=act onclick="importSkill()">+ Add skill</button>
+  </div>
+  <h2>Skills <span class=meta id=skillcount></span></h2>
+  <div class="card"><div id=skillwrap class=meta>loading…</div></div>
+  <h2>Notes <span class=meta id=notecount></span></h2>
+  <div class="card"><div id=notewrap class=meta>loading…</div></div>
+  <h2>Lessons learned</h2>
+  <div class="card"><div id=lessonwrap class=meta>loading…</div></div>
  </section>
 
  <section id=control class="tab">
@@ -525,6 +544,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    history.replaceState(null,'','#'+t);
    if(t==='control')loadHW();
    if(t==='files'){loadFiles('');loadPkgs();}
+   if(t==='brain')loadBrain();
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
@@ -688,6 +708,39 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      $('#modaltitle').textContent='📦 pkg-installer.sh ('+d.count+' package'+(d.count>1?'s':'')+')';
      $('#modalout').textContent='Run this on the Pi:\\n\\n  sudo bash '+d.path+'\\n\\n--- script ---\\n'+d.script;
      $('#fixbtn').style.display='none';$('#modal').classList.add('show');});}
+ function loadBrain(){const w=$('#skillwrap');if(!w)return;
+   fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';});}
+ function renderBrain(d){
+   const sk=$('#skillwrap');sk.replaceChildren();
+   const skills=d.skills||[];$('#skillcount').textContent='('+skills.length+')';
+   if(!skills.length){const p=document.createElement('div');p.className='meta';p.textContent='No skills yet — DRONGO harvests one from each finished project, or import your own above.';sk.appendChild(p);}
+   skills.forEach(s=>{const row=document.createElement('div');row.className='pkgrow';
+     const nm=document.createElement('span');nm.className='pkgname';nm.textContent=s.name;
+     const wy=document.createElement('span');wy.className='meta';wy.style.flex='1';wy.textContent=s.desc||'';
+     const view=document.createElement('button');view.className='act';view.textContent='view';
+     view.onclick=()=>{$('#modaltitle').textContent='🧠 '+s.name;$('#modalout').textContent=(s.desc||'')+'\\n\\n'+(s.code||'');$('#fixbtn').style.display='none';$('#modal').classList.add('show');};
+     const del=document.createElement('button');del.className='act danger';del.textContent='delete';
+     del.onclick=()=>{if(confirm('Delete skill '+s.name+'?'))delSkill(s.name);};
+     row.append(nm,wy,view,del);sk.appendChild(row);});
+   const nw=$('#notewrap');nw.replaceChildren();const notes=d.notes||[];
+   $('#notecount').textContent='('+notes.length+')';
+   if(!notes.length){const p=document.createElement('div');p.className='meta';p.textContent='No notes yet — the agent saves research findings with save_note.';nw.appendChild(p);}
+   notes.slice().reverse().forEach(n=>{const row=document.createElement('div');row.className='fbrow';
+     const a=document.createElement('span');a.textContent=(n.topic||'(note)')+' — '+(n.content||'').slice(0,140);a.style.flex='1';
+     row.appendChild(a);nw.appendChild(row);});
+   const lw=$('#lessonwrap');lw.replaceChildren();const lessons=d.lessons||[];
+   if(!lessons.length){const p=document.createElement('div');p.className='meta';p.textContent='No lessons yet.';lw.appendChild(p);}
+   lessons.slice().reverse().forEach(t=>{const row=document.createElement('div');row.className='fbrow';
+     const a=document.createElement('span');a.textContent='• '+t;row.appendChild(a);lw.appendChild(row);});}
+ function importSkill(){const raw=($('#skilljson').value||'').trim();if(!raw){toast('paste a skill JSON first');return;}
+   fetch('/control/skill_import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({json:raw})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?('added: '+(d.saved||[]).join(', ')):(d.error||'failed'));if(d.ok){$('#skilljson').value='';loadBrain();}});}
+ function dlSkill(){const url=($('#skillurl').value||'').trim();if(!url){toast('enter a URL first');return;}
+   toast('downloading…');
+   fetch('/control/skill_import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?('added: '+(d.saved||[]).join(', ')):(d.error||'failed'));if(d.ok){$('#skillurl').value='';loadBrain();}});}
+ function delSkill(name){fetch('/control/skill_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?'deleted':'failed');loadBrain();});}
  function viewfile(path){$('#modaltitle').textContent='📄 '+path;$('#modalout').textContent='loading…';
    $('#fixbtn').style.display='none';$('#modal').classList.add('show');
    fetch('/file/'+path.split('/').map(encodeURIComponent).join('/'))
@@ -1108,6 +1161,38 @@ def create_app(cfg, mem: Memory) -> Flask:
     @app.route("/api/pkgs")
     def api_pkgs():
         return {"ok": True, "requests": mem.pkg_requests(), "installed": mem.installed_extras()}
+
+    @app.route("/api/knowledge")
+    def api_knowledge():
+        return {"ok": True, "skills": mem.skills(), "notes": mem.notes(),
+                "lessons": mem.recent_lessons(limit=25)}
+
+    @app.route("/control/skill_import", methods=["POST"])
+    def control_skill_import():
+        # Import skill(s) either from pasted JSON or by downloading from a PUBLIC
+        # URL (SSRF-guarded). Code is STORED as a skill, never executed here — the
+        # agent must choose to recall + run it, which still goes through the sandbox.
+        d = request.get_json(silent=True) or {}
+        url = (d.get("url") or "").strip()
+        if url:
+            body, err = tools.fetch_public_text(cfg, url)
+            if err:
+                return {"ok": False, "error": f"download rejected: {err}"}, 400
+            payload = body
+        else:
+            payload = d.get("json")
+            if not payload:
+                return {"ok": False, "error": "paste skill JSON or give a URL"}, 400
+        saved, why = tools.import_skills(mem, payload)
+        if not saved:
+            return {"ok": False, "error": why}, 400
+        log.info("imported %d skill(s) via dashboard: %s", len(saved), ", ".join(saved))
+        return {"ok": True, "saved": saved}
+
+    @app.route("/control/skill_delete", methods=["POST"])
+    def control_skill_delete():
+        name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+        return {"ok": mem.delete_skill(name)}
 
     @app.route("/control/pkg", methods=["POST"])
     def control_pkg():

@@ -218,6 +218,18 @@ class Memory:
                 return s
         return None
 
+    def delete_skill(self, name) -> bool:
+        v = self.skills()
+        nv = [s for s in v if s.get("name") != name]
+        if len(nv) == len(v):
+            return False
+        self.remember("skills", nv)
+        return True
+
+    def notes(self) -> list:
+        v = self.recall("notes")
+        return v if isinstance(v, list) else []
+
     def add_note(self, topic, content) -> bool:
         content = str(content or "").strip()
         if not content:

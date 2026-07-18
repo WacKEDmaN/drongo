@@ -86,7 +86,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
             "remember": "files", "recall": "files",
             "save_skill": "files", "recall_skill": "files",
             "save_note": "files", "recall_notes": "files", "request_package": "files",
-            "recall_knowledge": "files",
+            "recall_knowledge": "files", "download_skill": "web",
         }.get(nm, nm)
         if t.get(section, {}).get("enabled", True):
             enabled[nm] = tl
@@ -326,6 +326,27 @@ def _url_is_external(url: str):
                 or ip.is_multicast or ip.is_unspecified):
             return False, f"refusing internal address {ip} (SSRF guard)"
     return True, ""
+
+
+def fetch_public_text(cfg, url: str, cap: int = 200000):
+    """SSRF-guarded GET of a PUBLIC url, re-validating every redirect hop.
+    Returns (text, error). Shared by the download_skill tool and the dashboard."""
+    timeout = cfg.get("tools", "web", "timeout", default=30)
+    try:
+        cur = url
+        for _hop in range(4):
+            ok, why = _url_is_external(cur)
+            if not ok:
+                return None, why
+            r = requests.get(cur, headers={"User-Agent": "Mozilla/5.0 (agent)"},
+                             timeout=timeout, allow_redirects=False)
+            if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("Location"):
+                cur = urllib.parse.urljoin(cur, r.headers["Location"]); continue
+            r.raise_for_status()
+            return r.text[:cap], None
+        return None, "too many redirects"
+    except Exception as e:
+        return None, str(e)
 
 
 @tool("web_fetch", "Fetch a public http/https URL and return readable text.", "url: str")
@@ -837,6 +858,42 @@ def recall_notes(ctx: ToolContext, query: str = "", **_):
     hits = ctx.mem.search_notes(query)
     return "\n\n".join(f"# {n.get('topic') or '(note)'}\n{n['content'][:600]}"
                        for n in hits) or "no matching notes"
+
+
+@tool("download_skill",
+      "Download reusable skill(s) from a PUBLIC http(s) URL that serves JSON — one "
+      "skill {name,description,code}, a list of them, or a pack {\"skills\":[...]}. "
+      "They're saved to your library (NOT executed); use recall_skill to reuse one.",
+      "url: str")
+def download_skill(ctx: ToolContext, url: str = "", **_):
+    body, err = fetch_public_text(ctx.cfg, url)
+    if err:
+        return f"REJECTED: {err}"
+    saved, why = import_skills(ctx.mem, body)
+    return ("downloaded skill(s): " + ", ".join(saved)) if saved else f"no skills saved ({why})"
+
+
+def import_skills(mem, payload) -> tuple:
+    """Parse a JSON skill / list / {skills:[...]} (str or already-decoded) and add
+    each to the library. Downloaded code is STORED, never run — the agent must
+    choose to recall + adapt it, which still goes through the sandbox. Returns
+    (saved_names, reason)."""
+    if isinstance(payload, (str, bytes)):
+        try:
+            payload = json.loads(payload)
+        except Exception as e:
+            return [], f"not valid JSON: {e}"
+    skills = payload.get("skills") if isinstance(payload, dict) and "skills" in payload else payload
+    if isinstance(skills, dict):
+        skills = [skills]
+    if not isinstance(skills, list):
+        return [], 'expected a skill object, a list, or {"skills":[...]}'
+    saved = []
+    for s in skills[:25]:
+        if isinstance(s, dict) and mem.add_skill(s.get("name", ""), s.get("description", ""),
+                                                 s.get("code", "")):
+            saved.append(s.get("name", ""))
+    return saved, ("ok" if saved else "no valid {name,description,code} entries")
 
 
 @tool("recall_knowledge",
