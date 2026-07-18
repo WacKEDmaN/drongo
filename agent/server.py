@@ -184,6 +184,20 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
  .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:344px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
  .think .tl{padding:1px 0} .think .t-think{color:var(--mut)} .think .t-tool{color:var(--ac2)} .think .t-ok{color:var(--ac)} .think .t-warn{color:var(--warn)} .think .t-info{color:var(--fg)}
+ .tokchart{display:flex;flex-direction:column;gap:7px;padding:4px 0}
+ .tokrow{display:flex;align-items:center;gap:9px;font:12px var(--mono)}
+ .toklab{width:96px;color:var(--mut);text-align:right;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .tokbarwrap{flex:1;display:flex;height:14px;background:#05090d;border:1px solid var(--bd);border-radius:5px;overflow:hidden}
+ .tokbarwrap i{display:block;height:100%}
+ .tokin{background:linear-gradient(90deg,var(--ac2),rgba(var(--ac2-rgb),.4))}
+ .tokout{background:linear-gradient(90deg,rgba(var(--ac-rgb),.5),var(--ac))}
+ .tokval{width:60px;color:var(--fg);flex:none}
+ .chatlog{max-height:54vh;min-height:200px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px 12px}
+ .cmsg{max-width:82%;padding:8px 12px;border-radius:12px;font:13px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+ .cmsg.user{align-self:flex-end;background:linear-gradient(180deg,rgba(var(--ac-rgb),.18),rgba(var(--ac-rgb),.06));border:1px solid rgba(var(--ac-rgb),.35);color:var(--fg)}
+ .cmsg.bot{align-self:flex-start;background:#05090d;border:1px solid var(--bd2);color:#cfe6db}
+ .chatbar{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
+ .chatbar textarea{flex:1;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:9px;padding:9px 11px;font:13px var(--mono);resize:vertical}
 </style></head><body>
 <header>
  <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
@@ -193,6 +207,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  <span class="pill {{ 'ok' if integ_ok else 'bad' }}">guard {{ 'ok' if integ_ok else 'CHECK' }}</span>
  <nav>
   <button class="on" data-t=home>Home</button>
+  <button data-t=chat>Chat</button>
   <button data-t=projects>Projects</button>
   <button data-t=gallery>Gallery</button>
   <button data-t=files>Files</button>
@@ -215,11 +230,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
    <div class="tile c4"><div class=th>LLM usage today</div>
      <table class=usaget id=usagetbl>
-      <tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>
-      {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=4 class=meta>no calls yet</td></tr>{% endfor %}
+      <tr><th>provider</th><th>today</th><th>tok</th><th>total</th><th>cd</th></tr>
+      {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.day_tokens }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=5 class=meta>no calls yet</td></tr>{% endfor %}
      </table></div>
 
-   <div class="tile c12"><div class=th>Live thinking</div>
+   <div class="tile c12"><div class=th>Token usage by provider <span class=meta id=toktotal></span><span class=meta style="float:right">▮ in · ▮ out</span></div>
+     <div id=tokchart class=tokchart>loading…</div></div>
+
+   <div class="tile c12"><div class=th>Live thinking <span class=meta id=lastllm style="float:right"></span></div>
      <div id=think class=think>idle…</div></div>
 
    <div class="tile c12"><div class=th>Recent activity</div>
@@ -228,6 +246,18 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <div class=ev><span class="evd{{ '' if j.ok else ' bad' }}"></span><span class=evt>{{ j.title }}</span><span class=meta>{{ j.task_type or j.kind }} · <span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span></span></div>
      {% else %}<p class="meta">Nothing yet — give it a little time.</p>{% endfor %}
      </div></div>
+  </div>
+ </section>
+
+ <section id=chat class="tab">
+  <h2>💬 Chat — ask DRONGO anything, or steer it</h2>
+  <div class="card">
+   <div id=chatlog class=chatlog>loading…</div>
+   <div class=chatbar>
+    <textarea id=chatmsg rows=2 placeholder="Ask a question, or tell it what to build next… (Enter to send, Shift+Enter for a newline)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+    <button class="act big" id=chatsend onclick="sendChat()">Send</button>
+   </div>
+   <p class=meta>Answered here instantly — even while it's building. Tell it "build X next" or "focus on Y" and it queues that for its loop; teach it a fact and it remembers.</p>
   </div>
  </section>
 
@@ -551,6 +581,8 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    if(t==='control')loadHW();
    if(t==='files'){loadFiles('');loadPkgs();loadPolicy();}
    if(t==='brain')loadBrain();
+   if(t==='chat'){loadChat();const m=$('#chatmsg');if(m)m.focus();}
+   if(t==='home')loadUsageGraph();
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
@@ -884,11 +916,43 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      const l=document.createElement('div');l.className='nowlbl';l.textContent='▶ Working on';c.appendChild(l);
      const t=document.createElement('div');t.className='nowtitle';t.textContent=w.title||'(untitled)';c.appendChild(t);
      const m=document.createElement('span');m.className='meta';m.textContent=(w.type||'')+' · attempt '+w.attempt;c.appendChild(m);el.appendChild(c);}}
+ function fmtTok(n){n=n||0;return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':(''+n);}
  function renderUsage(usage){const t=$('#usagetbl'); if(!t)return;
-   let h='<tr><th>provider</th><th>today</th><th>total</th><th>cooldown</th></tr>';
-   if(usage&&usage.length)usage.forEach(u=>{h+='<tr><td>'+esc(u.provider)+'</td><td>'+(u.day_count||0)+'</td><td>'+(u.total||0)+'</td><td>'+esc(u.cool||'—')+'</td></tr>';});
-   else h+='<tr><td colspan=4 class=meta>no calls yet</td></tr>';
+   let h='<tr><th>provider</th><th>today</th><th>tok</th><th>total</th><th>cd</th></tr>';
+   if(usage&&usage.length)usage.forEach(u=>{h+='<tr><td>'+esc(u.provider)+'</td><td>'+(u.day_count||0)+'</td><td>'+fmtTok(u.day_tokens)+'</td><td>'+(u.total||0)+'</td><td>'+esc(u.cool||'—')+'</td></tr>';});
+   else h+='<tr><td colspan=5 class=meta>no calls yet</td></tr>';
    t.innerHTML=h;}
+ function loadUsageGraph(){const w=$('#tokchart');if(!w)return;
+   fetch('/api/usage_graph').then(r=>r.json()).then(d=>drawTok(d.totals||[])).catch(()=>{});}
+ function drawTok(totals){const w=$('#tokchart');if(!w)return;
+   const rows=totals.map(t=>({p:t.provider,inn:t.tokens_in||0,out:t.tokens_out||0,tot:(t.tokens_in||0)+(t.tokens_out||0)})).filter(r=>r.tot>0).sort((a,b)=>b.tot-a.tot);
+   const grand=rows.reduce((s,r)=>s+r.tot,0);
+   const tt=$('#toktotal');if(tt)tt.textContent=grand?('— '+fmtTok(grand)+' total'):'';
+   w.replaceChildren();
+   if(!rows.length){w.textContent='no token data yet — providers report usage as they answer.';return;}
+   const max=Math.max.apply(null,rows.map(r=>r.tot));
+   rows.forEach(r=>{const row=document.createElement('div');row.className='tokrow';
+     const lab=document.createElement('span');lab.className='toklab';lab.textContent=r.p;
+     const bar=document.createElement('div');bar.className='tokbarwrap';
+     const bin=document.createElement('i');bin.className='tokin';bin.style.width=(r.inn/max*100)+'%';bin.title=r.inn+' in';
+     const bout=document.createElement('i');bout.className='tokout';bout.style.width=(r.out/max*100)+'%';bout.title=r.out+' out';
+     bar.append(bin,bout);
+     const val=document.createElement('span');val.className='tokval';val.textContent=fmtTok(r.tot);
+     row.append(lab,bar,val);w.appendChild(row);});}
+ function loadChat(){const w=$('#chatlog');if(!w)return;
+   fetch('/api/chat').then(r=>r.json()).then(d=>renderChat(d.history||[])).catch(()=>{w.textContent='error';});}
+ function renderChat(h){const w=$('#chatlog');if(!w)return;w.replaceChildren();
+   if(!h.length){const p=document.createElement('div');p.className='meta';p.textContent='Say hi 👋 — ask it what it is doing, or tell it what to build next.';w.appendChild(p);}
+   h.forEach(m=>{const b=document.createElement('div');b.className='cmsg '+(m.role==='user'?'user':'bot');b.textContent=m.content;w.appendChild(b);});
+   w.scrollTop=w.scrollHeight;}
+ function sendChat(){const t=$('#chatmsg');const msg=(t.value||'').trim();if(!msg)return;
+   const w=$('#chatlog');const ub=document.createElement('div');ub.className='cmsg user';ub.textContent=msg;w.appendChild(ub);
+   const pend=document.createElement('div');pend.className='cmsg bot';pend.textContent='…';w.appendChild(pend);w.scrollTop=w.scrollHeight;
+   t.value='';const btn=$('#chatsend');btn.disabled=true;
+   fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})})
+   .then(r=>r.json()).then(d=>{pend.textContent=d.reply||d.error||'(no reply)';
+     if(d.applied&&d.applied.length){const n=document.createElement('div');n.className='meta';n.style.alignSelf='flex-start';n.textContent='✓ '+d.applied.join('; ');w.appendChild(n);}
+     w.scrollTop=w.scrollHeight;}).catch(()=>{pend.textContent='(error reaching the agent)';}).finally(()=>{btn.disabled=false;});}
  function renderThink(steps){const el=$('#think');if(!el)return;
    const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
    el.replaceChildren();
@@ -951,6 +1015,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    $('#sysmodel').textContent=(s.model||'')+'  ·  '+ldate;
    $('#fixq').textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
    if(d.usage)renderUsage(d.usage);
+   const ll=$('#lastllm'); if(ll)ll.textContent=d.last_llm?('last: '+d.last_llm.provider+' '+fmtTok(d.last_llm.in)+'→'+fmtTok(d.last_llm.out)+' tok'):'';
    renderWorking(d.working_on);
    renderThink(d.steps);
    const sc=$('#suggcur'); if(sc)sc.textContent=d.suggestion?('Queued: '+d.suggestion):'';
@@ -961,6 +1026,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    }
  }).catch(()=>{});}
  initThemes(); renderGallery(_images); restorePanels(); localizeTimes(); loadHW(); refresh(); setInterval(refresh,4000);
+ loadUsageGraph(); setInterval(loadUsageGraph,15000);
  document.addEventListener('keydown',e=>{
    if(e.key==='Escape'){closeLightbox();const m=$('#modal');if(m)m.classList.remove('show');}
    else if($('#lightbox').classList.contains('show')){
@@ -1010,6 +1076,17 @@ def create_app(cfg, mem: Memory) -> Flask:
     name = cfg.get("identity", "name", default="DRONGO")
     ws = Path(cfg.workspace)
     allow_run = bool(cfg.get("web", "allow_run", default=True))
+
+    # A router the DASHBOARD uses to CHAT with the human — it lives in the web
+    # process, separate from the agent loop, so chat answers instantly even while
+    # the agent is mid-project. Best-effort: a provider/config issue here must
+    # never break the (read-only) dashboard views.
+    try:
+        from .llm import Router
+        chat_router = Router(cfg, mem)
+    except Exception as e:
+        chat_router = None
+        log.warning("chat router unavailable: %s", e)
 
     password = os.environ.get("DRONGO_WEB_PASSWORD", "")
     nets = []
@@ -1090,7 +1167,9 @@ def create_app(cfg, mem: Memory) -> Flask:
             cu = u.get("cooldown_until")
             cool = f"{int(cu - now)}s" if cu and cu > now else ""
             out.append({"provider": n, "day_count": u.get("day_count", 0),
-                        "total": u.get("total", 0), "cool": cool})
+                        "total": u.get("total", 0), "cool": cool,
+                        "tokens_in": u.get("tokens_in", 0), "tokens_out": u.get("tokens_out", 0),
+                        "day_tokens": u.get("day_tokens", 0)})
         return out
 
     @app.route("/")
@@ -1161,6 +1240,7 @@ def create_app(cfg, mem: Memory) -> Flask:
             "fix_queue": len(mem.fix_queue()),
             "projects": mem.count_projects(),
             "usage": _usage_view(),                 # live so cooldowns tick
+            "last_llm": mem.recall("last_llm"),     # provider + tokens of the latest call
             "suggestion": mem.get_suggestion(),
             "journal_sig": _journal_sig(_journal(60)),
             "steps": mem.recall("live_steps") or [],
@@ -1172,6 +1252,71 @@ def create_app(cfg, mem: Memory) -> Flask:
         # when journal_sig from /api/system changes, so new projects pop in live.
         return {"journal": _journal(60), "projects": _journal(500, kind="cycle"),
                 "images": _gallery_images(cfg)}
+
+    @app.route("/api/chat")
+    def api_chat():
+        return {"ok": True, "history": mem.chat_history(40)}
+
+    @app.route("/chat", methods=["POST"])
+    def chat():
+        # Talk to DRONGO and STEER it — answered here in the web process, so it
+        # works even while the agent loop is mid-project. The model may also set a
+        # next project / mission / a learned note, which the loop then picks up.
+        d = request.get_json(silent=True) or {}
+        msg = (d.get("message") or "").strip()[:2000]
+        if not msg:
+            return {"ok": False, "error": "empty message"}, 400
+        mem.add_chat("user", msg)
+        if chat_router is None or not chat_router.provider_names():
+            reply = "I've no LLM provider configured yet — add a key in Control → Settings."
+            mem.add_chat("assistant", reply)
+            return {"ok": True, "reply": reply, "applied": []}
+        wo = mem.recall("working_on")
+        recent = "; ".join(j["title"] for j in mem.recent_journal(8, kind="cycle"))
+        kb = mem.relevant_knowledge(msg, k=4)
+        persona = cfg.get("identity", "persona", default="You are DRONGO, an autonomous maker-agent.")
+        system = (persona + "\n\nYou are chatting with your human in your dashboard. Answer "
+                  "helpfully and briefly. You can be STEERED: if they ask you to build or "
+                  "prioritise something next, put it in next_project; if they set a standing "
+                  "direction/preference, put it in mission; if they teach you a durable fact "
+                  "worth remembering, put it in learned. Reply with ONE JSON object only:\n"
+                  '{"reply":"<your message>","next_project":"<optional>","mission":"<optional>",'
+                  '"learned":"<optional>"}')
+        lines = []
+        if isinstance(wo, dict) and wo.get("title"):
+            lines.append(f"(You are currently working on: {wo.get('title')} — attempt {wo.get('attempt')}.)")
+        if recent:
+            lines.append(f"(Recently built: {recent}.)")
+        if kb:
+            lines.append("(Relevant from your knowledge base:\n"
+                         + "\n".join(f"- [{x['kind']}] {x['title']}: {x['text']}" for x in kb) + ")")
+        user = ("\n".join(lines) + "\n\n" if lines else "") + "Human: " + msg
+        try:
+            from .loop import extract_json
+            text, _prov = chat_router.complete(system, user, temperature=0.5, max_tokens=700)
+            obj = extract_json(text) or {}
+        except Exception as e:
+            reply = f"(couldn't reach a model right now: {e})"
+            mem.add_chat("assistant", reply)
+            return {"ok": True, "reply": reply, "applied": []}
+        reply = (obj.get("reply") or text or "").strip() or "(no reply)"
+        applied = []
+        if obj.get("next_project"):
+            mem.set_suggestion(str(obj["next_project"])[:400]); applied.append("queued that as my next project")
+        if obj.get("mission"):
+            mem.set_mission(str(obj["mission"])[:400]); applied.append("updated my standing mission")
+        if obj.get("learned"):
+            mem.add_note("from chat", str(obj["learned"])[:1000]); applied.append("saved that to memory")
+        mem.add_chat("assistant", reply + (("\n\n_(" + "; ".join(applied) + ")_") if applied else ""))
+        return {"ok": True, "reply": reply, "applied": applied}
+
+    @app.route("/api/usage_graph")
+    def api_usage_graph():
+        totals = []
+        for u in mem.usage_summary():
+            totals.append({"provider": u["provider"], "calls": u.get("total", 0),
+                           "tokens_in": u.get("tokens_in", 0), "tokens_out": u.get("tokens_out", 0)})
+        return {"ok": True, "totals": totals, "daily": mem.usage_daily_series(14)}
 
     @app.route("/api/hardware")
     def api_hardware():

@@ -69,7 +69,10 @@ class Provider:
             # Surface the API's reason (e.g. wrong model id) instead of a bare code.
             raise ProviderError(resp.status_code, resp.text[:300])
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        text = data["choices"][0]["message"]["content"]
+        u = data.get("usage") or {}
+        usage = {"in": int(u.get("prompt_tokens") or 0), "out": int(u.get("completion_tokens") or 0)}
+        return text, usage
 
 
 class RateLimited(Exception):
@@ -147,7 +150,11 @@ class AnthropicProvider:
             raise RateLimited(60)
         if getattr(resp, "stop_reason", None) == "refusal":
             raise RuntimeError("claude declined the request")
-        return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+        u = getattr(resp, "usage", None)
+        usage = {"in": int(getattr(u, "input_tokens", 0) or 0),
+                 "out": int(getattr(u, "output_tokens", 0) or 0)}
+        return text, usage
 
 
 def _make_provider(spec: dict):
@@ -220,10 +227,12 @@ class Router:
                 continue                                       # provider-enforced cooldown
             try:
                 to = self.local_timeout if p.is_local else self.timeout
-                text = p.chat(messages, temperature, max_tokens, to)
+                text, usage = p.chat(messages, temperature, max_tokens, to)
                 if not text or not text.strip():
                     raise ValueError("empty response")
-                self.mem.record_use(p.name)
+                self.mem.record_use(p.name, usage.get("in", 0), usage.get("out", 0))
+                self.mem.remember("last_llm", {"provider": p.name, "in": usage.get("in", 0),
+                                               "out": usage.get("out", 0), "ts": time.time()})
                 return text, p.name
             except RateLimited as e:
                 # Honour the PROVIDER's own Retry-After; nothing arbitrary.

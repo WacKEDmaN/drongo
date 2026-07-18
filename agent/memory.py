@@ -40,7 +40,18 @@ CREATE TABLE IF NOT EXISTS usage (
     day_key      TEXT DEFAULT '',
     day_count    INTEGER DEFAULT 0,
     cooldown_until REAL DEFAULT 0,
-    total        INTEGER DEFAULT 0
+    total        INTEGER DEFAULT 0,
+    tokens_in    INTEGER DEFAULT 0,
+    tokens_out   INTEGER DEFAULT 0,
+    day_tokens   INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS usage_daily (
+    provider   TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    calls      INTEGER DEFAULT 0,
+    tokens_in  INTEGER DEFAULT 0,
+    tokens_out INTEGER DEFAULT 0,
+    PRIMARY KEY (provider, day)
 );
 """
 
@@ -65,6 +76,13 @@ class Memory:
         except Exception:
             pass
         self._conn.executescript(SCHEMA)
+        # Migration: token columns on the usage table (DBs created before token metering).
+        for col in ("tokens_in INTEGER DEFAULT 0", "tokens_out INTEGER DEFAULT 0",
+                    "day_tokens INTEGER DEFAULT 0"):
+            try:
+                self._conn.execute(f"ALTER TABLE usage ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
         # Migration: add the tags column to journals created before tagging existed.
         try:
             self._conn.execute("ALTER TABLE journal ADD COLUMN tags TEXT DEFAULT ''")
@@ -513,19 +531,49 @@ class Memory:
             return False
         return True
 
-    def record_use(self, provider):
+    def record_use(self, provider, tokens_in=0, tokens_out=0):
         row = self._usage_row(provider)
         now = time.time()
+        tokens_in, tokens_out = int(tokens_in or 0), int(tokens_out or 0)
         minute_key = int(now // 60)
         day_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        same_day = row["day_key"] == day_key
         min_count = (row["minute_count"] if row["minute_key"] == minute_key else 0) + 1
-        day_count = (row["day_count"] if row["day_key"] == day_key else 0) + 1
+        day_count = (row["day_count"] if same_day else 0) + 1
+        day_tok = (row.get("day_tokens", 0) if same_day else 0) + tokens_in + tokens_out
         self._conn.execute(
             "UPDATE usage SET minute_key=?,minute_count=?,day_key=?,day_count=?,"
-            "total=total+1 WHERE provider=?",
-            (minute_key, min_count, day_key, day_count, provider),
+            "total=total+1,tokens_in=tokens_in+?,tokens_out=tokens_out+?,day_tokens=? "
+            "WHERE provider=?",
+            (minute_key, min_count, day_key, day_count, tokens_in, tokens_out, day_tok, provider),
+        )
+        # Per-day time series for the graphs (upsert).
+        self._conn.execute(
+            "INSERT INTO usage_daily (provider,day,calls,tokens_in,tokens_out) VALUES (?,?,1,?,?) "
+            "ON CONFLICT(provider,day) DO UPDATE SET calls=calls+1,"
+            "tokens_in=tokens_in+excluded.tokens_in,tokens_out=tokens_out+excluded.tokens_out",
+            (provider, day_key, tokens_in, tokens_out),
         )
         self._conn.commit()
+
+    def usage_daily_series(self, days=14):
+        """Recent per-provider daily usage for the dashboard graphs."""
+        rows = self._conn.execute(
+            "SELECT provider,day,calls,tokens_in,tokens_out FROM usage_daily "
+            "ORDER BY day DESC LIMIT ?", (days * 12,)).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---- chat with the human (dashboard Chat tab) ---------------------
+    def add_chat(self, role, content):
+        v = self.recall("chat")
+        v = v if isinstance(v, list) else []
+        v.append({"role": role, "content": str(content or "")[:4000], "ts": time.time()})
+        self.remember("chat", v[-60:])
+
+    def chat_history(self, limit=40):
+        v = self.recall("chat")
+        v = v if isinstance(v, list) else []
+        return v[-limit:]
 
     def set_cooldown(self, provider, seconds):
         self._usage_row(provider)
