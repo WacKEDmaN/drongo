@@ -833,9 +833,10 @@ def recall_skill(ctx: ToolContext, name: str = "", **_):
 
 
 @tool("request_package",
-      "Ask your human to apt-install a SYSTEM package you can't get via pip (a "
-      "compiler, a C library, a CLI tool). You can't sudo; they review it on the "
-      "dashboard. For Python libraries just use `pip install` instead.",
+      "Request a SYSTEM (apt) package you can't get via pip (a compiler, a C "
+      "library, a CLI tool). A root helper auto-installs it if your human has "
+      "allowed it on the dashboard (otherwise they approve it there); it becomes "
+      "available within a few minutes. For Python libs just use `pip install`.",
       "name: str, reason: str")
 def request_package(ctx: ToolContext, name: str = "", reason: str = "", **_):
     return (f"requested '{name}' — your human will review it on the dashboard's Files tab"

@@ -35,6 +35,8 @@ cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/d
 echo "==> refreshing systemd units"
 cp "$INSTALL"/systemd/*.service "$INSTALL"/systemd/*.timer /etc/systemd/system/
 systemctl daemon-reload
+# Enable timers added since the last install (idempotent — no-op if already on).
+systemctl enable --now drongo-pkg.timer 2>/dev/null || true
 
 echo "==> ensuring the agent's writable project venv exists"
 [ -x /var/lib/drongo/runtime/venv/bin/python ] || python3 -m venv /var/lib/drongo/runtime/venv 2>/dev/null || true

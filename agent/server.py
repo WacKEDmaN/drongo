@@ -280,6 +280,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <div class="card"><div id=fbwrap class=meta>loading…</div></div>
   <h2>📦 Package requests <span class=meta>— system (apt) packages the agent has asked for</span></h2>
   <div class="card"><div id=pkgwrap class=meta>loading…</div></div>
+  <div class="card">
+   <div class=th>Install policy <span class=meta>— what the agent may auto-install (a root helper does the install)</span></div>
+   <p class=meta><b>manual</b>: only packages/globs you allow below. <b>auto</b>: any valid Debian package it requests. Either way it can only ever <code>apt-get install</code> real package names — never run arbitrary commands.</p>
+   <div id=pkgpolwrap class=meta>loading…</div>
+  </div>
  </section>
 
  <section id=gallery class="tab">
@@ -543,7 +548,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    history.replaceState(null,'','#'+t);
    if(t==='control')loadHW();
-   if(t==='files'){loadFiles('');loadPkgs();}
+   if(t==='files'){loadFiles('');loadPkgs();loadPolicy();}
    if(t==='brain')loadBrain();
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
@@ -701,6 +706,29 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      e.textContent='Installed & available to the agent: '+installed.join(', ');w.appendChild(e);}}
  function pkgResolve(name,action){fetch('/control/pkg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,name})})
    .then(r=>r.json()).then(d=>{toast(d.ok?(action==='installed'?name+' marked installed ✓':name+' dismissed'):'failed');loadPkgs();});}
+ function loadPolicy(){const w=$('#pkgpolwrap');if(!w)return;
+   fetch('/api/pkg_policy').then(r=>r.json()).then(renderPolicy).catch(()=>{});}
+ function renderPolicy(p){const w=$('#pkgpolwrap');if(!w)return;w.replaceChildren();
+   const modeRow=document.createElement('div');modeRow.style.marginBottom='10px';
+   ['manual','auto'].forEach(m=>{const b=document.createElement('button');b.className='act';
+     b.textContent=(p.mode===m?'● ':'○ ')+m;if(p.mode===m)b.style.borderColor='var(--ac)';
+     b.onclick=()=>setPolicy({mode:m});modeRow.appendChild(b);});
+   w.appendChild(modeRow);
+   const chips=document.createElement('div');
+   (p.allow||[]).forEach(a=>{const c=document.createElement('span');c.className='chip';c.style.cursor='pointer';
+     c.textContent=a+' ✕';c.title='remove';c.onclick=()=>setPolicy({remove:a});chips.appendChild(c);});
+   if(!(p.allow||[]).length){const s=document.createElement('span');s.className='meta';
+     s.textContent=p.mode==='auto'?'auto mode — every valid package it requests is installed':'nothing allowed yet — add a package/glob below';chips.appendChild(s);}
+   w.appendChild(chips);
+   const row=document.createElement('div');row.style.marginTop='8px';
+   const inp=document.createElement('input');inp.className='set';inp.placeholder='package or glob (e.g. build-essential, libboost-*)';
+   inp.style.maxWidth='340px';inp.style.display='inline-block';inp.style.marginRight='8px';
+   const add=document.createElement('button');add.className='act';add.textContent='+ allow';
+   add.onclick=()=>{const v=inp.value.trim();if(v){setPolicy({add:v});inp.value='';}};
+   inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();add.onclick();}};
+   row.append(inp,add);w.appendChild(row);}
+ function setPolicy(body){fetch('/control/pkg_policy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+   .then(r=>r.json()).then(p=>{toast('policy saved');renderPolicy(p);});}
  function genInstaller(){const names=[...document.querySelectorAll('.pkgck:checked')].map(c=>c.value);
    if(!names.length){toast('tick some packages first');return;}
    fetch('/control/pkg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'installer',names})})
@@ -1193,6 +1221,26 @@ def create_app(cfg, mem: Memory) -> Flask:
     def control_skill_delete():
         name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
         return {"ok": mem.delete_skill(name)}
+
+    @app.route("/api/pkg_policy")
+    def api_pkg_policy():
+        return {"ok": True, **mem.pkg_policy()}
+
+    @app.route("/control/pkg_policy", methods=["POST"])
+    def control_pkg_policy():
+        # Governs the root pkg-installer: which requested apt packages it may
+        # install. manual+allowlist (default) or auto. Stored in the DB.
+        d = request.get_json(silent=True) or {}
+        pol = mem.pkg_policy()
+        allow = list(pol["allow"])
+        if d.get("add"):
+            allow.append(str(d["add"]))
+        if d.get("remove"):
+            allow = [a for a in allow if a != d["remove"]]
+        mode = d.get("mode") if d.get("mode") in ("auto", "manual") else None
+        pol = mem.set_pkg_policy(mode=mode, allow=allow)
+        log.info("pkg policy: mode=%s allow=%s", pol["mode"], pol["allow"])
+        return {"ok": True, **pol}
 
     @app.route("/control/pkg", methods=["POST"])
     def control_pkg():

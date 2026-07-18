@@ -641,6 +641,9 @@ class AgentLoop:
         max_attempts = self.cfg.get("loop", "max_resume_attempts", default=8)
         self._scan_hardware()                           # react to anything newly plugged in
         self._janitor()                                 # tidy up junk + empty folders
+        got = self.mem.sync_installed_markers(self.cfg.workspace)   # packages the root helper installed
+        if got:
+            self.mem.push_step("ok", "📦 now available: " + ", ".join(got))
         saved = self.mem.recall("current_project")
         saved = saved if isinstance(saved, dict) else None
 

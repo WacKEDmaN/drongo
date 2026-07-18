@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for DRONGO package-install requests
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=2min
+AccuracySec=20s
+Unit=drongo-pkg.service
+
+[Install]
+WantedBy=timers.target

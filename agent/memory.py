@@ -312,6 +312,54 @@ class Memory:
         e = self.recall("installed_extras")
         return e if isinstance(e, list) else []
 
+    # ---- scoped package-install policy (read by the root pkg-installer) ----
+    def pkg_policy(self) -> dict:
+        p = self.recall("pkg_policy")
+        if not isinstance(p, dict):
+            p = {}
+        return {"mode": "auto" if p.get("mode") == "auto" else "manual",
+                "allow": [str(x) for x in (p.get("allow") or []) if str(x).strip()]}
+
+    def set_pkg_policy(self, mode=None, allow=None):
+        p = self.pkg_policy()
+        if mode in ("auto", "manual"):
+            p["mode"] = mode
+        if isinstance(allow, list):
+            # de-dup, keep only sane glob/name entries
+            seen, clean = set(), []
+            for a in allow:
+                a = str(a).strip()[:60]
+                if a and a not in seen and re.match(r"^[a-z0-9][a-z0-9+.*?-]*$", a):
+                    seen.add(a); clean.append(a)
+            p["allow"] = clean
+        self.remember("pkg_policy", p)
+        return p
+
+    def sync_installed_markers(self, workspace) -> list:
+        """Consume the root installer's done-markers: mark each requested package
+        resolved (installed or not) and delete the marker. Returns newly-installed
+        names. Called by the agent each cycle so its own DB stays the source of
+        truth (the root helper never writes the DB)."""
+        d = Path(workspace) / ".pkg-installed"
+        if not d.is_dir():
+            return []
+        done = []
+        for f in d.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                ok = bool(json.loads(f.read_text()).get("ok"))
+            except Exception:
+                ok = True
+            self.resolve_package(f.name, installed=ok)
+            if ok:
+                done.append(f.name)
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        return done
+
     def set_mission(self, text):
         self.remember("mission", str(text or "").strip())
 

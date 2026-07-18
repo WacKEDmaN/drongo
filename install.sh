@@ -206,7 +206,7 @@ say "10/10  systemd units"
 cp "$INSTALL"/systemd/*.service "$INSTALL"/systemd/*.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now drongo.service drongo-web.service \
-                       drongo-observer.timer drongo-update.timer
+                       drongo-observer.timer drongo-update.timer drongo-pkg.timer
 
 # Convenience CLI: `sudo drongo doctor|configure|...` always targets /opt/drongo.
 cp "$INSTALL/system/drongo" /usr/local/bin/drongo && chmod 0755 /usr/local/bin/drongo

@@ -1,0 +1,17 @@
+[Unit]
+Description=DRONGO scoped package installer (fulfils the agent's apt requests)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/drongo/observer.env
+Environment=PYTHONUTF8=1
+Environment=DRONGO_RUNTIME=/var/lib/drongo/runtime
+Environment=DRONGO_USER=drongo
+# Installs ONLY validated package names permitted by the dashboard policy.
+# It never runs an arbitrary command (see system/pkg-installer.py).
+ExecStart=/usr/bin/python3 /opt/drongo/system/pkg-installer.py
+TimeoutStartSec=900
+Nice=10
