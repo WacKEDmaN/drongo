@@ -156,10 +156,33 @@ IMGGEN="${IMGGEN:-0}"
 echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
 
 # ---------------------------------------------------------------------------
+# Swap headroom BEFORE any heavy work. A 4GB board — especially one still running
+# a desktop — can exhaust RAM during apt/pip (and a model pull), FREEZE, and drop
+# your SSH session; once the hardware watchdog is armed (step 9), a long freeze
+# even hard-reboots the board. A 2GB swapfile prevents that. Added only when
+# there's no swap already; harmless on eMMC/NVMe.
+if ! grep -q '^/' /proc/swaps 2>/dev/null; then          # no real swap entry yet
+  say "Swap headroom (2GB swapfile — prevents OOM lockups during install)"
+  _mkswap() {
+    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null || return 1
+    chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 || return 1
+    if ! swapon /swapfile 2>/dev/null; then          # a fallocated file may have holes -> redo with dd
+      dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null || return 1
+      chmod 600 /swapfile; mkswap /swapfile >/dev/null 2>&1 && swapon /swapfile 2>/dev/null || return 1
+    fi
+    grep -q '^/swapfile ' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  }
+  if _mkswap; then echo "    swap enabled."; else rm -f /swapfile; warn "couldn't set up swap — continuing (watch for OOM)"; fi
+fi
+
+# ---------------------------------------------------------------------------
 say "1/10  Base packages"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y --no-install-recommends \
+# Wait (up to 5 min) for a freshly-booted image's apt-daily / unattended-upgrades
+# to release the dpkg lock, instead of failing or hanging forever on it.
+APT="apt-get -o DPkg::Lock::Timeout=300"
+$APT update -y
+$APT install -y --no-install-recommends \
   python3 python3-venv python3-pip python3-dev git curl ca-certificates rsync \
   i2c-tools gpiod usbutils lm-sensors util-linux \
   build-essential libffi-dev libssl-dev pkg-config   # lets the agent pip-compile native deps
