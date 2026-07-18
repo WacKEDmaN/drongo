@@ -83,11 +83,16 @@ else
     SRCDIR="$(dirname "$BUILDSH")"
     if [ -n "$BUILDSH" ] && [ -d "$SRCDIR" ]; then
       mv "$SRCDIR" "$OPT/z88dk"
+      Z88LOG="$OPT/z88dk-build.log"
+      # tee the build to a log so the REAL error is saved (it otherwise scrolls
+      # off-screen); pipefail (set above) keeps the pipeline status == build.sh's.
       if ( cd "$OPT/z88dk" && export ZCCCFG="$OPT/z88dk/lib/config" PATH="$OPT/z88dk/bin:$PATH" \
-           && chmod +x build.sh && ./build.sh ); then
+           && chmod +x build.sh && ./build.sh ) 2>&1 | tee "$Z88LOG"; then
         echo "    z88dk built."
       else
-        warn "z88dk build failed — re-run later or build manually in $OPT/z88dk"
+        warn "z88dk build failed. FULL LOG: $Z88LOG"
+        warn "last 25 lines (send me these to diagnose):"
+        tail -n 25 "$Z88LOG" 2>/dev/null | sed 's/^/      /'
       fi
     else
       warn "couldn't find build.sh inside the z88dk tarball"
@@ -106,10 +111,13 @@ else
   rm -rf "$OPT/cpctelera"
   if git clone --depth 1 https://github.com/lronaldo/cpctelera.git "$OPT/cpctelera"; then
     # setup.sh builds its bundled toolchain; feed it 'y' for any prompt.
-    if ( cd "$OPT/cpctelera" && yes | ./setup.sh ); then
+    CPCLOG="$OPT/cpctelera-build.log"
+    if ( cd "$OPT/cpctelera" && yes | ./setup.sh ) 2>&1 | tee "$CPCLOG"; then
       echo "    CPCtelera set up."
     else
-      warn "CPCtelera setup failed — re-run later or see $OPT/cpctelera"
+      warn "CPCtelera setup failed. FULL LOG: $CPCLOG"
+      warn "last 25 lines (send me these to diagnose):"
+      tail -n 25 "$CPCLOG" 2>/dev/null | sed 's/^/      /'
     fi
   else
     warn "CPCtelera clone failed (network?)"
