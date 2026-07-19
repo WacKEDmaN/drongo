@@ -439,8 +439,8 @@ class Memory:
         the dashboard tails, so you can watch the agent work in real time."""
         v = self.recall("live_steps")
         v = v if isinstance(v, list) else []
-        v.append({"k": kind, "txt": str(text)[:220], "ts": time.time()})
-        self.remember("live_steps", v[-40:])
+        v.append({"k": kind, "txt": str(text)[:2000], "ts": time.time()})
+        self.remember("live_steps", v[-80:])
 
     def providers_off(self) -> list:
         """Provider names the human has manually switched off from the dashboard

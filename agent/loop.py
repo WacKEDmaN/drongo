@@ -36,16 +36,26 @@ TASK_TYPES = [
 
 EXEC_SYSTEM = """{persona}
 
-You are working on ONE concrete project. Use tools to actually build it —
-write real files into the workspace, run them, fix errors, and verify.
+YOUR ENVIRONMENT (you run here — no need to guess):
+- A headless Debian Linux box (Rock Pi / ARM64). You are the 'drongo' user: no
+  sudo. You have a writable Python venv — `pip install <pkg>` and `python <file>`
+  already use it. gcc/g++/make are installed; check others with `which <tool>`.
+- The `shell` tool runs bash in your project folder. `read_file`/`write_file`/
+  `list_dir` work inside your workspace only. `web_search` finds pages,
+  `web_fetch` reads one. Need an apt package? call request_package (a helper
+  installs allowed ones). The FULL tool list with signatures is at the bottom —
+  READ IT and use the right tool instead of guessing.
+- How to WORK: think a step, call ONE tool, read the observation, adapt, repeat.
+  Don't plan endlessly in text — act. Verify by reading files back / running them.
 
 Respond with EXACTLY ONE JSON object and nothing else. Two shapes are allowed:
 
-  {{"thought": "<brief reasoning>", "tool": "<tool_name>", "args": {{...}}}}
-  {{"thought": "<brief reasoning>", "final": "<2-4 sentence summary of what you built and where it lives>"}}
+  {{"thought": "<ONE short sentence>", "tool": "<tool_name>", "args": {{...}}}}
+  {{"thought": "<ONE short sentence>", "final": "<2-4 sentence summary of what you built and where it lives>"}}
 
 Rules:
-- Output raw JSON only. No markdown, no code fences, no prose around it.
+- Output raw JSON only. No markdown, no code fences, no prose around it. Keep
+  "thought" to ONE short sentence — spend tokens on the work, not narration.
 - Build something real and finished, not a stub. Test it when you can.
 - Your files are auto-consolidated into your project's Working folder (shown
   above) — just use plain relative names like "index.html" or "src/main.c" and
@@ -53,9 +63,11 @@ Rules:
   workspace root. Images go to the gallery via generate_image; dashboards via
   make_dashboard.
 - IMAGES: when a task wants a picture, you MUST call generate_image — it fetches a
-  REAL raster image and saves it to the gallery for your human to see. Never
-  "describe" an image in words, and never substitute ASCII art or a hand-written
-  SVG when an actual image was asked for. If generate_image returns an ERROR, try
+  REAL raster image and saves it to the gallery for your human to see. If your own
+  CODE renders an image (a fractal, a plot, a PPM/PNG), call add_to_gallery with
+  its path so it shows up. Reference/sample images you DOWNLOADED do not go in the
+  gallery. Never "describe" an image in words, and never substitute ASCII art or a
+  hand-written SVG when an actual image was asked for. If generate_image ERRORs, try
   again (it may be rate-limited) or simplify the prompt; only then fall back.
 - DASHBOARDS can be fully DYNAMIC (live data, JS, charts) AND have a Python
   backend — you just don't run your own web server. The pattern:
@@ -162,14 +174,17 @@ _THEME_STOP = {
 
 
 def _brief_args(args):
-    """Short, non-spammy one-liner of tool args for the live-thinking stream."""
+    """One-liner of tool args for the live-thinking stream. Generous so you can
+    actually SEE what it's doing (the full write content is still capped so a
+    2000-line file dump doesn't flood the stream)."""
     if not isinstance(args, dict) or not args:
         return ""
     parts = []
     for k, v in args.items():
         s = str(v).replace("\n", " ").strip()
-        if len(s) > 38:
-            s = s[:38] + "…"
+        cap = 400 if k in ("content", "code", "html") else 200
+        if len(s) > cap:
+            s = s[:cap] + "…"
         parts.append(f"{k}={s}")
     return ", ".join(parts)[:110]
 
@@ -430,7 +445,7 @@ class AgentLoop:
             thought = obj.get("thought", "")
             log.info("[step %d/%d] %s -> %s", step + 1, self.max_steps, thought[:80], name)
             if thought:
-                self.mem.push_step("think", f"… {thought[:160]}")
+                self.mem.push_step("think", f"… {thought[:1800]}")
             self.mem.push_step("tool", f"→ {name}({_brief_args(args)})")
             if name not in registry:
                 observation = f"ERROR: unknown tool '{name}'. Available: {list(registry)}"
@@ -454,8 +469,8 @@ class AgentLoop:
                     res = f"(search failed: {e})"
                 observation += "\n\n[auto-research for that repeated error]\n" + str(res)[:800]
             prev_err = err or None
-            self.mem.push_step("warn" if observation.startswith("ERROR") else "ok",
-                               f"  {observation.splitlines()[0][:150] if observation else 'done'}")
+            obs_line = " ".join((observation or "").split())[:600] or "done"
+            self.mem.push_step("warn" if observation.startswith("ERROR") else "ok", "  " + obs_line)
             messages.append({"role": "assistant", "content": text[:1200]})
             messages.append({"role": "user", "content": f"Observation:\n{observation}"})
             messages = self._trim(messages)

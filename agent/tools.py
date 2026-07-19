@@ -81,7 +81,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
         section = {
             "shell": "shell", "write_file": "files", "read_file": "files",
             "list_dir": "files", "delete_path": "files", "web_search": "web", "web_fetch": "web",
-            "generate_image": "images", "discover_sensors": "sensors",
+            "generate_image": "images", "add_to_gallery": "images", "discover_sensors": "sensors",
             "make_dashboard": "dashboard", "send_alert": "alerts",
             "remember": "files", "recall": "files",
             "save_skill": "files", "recall_skill": "files",
@@ -104,7 +104,8 @@ def tools_prompt(tools: dict[str, Tool]) -> str:
 # exfiltrate them). The agent's projects don't need any of these.
 _SECRET_ENV = ("GROQ_API_KEY", "CEREBRAS_API_KEY", "GEMINI_API_KEY", "MISTRAL_API_KEY",
                "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "NVIDIA_API_KEY",
-               "OLLAMA_API_KEY", "TOGETHER_API_KEY",
+               "OLLAMA_API_KEY", "TOGETHER_API_KEY", "POLLINATIONS_API_KEY",
+               "BRAVE_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY",
                "DISCORD_WEBHOOK_URL", "DRONGO_DISCORD_WEBHOOK", "TELEGRAM_BOT_TOKEN",
                "DRONGO_WEB_PASSWORD")
 
@@ -283,26 +284,88 @@ def delete_path(ctx: ToolContext, path: str = "", **_):
 # ----------------------------------------------------------------------
 @tool("web_search", "Search the web (DuckDuckGo). Returns top results.", "query: str")
 def web_search(ctx: ToolContext, query: str = "", **_):
+    q = (query or "").strip()
+    if not q:
+        return "ERROR: web_search needs a query"
+    timeout = ctx.cfg.get("tools", "web", "timeout", default=30)
+
+    # 1) A real search API if a (free-tier) key is set — DuckDuckGo now blocks
+    #    scraping (202 bot-challenge), so a key is how you get real web results.
+    brave = os.environ.get("BRAVE_API_KEY")
+    if brave:
+        try:
+            r = requests.get("https://api.search.brave.com/res/v1/web/search",
+                             params={"q": q, "count": 6},
+                             headers={"X-Subscription-Token": brave, "Accept": "application/json"},
+                             timeout=timeout)
+            r.raise_for_status()
+            hits = ((r.json().get("web") or {}).get("results")) or []
+            out = [f"- {h.get('title','').strip()}\n  {h.get('url','')}\n  {(h.get('description') or '').strip()[:200]}"
+                   for h in hits[:6]]
+            if out:
+                return "\n".join(out)
+        except Exception as e:
+            ctx.log and ctx.log.warning("brave search failed: %s", e)
+    tav = os.environ.get("TAVILY_API_KEY")
+    if tav:
+        try:
+            r = requests.post("https://api.tavily.com/search",
+                              json={"api_key": tav, "query": q, "max_results": 6}, timeout=timeout)
+            r.raise_for_status()
+            hits = r.json().get("results") or []
+            out = [f"- {h.get('title','').strip()}\n  {h.get('url','')}\n  {(h.get('content') or '').strip()[:200]}"
+                   for h in hits[:6]]
+            if out:
+                return "\n".join(out)
+        except Exception:
+            pass
+    serper = os.environ.get("SERPER_API_KEY")
+    if serper:
+        try:
+            r = requests.post("https://google.serper.dev/search", json={"q": q, "num": 6},
+                              headers={"X-API-KEY": serper}, timeout=timeout)
+            r.raise_for_status()
+            hits = r.json().get("organic") or []
+            out = [f"- {h.get('title','').strip()}\n  {h.get('link','')}\n  {(h.get('snippet') or '').strip()[:200]}"
+                   for h in hits[:6]]
+            if out:
+                return "\n".join(out)
+        except Exception:
+            pass
+
+    # 2) Keyless best-effort: DuckDuckGo instant-answer API + Wikipedia. Covers
+    #    definitional/topic queries; often empty for technical ones (hence the key).
+    out = []
     try:
-        r = requests.post("https://html.duckduckgo.com/html/",
-                          data={"q": query},
-                          headers={"User-Agent": "Mozilla/5.0 (agent)"},
-                          timeout=ctx.cfg.get("tools", "web", "timeout", default=30))
-        r.raise_for_status()
-        results = []
-        for m in re.finditer(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-                             r.text, re.S):
-            href, title = m.group(1), re.sub("<.*?>", "", m.group(2))
-            q = urllib.parse.urlparse(href)
-            params = urllib.parse.parse_qs(q.query)
-            if "uddg" in params:
-                href = params["uddg"][0]
-            results.append(f"- {html.unescape(title).strip()}\n  {href}")
-            if len(results) >= 6:
+        r = requests.get("https://api.duckduckgo.com/",
+                         params={"q": q, "format": "json", "no_html": 1, "no_redirect": 1, "t": "drongo"},
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=timeout)
+        d = r.json()
+        if d.get("AbstractText"):
+            out.append(f"- {d.get('Heading') or q}\n  {d.get('AbstractURL','')}\n  {d['AbstractText'][:240]}")
+        for t in (d.get("RelatedTopics") or []):
+            if t.get("FirstURL") and t.get("Text"):
+                out.append(f"- {t['Text'][:90]}\n  {t['FirstURL']}")
+            if len(out) >= 6:
                 break
-        return "\n".join(results) or "no results"
-    except Exception as e:
-        return f"ERROR: {e}"
+    except Exception:
+        pass
+    if len(out) < 3:
+        try:
+            r = requests.get("https://en.wikipedia.org/w/api.php",
+                             params={"action": "opensearch", "search": q, "limit": 6, "format": "json"},
+                             headers={"User-Agent": "drongo/1.0"}, timeout=timeout)
+            d = r.json()
+            for t, u in zip(d[1], d[3]):
+                out.append(f"- {t} (Wikipedia)\n  {u}")
+        except Exception:
+            pass
+    if out:
+        return "\n".join(out[:6])
+    return ("no results — keyless web search is unreliable now (DuckDuckGo blocks it). "
+            "For real results, add a FREE search key to /etc/drongo/drongo.env and restart:\n"
+            "  BRAVE_API_KEY   (2000 free/mo — https://brave.com/search/api/)\n"
+            "  TAVILY_API_KEY  (https://tavily.com)   or   SERPER_API_KEY (https://serper.dev)")
 
 
 def _url_is_external(url: str):
@@ -421,6 +484,32 @@ def generate_image(ctx: ToolContext, prompt: str = "", filename: str = "", **_):
         ctx.add_artifact(rel, f"image: {prompt[:60]}")
         return (f"saved a real image to {rel} ({len(data)} bytes). It is now in the "
                 f"gallery — the task is done; do NOT also describe the image in text.")
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@tool("add_to_gallery",
+      "Copy an image YOU created (e.g. a fractal/render your code wrote under your "
+      "project folder) into the gallery so your human sees it. Give the workspace "
+      "path to the image. Do NOT use this for reference/sample images you downloaded.",
+      "path: str, label: str = ''")
+def add_to_gallery(ctx: ToolContext, path: str = "", label: str = "", **_):
+    try:
+        full = safeguard.safe_join(ctx.workspace, _rooted(ctx, path))
+    except Exception:
+        return "ERROR: path escapes the workspace"
+    if not os.path.isfile(full):
+        return f"ERROR: no such file: {path}"
+    ext = os.path.splitext(full)[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".ppm", ".pgm", ".bmp"):
+        return f"ERROR: {ext or 'that'} isn't an image the gallery shows"
+    try:
+        Path(ctx.cfg.images).mkdir(parents=True, exist_ok=True)
+        dest = Path(ctx.cfg.images) / f"{int(time.time())}-{os.path.basename(full)}"
+        shutil.copy2(full, dest)
+        rel = f"images/{dest.name}"
+        ctx.add_artifact(rel, f"image: {label or os.path.basename(full)}")
+        return f"copied to the gallery as {rel}"
     except Exception as e:
         return f"ERROR: {e}"
 

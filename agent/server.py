@@ -182,7 +182,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .themes{display:flex;gap:7px;align-items:center}
  .swatch{width:16px;height:16px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
- .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:344px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+ .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:38vh;min-height:260px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+ .think .tl{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
  .think .tl{padding:1px 0} .think .t-think{color:var(--mut)} .think .t-tool{color:var(--ac2)} .think .t-ok{color:var(--ac)} .think .t-warn{color:var(--warn)} .think .t-info{color:var(--fg)}
  .tokchart{display:flex;flex-direction:column;gap:7px;padding:4px 0}
  .tokrow{display:flex;align-items:center;gap:9px;font:12px var(--mono)}
@@ -256,6 +257,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
  <section id=chat class="tab">
   <h2>💬 Chat — ask DRONGO anything, or steer it</h2>
+  <div class="card"><div class=th>🧠 Live thinking — what the agent is doing right now <span class=meta id=lastllm style="float:right"></span></div>
+   <div id=think class=think>idle…</div></div>
   <div class="card">
    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <span class=meta>answer with:</span>
@@ -270,8 +273,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
    <p class=meta>Answered here instantly — even while it's building. Tell it "build X next" or "focus on Y" and it queues that for its loop; teach it a fact and it remembers.</p>
   </div>
-  <div class="card"><div class=th>🧠 Live thinking — what the agent is doing right now <span class=meta id=lastllm style="float:right"></span></div>
-   <div id=think class=think>idle…</div></div>
  </section>
 
  <section id=projects class="tab">
@@ -2145,17 +2146,16 @@ def _netpbm_to_png(data):
 
 
 def _gallery_images(cfg):
-    """Every image the agent has made: the images/ gallery PLUS any images it
-    saved inside its projects/ (fractals, generative art, etc.). Newest first,
-    workspace-relative paths so /file/<path> serves them."""
+    """The curated gallery: ONLY the images/ folder. The agent puts images it
+    MAKES here (generate_image writes here; for images it renders itself it calls
+    add_to_gallery). We deliberately do NOT scan projects/ — that picked up
+    reference/sample images the agent downloaded, which don't belong in a gallery
+    of its own work. Newest first, workspace-relative for /file/<path>."""
     root = Path(cfg.workspace)
-    found = []
-    for base in (Path(cfg.images), Path(cfg.projects)):
-        if not base.exists():
-            continue
-        for f in base.rglob("*"):
-            if f.is_file() and f.suffix.lower() in _IMG_EXTS:
-                found.append(f)
+    base = Path(cfg.images)
+    if not base.exists():
+        return []
+    found = [f for f in base.rglob("*") if f.is_file() and f.suffix.lower() in _IMG_EXTS]
     found.sort(key=lambda f: f.stat().st_mtime, reverse=True)
     return [str(f.relative_to(root)).replace(os.sep, "/") for f in found[:200]]
 
