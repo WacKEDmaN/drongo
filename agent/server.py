@@ -238,23 +238,80 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    .sidebar.open{transform:none}
    .hamb{display:inline-block} main{padding:16px 15px 40px}
  }
+ /* ============ redesign: page chrome, section anchors, deep-link sub-nav ============ */
+ .c3{grid-column:span 3}.c9{grid-column:span 9}
+ @media (max-width:1000px){ .c3,.c9{grid-column:span 12} }
+ .pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px 20px;flex-wrap:wrap;margin:0 0 18px;padding-bottom:13px;border-bottom:1px solid var(--bd)}
+ .pagehead h2{margin:0;border:0;padding:0;font-size:19px}
+ .pagehead .sub{color:var(--mut);font:12.5px/1.5 var(--mono);max-width:74ch;margin-top:5px}
+ .pagehead .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+ .secthead{display:flex;align-items:center;gap:11px;margin:26px 2px 12px;font:600 11.5px/1 var(--mono);text-transform:uppercase;letter-spacing:.16em;color:var(--ac2);scroll-margin-top:80px}
+ .secthead .si{font-size:14px;filter:saturate(.4)}
+ .secthead .meta{text-transform:none;letter-spacing:.01em;font-weight:400;color:var(--mut)}
+ .secthead::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--bd),transparent)}
+ .secthead:first-child{margin-top:6px}
+ .anchor{scroll-margin-top:80px}
+ /* sidebar deep-link sub-items (revealed when their tab is active) */
+ .navwrap{display:flex;flex-direction:column}
+ .sbsub{display:none;flex-direction:column;margin:2px 0 6px;gap:1px}
+ .navwrap.on .sbsub{display:flex}
+ .sbsub button{display:flex;align-items:center;width:100%;font:500 12px/1 ui-sans-serif,system-ui,sans-serif;color:var(--mut);
+   background:transparent;border:0;border-radius:7px;padding:6px 12px 6px 41px;cursor:pointer;text-align:left;transition:.13s;position:relative}
+ .sbsub button:hover{color:var(--fg);background:rgba(255,255,255,.035)}
+ .sbsub button::before{content:"";position:absolute;left:23px;top:50%;width:5px;height:5px;border-radius:50%;background:var(--bd2);transform:translateY(-50%);transition:.13s}
+ .sbsub button:hover::before{background:var(--ac2);box-shadow:0 0 7px var(--ac2)}
+ /* project cards as a responsive grid */
+ .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+ .ctlgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-bottom:14px}
+ .ctlgrid>.panel{margin:0}
+ @media (max-width:1000px){ .ctlgrid{grid-template-columns:1fr} }
+ /* deep-link arrival flash */
+ @keyframes tgtflash{0%{box-shadow:0 0 0 2px var(--ac),0 0 26px rgba(var(--ac-rgb),.55)}100%{box-shadow:0 0 0 0 transparent}}
+ .tgtflash{animation:tgtflash 1.4s ease-out}
 </style></head><body>
 <aside class=sidebar id=sidebar>
  <div class=sbbrand><span class=logo></span>{{ name }}</div>
  <div class=sbver>autonomous agent</div>
  <nav class=sbnav>
   <div class=sbgroup>Overview</div>
-  <button class="sbitem on" data-t=home><span class=ic>◧</span>Dashboard</button>
-  <button class=sbitem data-t=chat><span class=ic>💬</span>Chat</button>
+  <div class="navwrap on" data-t=home><button class="sbitem on" data-t=home><span class=ic>◧</span>Dashboard</button>
+   <div class=sbsub>
+    <button onclick="goTo('home','h-system')">System</button>
+    <button onclick="goTo('home','h-usage')">LLM usage</button>
+    <button onclick="goTo('home','h-tokens')">Token graph</button>
+    <button onclick="goTo('home','h-activity')">Recent activity</button>
+   </div></div>
+  <div class=navwrap data-t=chat><button class=sbitem data-t=chat><span class=ic>💬</span>Chat</button></div>
   <div class=sbgroup>Workspace</div>
-  <button class=sbitem data-t=projects><span class=ic>📦</span>Projects</button>
-  <button class=sbitem data-t=gallery><span class=ic>🖼</span>Gallery</button>
-  <button class=sbitem data-t=files><span class=ic>📁</span>Files</button>
+  <div class=navwrap data-t=projects><button class=sbitem data-t=projects><span class=ic>📦</span>Projects</button></div>
+  <div class=navwrap data-t=gallery><button class=sbitem data-t=gallery><span class=ic>🖼</span>Gallery</button></div>
+  <div class=navwrap data-t=files><button class=sbitem data-t=files><span class=ic>📁</span>Files</button>
+   <div class=sbsub>
+    <button onclick="goTo('files','f-browser')">Workspace files</button>
+    <button onclick="goTo('files','f-pkgs')">Package requests</button>
+    <button onclick="goTo('files','f-policy')">Install policy</button>
+   </div></div>
   <div class=sbgroup>Brain</div>
-  <button class=sbitem data-t=brain><span class=ic>🧠</span>Brain</button>
+  <div class=navwrap data-t=brain><button class=sbitem data-t=brain><span class=ic>🧠</span>Brain</button>
+   <div class=sbsub>
+    <button onclick="goTo('brain','b-steer')">Steering</button>
+    <button onclick="goTo('brain','b-kb')">Knowledge base</button>
+    <button onclick="goTo('brain','b-docs')">Reference docs</button>
+    <button onclick="goTo('brain','b-mcp')">MCP servers</button>
+    <button onclick="goTo('brain','b-skills')">Skills</button>
+    <button onclick="goTo('brain','b-notes')">Notes &amp; lessons</button>
+    <button onclick="goTo('brain','b-memory')">Raw memory</button>
+   </div></div>
   <div class=sbgroup>System</div>
-  <button class=sbitem data-t=control><span class=ic>⚙</span>Control</button>
-  <button class=sbitem data-t=help><span class=ic>?</span>Help</button>
+  <div class=navwrap data-t=control><button class=sbitem data-t=control><span class=ic>⚙</span>Control</button>
+   <div class=sbsub>
+    <button onclick="goTo('control','c-ctl')">Agent controls</button>
+    <button onclick="goTo('control','c-alerts')">Discord alerts</button>
+    <button onclick="goTo('control','c-providers')">LLM providers</button>
+    <button onclick="goTo('control','c-hardware')">Hardware</button>
+    <button onclick="goTo('control','c-settings')">Settings</button>
+   </div></div>
+  <div class=navwrap data-t=help><button class=sbitem data-t=help><span class=ic>?</span>Help</button></div>
  </nav>
  <div class=sbfoot><div class=themes id=themes></div></div>
 </aside>
@@ -269,24 +326,26 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <main>
 
  <section id=home class="tab on">
+  <div class=pagehead><div><h2>Dashboard</h2><div class=sub>Live view of what {{ name }} is doing right now — activity, host health and model usage.</div></div>
+   <div class=acts><button class=act onclick="showTab('chat')">💬 Chat</button><button class=act onclick="ctl('run')">▶ Run a cycle</button></div></div>
   <div class=dash>
    <div id=workingon class=c12>{% if working_on %}<div class="card nowcard"><div class=nowlbl>▶ Working on</div>
      <div class=nowtitle>{{ working_on.title }}</div>
      <span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
 
-   <div class="tile c7"><div class=th>System <span class=meta id=sysmodel></span></div>
+   <div class="tile c7 anchor" id=h-system><div class=th>System <span class=meta id=sysmodel></span></div>
      <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div></div>
 
-   <div class="tile c5"><div class=th>LLM usage — calls &amp; tokens</div>
+   <div class="tile c5 anchor" id=h-usage><div class=th>LLM usage — calls &amp; tokens</div>
      <table class=usaget id=usagetbl>
       <tr><th>provider</th><th>calls</th><th>tok in</th><th>tok out</th><th>total</th><th>cd</th></tr>
       {% set ns = namespace(ti=0, to=0, c=0) %}{% for u in usage %}{% set ns.ti = ns.ti + (u.tokens_in or 0) %}{% set ns.to = ns.to + (u.tokens_out or 0) %}{% set ns.c = ns.c + (u.total or 0) %}<tr><td>{{ u.provider }}</td><td>{{ u.total }}</td><td>{{ u.tokens_in }}</td><td>{{ u.tokens_out }}</td><td>{{ u.tokens_in + u.tokens_out }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=6 class=meta>no calls yet</td></tr>{% endfor %}{% if usage %}<tr class=utot><td>TOTAL</td><td>{{ ns.c }}</td><td>{{ ns.ti }}</td><td>{{ ns.to }}</td><td>{{ ns.ti + ns.to }}</td><td></td></tr>{% endif %}
      </table></div>
 
-   <div class="tile c12"><div class=th>Token usage by provider <span class=meta id=toktotal></span><span class=meta style="float:right">▮ in&nbsp;·&nbsp;▮ out</span></div>
+   <div class="tile c12 anchor" id=h-tokens><div class=th>Token usage by provider <span class=meta id=toktotal></span><span class=meta style="float:right">▮ in&nbsp;·&nbsp;▮ out</span></div>
      <div id=tokchart class=tokchart>loading…</div></div>
 
-   <div class="tile c12"><div class=th>Recent activity</div>
+   <div class="tile c12 anchor" id=h-activity><div class=th>Recent activity</div>
      <div id=homelist class=evlist>
      {% for j in journal %}
       <div class=ev><span class="evd{{ '' if j.ok else ' bad' }}"></span><span class=evt>{{ j.title }}</span><span class=meta>{{ j.task_type or j.kind }} · <span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span></span></div>
@@ -296,7 +355,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=chat class="tab">
-  <h2>💬 Chat — ask DRONGO anything, or steer it</h2>
+  <div class=pagehead><div><h2>Chat</h2><div class=sub>Ask {{ name }} anything or steer it — answered instantly, even mid-build. Live thinking runs alongside.</div></div></div>
   <div class=chatgrid>
    <div class="card chatcard">
     <div class=th>🧠 Live thinking — what it's doing right now <span class=meta id=lastllm style="float:right"></span></div>
@@ -320,8 +379,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=projects class="tab">
-  <h2>Projects it has built — open, run, tag, or flag broken ones for a fix</h2>
-  <div id=projlist>
+  <div class=pagehead><div><h2>Projects <span class=meta>· {{ projects|length }}</span></h2>
+    <div class=sub>Everything it has built — open or run them, tag them, or flag a broken one and it fixes that before starting anything new.</div></div></div>
+  <div id=projlist class=pgrid>
   {% for j in projects %}
    <div class="card" data-id="{{ j.id }}">
      <h3><span class=pnum>#{{ j.id }}</span> {{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
@@ -347,19 +407,21 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=files class="tab">
-  <h2>Files — browse the agent's workspace</h2>
-  <div class="card"><div id=fbwrap class=meta>loading…</div></div>
-  <h2>📦 Package requests <span class=meta>— system (apt) packages the agent has asked for</span></h2>
-  <div class="card"><div id=pkgwrap class=meta>loading…</div></div>
-  <div class="card">
-   <div class=th>Install policy <span class=meta>— what the agent may auto-install (a root helper does the install)</span></div>
-   <p class=meta><b>manual</b>: only packages/globs you allow below. <b>auto</b>: any valid Debian package it requests. Either way it can only ever <code>apt-get install</code> real package names — never run arbitrary commands.</p>
-   <div id=pkgpolwrap class=meta>loading…</div>
+  <div class=pagehead><div><h2>Files</h2><div class=sub>Browse the agent's workspace, view or run any file, and control what system packages it may install.</div></div></div>
+  <div class=dash>
+   <div class="tile c8 anchor" id=f-browser><div class=th>📁 Workspace</div>
+     <div id=fbwrap class=meta>loading…</div></div>
+   <div class="tile c4 anchor" id=f-pkgs><div class=th>📦 Package requests <span class=meta>— apt packages it asked for</span></div>
+     <div id=pkgwrap class=meta>loading…</div></div>
+   <div class="tile c12 anchor" id=f-policy><div class=th>Install policy <span class=meta>— what the agent may auto-install (a root helper does the install)</span></div>
+     <p class=meta><b>manual</b>: only packages/globs you allow below. <b>auto</b>: any valid Debian package it requests. Either way it can only ever <code>apt-get install</code> real package names — never run arbitrary commands.</p>
+     <div id=pkgpolwrap class=meta>loading…</div></div>
   </div>
  </section>
 
  <section id=gallery class="tab">
-  <h2>Gallery — images it has generated <span class=meta id=galcount></span></h2>
+  <div class=pagehead><div><h2>Gallery <span class=meta id=galcount></span></h2>
+    <div class=sub>Every image {{ name }} has generated (PNG/PPM). Click any to open it in the lightbox.</div></div></div>
   <div id=gallerygrid>
    {% if images %}<div class="grid">{% for im in images %}<a href="#" onclick='openLightbox({{ loop.index0 }});return false'><img loading=lazy src="/img/{{ im }}" alt="{{ im }}"></a>{% endfor %}</div>
    {% else %}<p class="meta">No images yet — it fills this in as it makes creative_image projects.</p>{% endif %}
@@ -367,27 +429,26 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=brain class="tab">
-  <h2>🧠 Brain — steer it, and see what it has learned</h2>
-  <div class="card">
-    <h3 style="margin-top:0">💡 Suggest the next project</h3>
-    <p class="meta">Tell {{ name }} what to build next. It finishes anything in
-      progress first, then takes your suggestion on before inventing its own idea.</p>
-    <textarea id=suggbox rows=2 placeholder="e.g. a Pong clone where the paddles speed up with CPU temperature"></textarea>
-    <div style="margin-top:8px">
-      <button class="act big" onclick="sendSuggest()">Send suggestion</button>
-      <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span>
-    </div>
+  <div class=pagehead><div><h2>Brain</h2><div class=sub>Steer {{ name }} and see everything it has learned — its knowledge base, reference docs, tools, skills, notes and raw memory.</div></div></div>
+
+  <div class="secthead anchor" id=b-steer><span class=si>🎯</span>Steering</div>
+  <div class=dash>
+   <div class="tile c6"><div class=th>💡 Suggest the next project</div>
+     <p class="meta">Tell {{ name }} what to build next. It finishes anything in progress first, then takes your suggestion on before inventing its own idea.</p>
+     <textarea id=suggbox rows=2 placeholder="e.g. a Pong clone where the paddles speed up with CPU temperature"></textarea>
+     <div style="margin-top:8px"><button class="act big" onclick="sendSuggest()">Send suggestion</button>
+       <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span></div></div>
+   <div class="tile c6"><div class=th>🎯 Standing mission</div>
+     <p class="meta">A persistent theme that biases EVERY new project it dreams up (on top of its interests). Unlike a one-off suggestion this sticks until you change it. Blank = no mission.</p>
+     <textarea id=missionbox rows=2 placeholder="e.g. focus on retro Amstrad / Z80 projects this month">{{ mission }}</textarea>
+     <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div></div>
   </div>
-  <div class="card">
-    <h3 style="margin-top:0">🎯 Standing mission</h3>
-    <p class="meta">A persistent theme that biases EVERY new project it dreams up (on top of its
-      interests). Unlike a one-off suggestion this sticks until you change it. Blank = no mission.</p>
-    <textarea id=missionbox rows=2 placeholder="e.g. focus on retro Amstrad / Z80 projects this month">{{ mission }}</textarea>
-    <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div>
-  </div>
-  <div class="card"><div id=kbsummary class=meta>loading…</div></div>
-  <h2>📄 Reference docs <span class=meta id=doccount>— your uploaded "source of truth"</span></h2>
-  <div class="card">
+
+  <div class="secthead anchor" id=b-kb><span class=si>📚</span>Knowledge base</div>
+  <div class="tile c12"><div id=kbsummary class=meta>loading…</div></div>
+
+  <div class="secthead anchor" id=b-docs><span class=si>📄</span>Reference docs <span class=meta id=doccount>— your uploaded "source of truth"</span></div>
+  <div class="tile c12">
    <p class=meta>Upload docs the agent should treat as AUTHORITATIVE (API references, datasheets, specs). Text formats — .md .txt .py .html .json .csv … It searches these before guessing, and the most relevant passages are injected when it starts a related project. (You can also scp a folder into <code>runtime/docs/</code> — it indexes on restart.)</p>
    <input type=file id=docfiles multiple class=set style="padding:6px;max-width:420px;display:inline-block">
    <button class=act onclick="uploadDocs()">⬆ upload &amp; index</button>
@@ -398,8 +459,9 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <div id=docresults class=meta style="margin-top:8px"></div>
    <div id=docwrap class=meta style="margin-top:8px">loading…</div>
   </div>
-  <h2>🔌 MCP tool servers <span class=meta>— give it external tools (filesystem, GitHub, web, DBs…)</span></h2>
-  <div class="card">
+
+  <div class="secthead anchor" id=b-mcp><span class=si>🔌</span>MCP tool servers <span class=meta>— give it external tools (filesystem, GitHub, web, DBs…)</span></div>
+  <div class="tile c12">
    <p class=meta>Connect <a href="https://modelcontextprotocol.io" target=_blank>Model Context Protocol</a> servers; their tools become <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> the agent can call. <b>stdio</b> launches a command (e.g. <code>npx&nbsp;-y&nbsp;@modelcontextprotocol/server-filesystem&nbsp;/path</code> — needs Node); <b>http</b> connects to a URL. They run in the agent's sandbox (no sudo) and take effect on <b>restart</b>. Test before you rely on one.</p>
    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <input id=mcpname class=set placeholder="name (e.g. fs)" style="max-width:130px;display:inline-block">
@@ -415,29 +477,35 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <div style="margin-top:8px"><button class=act onclick="mcpAdd()">+ add server</button></div>
    <div id=mcpwrap class=meta style="margin-top:10px">loading…</div>
   </div>
-  <div class="card">
-   <div class=th>Import a skill</div>
-   <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL to download from. Imported code is stored, never auto-run.</p>
-   <input id=skillurl class=set placeholder="https://…/skills.json (public URL)">
-   <button class=act onclick="dlSkill()">⬇ Download from URL</button>
-   <textarea id=skilljson class=set placeholder='{"name":"my-skill","description":"what it does + when to reuse","code":"def f(): ..."}' style="min-height:88px"></textarea>
-   <button class=act onclick="importSkill()">+ Add skill</button>
+
+  <div class="secthead anchor" id=b-skills><span class=si>🧩</span>Skills <span class=meta id=skillcount></span></div>
+  <div class=dash>
+   <div class="tile c5"><div class=th>Import a skill</div>
+    <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL to download from. Imported code is stored, never auto-run.</p>
+    <input id=skillurl class=set placeholder="https://…/skills.json (public URL)">
+    <button class=act onclick="dlSkill()">⬇ Download from URL</button>
+    <textarea id=skilljson class=set placeholder='{"name":"my-skill","description":"what it does + when to reuse","code":"def f(): ..."}' style="min-height:88px"></textarea>
+    <button class=act onclick="importSkill()">+ Add skill</button></div>
+   <div class="tile c7"><div class=th>Saved skills</div><div id=skillwrap class=meta>loading…</div></div>
   </div>
-  <h2>Skills <span class=meta id=skillcount></span></h2>
-  <div class="card"><div id=skillwrap class=meta>loading…</div></div>
-  <h2>Notes <span class=meta id=notecount></span></h2>
-  <div class="card"><div id=notewrap class=meta>loading…</div></div>
-  <h2>Lessons learned</h2>
-  <div class="card"><div id=lessonwrap class=meta>loading…</div></div>
-  <h2>Raw memory <span class=meta id=memcount>— every key in its long-term store</span></h2>
-  <div class="card">
+
+  <div class="secthead anchor" id=b-notes><span class=si>📝</span>Notes &amp; lessons</div>
+  <div class=dash>
+   <div class="tile c6"><div class=th>Notes <span class=meta id=notecount></span></div><div id=notewrap class=meta>loading…</div></div>
+   <div class="tile c6"><div class=th>Lessons learned</div><div id=lessonwrap class=meta>loading…</div></div>
+  </div>
+
+  <div class="secthead anchor" id=b-memory><span class=si>🗄</span>Raw memory <span class=meta id=memcount>— every key in its long-term store</span></div>
+  <div class="tile c12">
    <p class=meta>Everything in the agent's key/value memory (state, settings, learned data). Click a key to inspect the full value; delete what you want it to forget. <b>settings</b> is protected here — edit it via Control → Settings.</p>
    <div id=memwrap class=meta>loading…</div>
   </div>
  </section>
 
  <section id=control class="tab">
-  <div class="panel open" data-panel=ctl>
+  <div class=pagehead><div><h2>Control</h2><div class=sub>Run, pause or restart {{ name }}, tune alerts and hardware, and configure every setting — providers, keys, cadence, behaviour and more.</div></div></div>
+  <div class=ctlgrid>
+  <div class="panel open anchor" id=c-ctl data-panel=ctl>
    <button class=phead onclick="togglePanel(this)">Agent controls<span class=chev>▾</span></button>
    <div class=pbody>
     <button class="act big" onclick="ctl('run')">▶ Run a cycle now</button>
@@ -455,7 +523,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
   </div>
 
-  <div class="panel open" data-panel=alerts>
+  <div class="panel open anchor" id=c-alerts data-panel=alerts>
    <button class=phead onclick="togglePanel(this)">Discord alerts <span class=chev>▾</span></button>
    <div class=pbody>
     <div class=swrow>
@@ -470,7 +538,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
   </div>
 
-  <div class="panel" data-panel=providers>
+  <div class="panel anchor" id=c-providers data-panel=providers>
    <button class=phead onclick="togglePanel(this)">LLM providers<span class=chev>▾</span></button>
    <div class=pbody>
     {% for p in sv.providers %}
@@ -485,7 +553,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
   </div>
 
-  <div class="panel" data-panel=hardware>
+  <div class="panel anchor" id=c-hardware data-panel=hardware>
    <button class=phead onclick="togglePanel(this)">Hardware <span class=chev>▾</span></button>
    <div class=pbody>
     <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
@@ -495,7 +563,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
   </div>
 
-  <div class="panel" data-panel=settings>
+  </div><!-- /ctlgrid -->
+  <div class="panel anchor" id=c-settings data-panel=settings>
    <button class=phead onclick="togglePanel(this)">Settings <span class=chev>▾</span></button>
    <div class="pbody set">
    <p class="meta" style="margin-top:0">Stored on the agent; “Save &amp; Restart” to apply.</p>
@@ -612,38 +681,43 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=help class="tab">
-  <h2>Cheat sheet — SSH &amp; admin</h2>
-  <div class="card help">
-   <h3>✏️ Edit your API keys / secrets</h3>
-   <pre>sudo nano {{ hp.env }}</pre>
-   <p class=meta>API keys, Discord webhook &amp; the dashboard password live here. (Or just use Control → Settings.) After editing, restart.</p>
-   <h3>⚙️ Edit config (model, limits, etc.)</h3>
-   <pre>sudo nano {{ hp.cfg }}</pre>
-   <h3>🔄 Restart after a change</h3>
-   <pre>sudo systemctl restart drongo drongo-web</pre>
-   <h3>⬆️ Pull &amp; deploy the latest code</h3>
-   <pre>cd ~/drongo &amp;&amp; git pull &amp;&amp; sudo ./update.sh</pre>
-   <h3>🩺 Health check</h3>
-   <pre>sudo drongo doctor</pre>
-   <h3>📜 Watch it live</h3>
-   <pre>journalctl -u drongo -f</pre>
-   <h3>♻️ Wipe all projects (keeps settings)</h3>
-   <pre>sudo drongo reset</pre>
-   <h3>📦 Install requested packages</h3>
-   <pre>sudo bash {{ hp.base }}/pkg-installer.sh</pre>
-   <h3>🕹️ Z80 / Amstrad toolchain · 🖼️ local image gen</h3>
-   <pre>sudo {{ hp.code }}/system/retro-toolchain.sh
+  <div class=pagehead><div><h2>Help</h2><div class=sub>SSH &amp; admin cheat sheet — where things live and the handful of commands you may need. Nearly all of this is also on the Control tab, no SSH required.</div></div></div>
+  <div class=dash>
+   <div class="tile c6 help"><div class=th>Edit &amp; deploy</div>
+    <h3>✏️ Edit your API keys / secrets</h3>
+    <pre>sudo nano {{ hp.env }}</pre>
+    <p class=meta>API keys, Discord webhook &amp; the dashboard password live here. (Or just use Control → Settings.) After editing, restart.</p>
+    <h3>⚙️ Edit config (model, limits, etc.)</h3>
+    <pre>sudo nano {{ hp.cfg }}</pre>
+    <h3>🔄 Restart after a change</h3>
+    <pre>sudo systemctl restart drongo drongo-web</pre>
+    <h3>⬆️ Pull &amp; deploy the latest code</h3>
+    <pre>cd ~/drongo &amp;&amp; git pull &amp;&amp; sudo ./update.sh</pre>
+   </div>
+   <div class="tile c6 help"><div class=th>Diagnose &amp; maintain</div>
+    <h3>🩺 Health check</h3>
+    <pre>sudo drongo doctor</pre>
+    <h3>📜 Watch it live</h3>
+    <pre>journalctl -u drongo -f</pre>
+    <h3>♻️ Wipe all projects (keeps settings)</h3>
+    <pre>sudo drongo reset</pre>
+    <h3>📦 Install requested packages</h3>
+    <pre>sudo bash {{ hp.base }}/pkg-installer.sh</pre>
+    <h3>🕹️ Z80 / Amstrad toolchain · 🖼️ local image gen</h3>
+    <pre>sudo {{ hp.code }}/system/retro-toolchain.sh
 sudo {{ hp.code }}/system/image-gen.sh</pre>
-   <h3>📁 Where things live</h3>
-   <table class=usaget>
-    <tr><th>what</th><th>path</th></tr>
-    <tr><td>secrets / API keys</td><td>{{ hp.env }}</td></tr>
-    <tr><td>config</td><td>{{ hp.cfg }}</td></tr>
-    <tr><td>code (read-only)</td><td>{{ hp.code }}</td></tr>
-    <tr><td>workspace (projects, images)</td><td>{{ hp.ws }}</td></tr>
-    <tr><td>runtime / state</td><td>{{ hp.base }}</td></tr>
-   </table>
-   <p class=meta>Pause/Stop/Restart and all settings are also on the Control tab — no SSH needed for most of it.</p>
+   </div>
+   <div class="tile c12 help"><div class=th>📁 Where things live</div>
+    <table class=usaget>
+     <tr><th>what</th><th>path</th></tr>
+     <tr><td>secrets / API keys</td><td>{{ hp.env }}</td></tr>
+     <tr><td>config</td><td>{{ hp.cfg }}</td></tr>
+     <tr><td>code (read-only)</td><td>{{ hp.code }}</td></tr>
+     <tr><td>workspace (projects, images)</td><td>{{ hp.ws }}</td></tr>
+     <tr><td>runtime / state</td><td>{{ hp.base }}</td></tr>
+    </table>
+    <p class=meta>Pause/Stop/Restart and all settings are also on the Control tab — no SSH needed for most of it.</p>
+   </div>
   </div>
  </section>
 </main>
@@ -669,6 +743,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
  const $=s=>document.querySelector(s);
  function showTab(t){
    document.querySelectorAll('.sbitem').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+   document.querySelectorAll('.navwrap').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
    const sb=document.getElementById('sidebar'); if(sb)sb.classList.remove('open');  // close on mobile
    history.replaceState(null,'','#'+t);
@@ -677,6 +752,16 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    if(t==='brain')loadBrain();
    if(t==='chat'){loadChat();const m=$('#chatmsg');if(m)m.focus();}
    if(t==='home')loadUsageGraph();
+ }
+ function goTo(tab,sec){                         // sidebar deep-link: switch tab + scroll to a section
+   showTab(tab);
+   requestAnimationFrame(()=>{
+     const el=document.getElementById(sec); if(!el)return;
+     let p=el.classList.contains('panel')?el:el.closest('.panel');   // open any collapsed ancestor panels
+     while(p){p.classList.add('open');p=p.parentElement?p.parentElement.closest('.panel'):null;}
+     el.scrollIntoView({behavior:'smooth',block:'start'});
+     el.classList.remove('tgtflash');void el.offsetWidth;el.classList.add('tgtflash');
+   });
  }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}

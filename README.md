@@ -250,8 +250,10 @@ sudo drongo doctor
 
 Most of this is now in the **dashboard** at `http://<pi-ip>:8080/` (password-protected,
 LAN-only). A modern **left sidebar** groups the pages (Overview · Workspace · Brain ·
-System), a top status bar shows live/heartbeat state, and every page uses the full
-screen width (the sidebar collapses to a hamburger on phones):
+System) and expands **deep-link sub-items** for the active page — jump straight to
+*Knowledge base*, *MCP servers*, *Install policy*, *Settings*, etc. A top status bar
+shows live/heartbeat state, and every page is laid out on a full-width grid (the
+sidebar collapses to a hamburger on phones):
 
 - **Home** — current activity, what it's working on, live host stats, the **LLM-usage
   table** (per-provider **calls · tokens in · tokens out · total**, with a **TOTAL row**),
