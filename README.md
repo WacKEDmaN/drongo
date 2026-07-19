@@ -72,6 +72,7 @@ can also hand-edit `/etc/drongo/drongo.env` — see [Alerts](#alerts--discord-or
 | Builds games / dashboards | HTML/JS written to the workspace, served by the dashboard |
 | Senses its hardware | Scans i2c/spi/1-wire/thermals/USB/cameras, builds dashboards |
 | Learns from its work | Indexes its own repo + past projects, auto-harvests reusable skills, retrieves relevant knowledge (RAG), downloads skill packs, and curates a fine-tuning dataset |
+| Uses YOUR docs as truth | Upload reference docs (API/specs/datasheets) — indexed with FTS5 and searched/injected when it builds, so it stops guessing |
 | Talk to it & steer it | A **Chat** tab — ask what it's doing or tell it what to build next, any time (even mid-project); teaching it facts saves them to memory |
 | Shows its token usage | Per-provider tokens (in/out) + totals, charted live, with the latest call's count by the thinking stream |
 | Installs its own packages | Requests apt packages; a scoped root helper installs the ones you allow (policy + hard allow-list) |
@@ -298,6 +299,23 @@ LAN-only):
 
 The agent only pushes an alert when it finishes something with artifacts (set
 `alerts.notify_every_cycle: true` for a ping every cycle).
+
+---
+
+## Reference docs — your source of truth (RAG)
+
+Upload documentation the agent should treat as **authoritative** — API references,
+datasheets, hardware specs, your own notes — on the **Brain** tab (or scp a folder
+into `runtime/docs/`). Text is chunked and indexed with **SQLite FTS5** (BM25
+ranking, no embeddings/torch, so it's light on the Pi). The agent then:
+
+- **searches these before guessing** (a `search_docs` tool), and
+- gets the most relevant passages **injected into the build context** when it starts
+  a related project, marked as the source of truth.
+
+Manage it all from the browser — upload (`.md/.txt/.py/.html/.json/.csv/…`; binaries
+skipped), list, delete, and a live search box to test retrieval. Uploads are capped
+at 32 MB to spare the SD card.
 
 ---
 
