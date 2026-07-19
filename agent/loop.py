@@ -260,6 +260,12 @@ class AgentLoop:
         except Exception as e:
             self.docs = None
             log.warning("doc store unavailable: %s", e)
+        try:
+            from .mcp_client import MCPManager
+            self.mcp = MCPManager(mem.recall("mcp_servers") or [])
+        except Exception as e:
+            self.mcp = None
+            log.warning("mcp manager unavailable: %s", e)
 
     # ---- ideation ------------------------------------------------------
     def ideate(self, suggestion: str = "") -> dict:
@@ -707,7 +713,7 @@ class AgentLoop:
         t0 = time.time()
         ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
                                 alerter=self.alerter, log=log, safe_mode=self.safe_mode,
-                                docs=self.docs)
+                                docs=self.docs, mcp=self.mcp)
         max_attempts = self.cfg.get("loop", "max_resume_attempts", default=8)
         self._scan_hardware()                           # react to anything newly plugged in
         self._janitor()                                 # tidy up junk + empty folders
@@ -870,6 +876,11 @@ class AgentLoop:
                     log.info("indexed %d passages from uploaded reference docs", n)
             except Exception as e:
                 log.warning("doc index failed: %s", e)
+        if self.mcp and self.mcp.servers:   # connect configured MCP tool servers
+            try:
+                self.mcp.connect_all(log=log)
+            except Exception as e:
+                log.warning("mcp connect failed: %s", e)
         watchdog.notify_ready()
         watchdog.heartbeat(self.cfg, force=True)
 
@@ -894,6 +905,8 @@ class AgentLoop:
         finally:
             # Whatever happens, if we got here via a planned path, record it.
             watchdog.mark_clean_exit(self.cfg)
+            if self.mcp:
+                self.mcp.close()          # stop any MCP server subprocesses
 
     def _ensure_project_venv(self):
         """Create the agent's writable project venv if missing, so it can

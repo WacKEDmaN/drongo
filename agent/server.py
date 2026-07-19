@@ -354,6 +354,23 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <div id=docresults class=meta style="margin-top:8px"></div>
    <div id=docwrap class=meta style="margin-top:8px">loading…</div>
   </div>
+  <h2>🔌 MCP tool servers <span class=meta>— give it external tools (filesystem, GitHub, web, DBs…)</span></h2>
+  <div class="card">
+   <p class=meta>Connect <a href="https://modelcontextprotocol.io" target=_blank>Model Context Protocol</a> servers; their tools become <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> the agent can call. <b>stdio</b> launches a command (e.g. <code>npx&nbsp;-y&nbsp;@modelcontextprotocol/server-filesystem&nbsp;/path</code> — needs Node); <b>http</b> connects to a URL. They run in the agent's sandbox (no sudo) and take effect on <b>restart</b>. Test before you rely on one.</p>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id=mcpname class=set placeholder="name (e.g. fs)" style="max-width:130px;display:inline-block">
+    <select id=mcptransport class=set style="width:auto;display:inline-block" onchange="mcpFormMode()"><option value=stdio>stdio (command)</option><option value=http>http (url)</option></select>
+   </div>
+   <div id=mcpstdio style="margin-top:6px">
+    <input id=mcpcmd class=set placeholder="command (e.g. npx)" style="max-width:200px;display:inline-block;margin-right:6px">
+    <input id=mcpargs class=set placeholder="args (e.g. -y @modelcontextprotocol/server-filesystem /var/lib/drongo/runtime/workspace)" style="max-width:520px;display:inline-block">
+   </div>
+   <div id=mcphttp style="margin-top:6px;display:none">
+    <input id=mcpurl class=set placeholder="https://…/mcp" style="max-width:420px;display:inline-block">
+   </div>
+   <div style="margin-top:8px"><button class=act onclick="mcpAdd()">+ add server</button></div>
+   <div id=mcpwrap class=meta style="margin-top:10px">loading…</div>
+  </div>
   <div class="card">
    <div class=th>Import a skill</div>
    <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL to download from. Imported code is stored, never auto-run.</p>
@@ -816,7 +833,34 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';});
    loadMemory();loadDocs();}
  function loadDocs(){const w=$('#docwrap');if(!w)return;
-   fetch('/api/docs').then(r=>r.json()).then(renderDocs).catch(()=>{w.textContent='error';});}
+   fetch('/api/docs').then(r=>r.json()).then(renderDocs).catch(()=>{w.textContent='error';});
+   loadMcp();}
+ function mcpFormMode(){const t=($('#mcptransport')||{}).value;
+   const s=$('#mcpstdio'),h=$('#mcphttp');if(s)s.style.display=t==='http'?'none':'block';if(h)h.style.display=t==='http'?'block':'none';}
+ function loadMcp(){const w=$('#mcpwrap');if(!w)return;
+   fetch('/api/mcp').then(r=>r.json()).then(d=>renderMcp(d.servers||[])).catch(()=>{w.textContent='error';});}
+ function renderMcp(servers){const w=$('#mcpwrap');if(!w)return;w.replaceChildren();
+   if(!servers.length){w.textContent='No MCP servers yet — add one above.';return;}
+   servers.forEach(s=>{const row=document.createElement('div');row.className='pkgrow';
+     const nm=document.createElement('span');nm.className='pkgname';nm.textContent=s.name;
+     const dt=document.createElement('span');dt.className='meta';dt.style.flex='1';
+     dt.textContent=s.transport==='http'?s.url:((s.command||'')+' '+((s.args||[]).join(' ')));
+     const en=document.createElement('button');en.className='act';en.textContent=s.enabled!==false?'on':'off';
+     en.onclick=()=>fetch('/control/mcp_toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:s.name,on:s.enabled===false})}).then(()=>loadMcp());
+     const test=document.createElement('button');test.className='act';test.textContent='test';
+     test.onclick=()=>{test.textContent='…';fetch('/control/mcp_test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:s.name})}).then(r=>r.json()).then(d=>{
+       if(d.ok){toast(s.name+': '+(d.tools||[]).length+' tool(s)');$('#modaltitle').textContent='🔌 '+s.name+' — tools';$('#modalout').textContent=(d.tools||[]).map(t=>'• '+t.name+(t.description?'  — '+t.description:'')).join('\\n')||'(no tools)';$('#fixbtn').style.display='none';$('#modal').classList.add('show');}
+       else toast(s.name+' failed: '+(d.error||''));}).catch(()=>toast('test failed')).finally(()=>{test.textContent='test';});};
+     const del=document.createElement('button');del.className='act danger';del.textContent='remove';
+     del.onclick=()=>{if(confirm('Remove MCP server '+s.name+'?'))fetch('/control/mcp_remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:s.name})}).then(()=>{toast('removed');loadMcp();});};
+     row.append(nm,dt,en,test,del);w.appendChild(row);});
+   const note=document.createElement('div');note.className='meta';note.style.marginTop='8px';note.textContent='Added/changed servers take effect after: sudo systemctl restart drongo (or the dashboard Restart).';w.appendChild(note);}
+ function mcpAdd(){const t=($('#mcptransport')||{}).value;
+   const body={name:($('#mcpname').value||'').trim(),transport:t};
+   if(t==='http')body.url=($('#mcpurl').value||'').trim();
+   else{body.command=($('#mcpcmd').value||'').trim();body.args=($('#mcpargs').value||'').trim();}
+   fetch('/control/mcp_add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+   .then(r=>r.json()).then(d=>{if(d.ok){toast('added '+d.name+' — restart to use its tools');$('#mcpname').value='';$('#mcpcmd').value='';$('#mcpargs').value='';$('#mcpurl').value='';loadMcp();}else toast(d.error||'failed');});}
  function renderDocs(d){const w=$('#docwrap');if(!w)return;w.replaceChildren();
    const docs=d.documents||[];const cnt=d.count||{};
    $('#doccount').textContent='('+(cnt.documents||0)+' docs · '+(cnt.chunks||0)+' passages'+(d.fts?', BM25':', keyword')+')';
@@ -1459,6 +1503,69 @@ def create_app(cfg, mem: Memory) -> Flask:
     def api_doc_search():
         q = (request.args.get("q") or "").strip()
         return {"ok": True, "hits": (docstore.search(q, k=6) if (docstore and q) else [])}
+
+    @app.route("/api/mcp")
+    def api_mcp():
+        return {"ok": True, "servers": mem.recall("mcp_servers") or []}
+
+    @app.route("/control/mcp_add", methods=["POST"])
+    def control_mcp_add():
+        # Configure an external MCP tool server. It's launched inside the agent's
+        # OWN sandbox (no sudo, ProtectSystem) — no more privileged than `shell`.
+        d = request.get_json(silent=True) or {}
+        name = re.sub(r"[^a-z0-9_-]", "", (d.get("name") or "").strip().lower())[:30]
+        if not name:
+            return {"ok": False, "error": "need a name (a-z 0-9 _ -)"}, 400
+        transport = "http" if d.get("transport") == "http" else "stdio"
+        spec = {"name": name, "transport": transport, "enabled": True}
+        if transport == "http":
+            url = (d.get("url") or "").strip()
+            if not url.startswith(("http://", "https://")):
+                return {"ok": False, "error": "http server needs an http(s) url"}, 400
+            spec["url"] = url
+        else:
+            cmd = (d.get("command") or "").strip()
+            if not cmd:
+                return {"ok": False, "error": "stdio server needs a command (e.g. npx)"}, 400
+            spec["command"] = cmd
+            a = d.get("args")
+            spec["args"] = ([x for x in a.split() if x] if isinstance(a, str)
+                            else [str(x) for x in (a or [])])
+        if isinstance(d.get("env"), dict):
+            spec["env"] = {str(k): str(v) for k, v in d["env"].items() if v}
+        servers = [s for s in (mem.recall("mcp_servers") or []) if s.get("name") != name]
+        servers.append(spec)
+        mem.remember("mcp_servers", servers)
+        log.info("MCP server configured: %s (%s)", name, transport)
+        return {"ok": True, "name": name}
+
+    @app.route("/control/mcp_remove", methods=["POST"])
+    def control_mcp_remove():
+        name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+        mem.remember("mcp_servers", [s for s in (mem.recall("mcp_servers") or [])
+                                     if s.get("name") != name])
+        return {"ok": True}
+
+    @app.route("/control/mcp_toggle", methods=["POST"])
+    def control_mcp_toggle():
+        d = request.get_json(silent=True) or {}
+        name, on = (d.get("name") or "").strip(), bool(d.get("on"))
+        servers = mem.recall("mcp_servers") or []
+        for s in servers:
+            if s.get("name") == name:
+                s["enabled"] = on
+        mem.remember("mcp_servers", servers)
+        return {"ok": True}
+
+    @app.route("/control/mcp_test", methods=["POST"])
+    def control_mcp_test():
+        # Connect once and report the tools it exposes (or the error).
+        name = ((request.get_json(silent=True) or {}).get("name") or "").strip()
+        spec = next((s for s in (mem.recall("mcp_servers") or []) if s.get("name") == name), None)
+        if not spec:
+            return {"ok": False, "error": "no such server"}, 404
+        from .mcp_client import probe_server
+        return probe_server(dict(spec, enabled=True))
 
     @app.route("/api/memory")
     def api_memory():

@@ -41,6 +41,7 @@ class ToolContext:
     artifacts: list = field(default_factory=list)  # collected per cycle
     project_dir: str = ""    # e.g. "projects/snake-game" — bare writes land here
     docs: object = None      # DocStore: uploaded reference docs (RAG source of truth)
+    mcp: object = None       # MCPManager: external MCP tool servers
 
     @property
     def workspace(self):
@@ -91,6 +92,16 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
         }.get(nm, nm)
         if t.get(section, {}).get("enabled", True):
             enabled[nm] = tl
+    # External MCP server tools (namespaced mcp__<server>__<tool>). Skipped in
+    # SAFE MODE — they run external code, like shell.
+    if getattr(ctx, "mcp", None) and not ctx.safe_mode:
+        for mt in ctx.mcp.tools():
+            full = mt["full"]
+            desc = (mt.get("description") or "").strip().replace("\n", " ")[:200]
+            props = ((mt.get("schema") or {}).get("properties") or {})
+            enabled[full] = Tool(full, f"[MCP:{mt['server']}] {desc or 'tool'}",
+                                 ", ".join(list(props)[:8]),
+                                 (lambda ctx, __f=full, **a: ctx.mcp.call(__f, a)))
     return enabled
 
 
