@@ -863,6 +863,13 @@ class AgentLoop:
         self.safe_reason = start["reason"]
         self.mem.remember("safe_mode", self.safe_mode)
         self.mem.clear_cooldowns()   # fresh start: re-try every provider now
+        try:                         # seed starter skills/notes/lessons (once, idempotent)
+            from . import bootstrap
+            n = bootstrap.seed(self.mem)
+            if n:
+                log.info("bootstrapped %d starter skills + notes/lessons", n)
+        except Exception as e:
+            log.warning("bootstrap seed failed: %s", e)
         self._ensure_project_venv()
         try:                         # index my own code/docs into the knowledge base
             n = self.mem.index_repo(PROJECT_ROOT)
