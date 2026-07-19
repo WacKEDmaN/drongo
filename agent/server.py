@@ -198,6 +198,14 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .cmsg.bot{align-self:flex-start;background:#05090d;border:1px solid var(--bd2);color:#cfe6db}
  .chatbar{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
  .chatbar textarea{flex:1;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:9px;padding:9px 11px;font:13px var(--mono);resize:vertical}
+ .cmsg .ccode{background:#03060a;border:1px solid var(--bd);border-radius:7px;padding:8px 10px;margin:6px 0;overflow-x:auto;white-space:pre;font:12px/1.5 var(--mono);color:#bfe9d6}
+ .cmsg code{font:12px var(--mono);background:rgba(var(--ac2-rgb),.12);color:var(--ac2);padding:1px 5px;border-radius:4px}
+ .cfoot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px}
+ .cbtn{font:10.5px var(--mono);background:transparent;color:var(--mut);border:1px solid var(--bd2);border-radius:5px;padding:2px 7px;cursor:pointer}
+ .cbtn:hover{color:var(--ac);border-color:var(--ac)}
+ .memrow{display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--bd);font:12.5px var(--mono)}
+ .memrow:last-child{border:0} .memrow .mk{color:var(--ac2);cursor:pointer;flex:none;min-width:140px} .memrow .mk:hover{color:var(--ac)}
+ .memrow .mp{flex:1;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style></head><body>
 <header>
  <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
@@ -237,9 +245,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    <div class="tile c12"><div class=th>Token usage by provider <span class=meta id=toktotal></span><span class=meta style="float:right">▮ in · ▮ out</span></div>
      <div id=tokchart class=tokchart>loading…</div></div>
 
-   <div class="tile c12"><div class=th>Live thinking <span class=meta id=lastllm style="float:right"></span></div>
-     <div id=think class=think>idle…</div></div>
-
    <div class="tile c12"><div class=th>Recent activity</div>
      <div id=homelist class=evlist>
      {% for j in journal %}
@@ -252,6 +257,12 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  <section id=chat class="tab">
   <h2>💬 Chat — ask DRONGO anything, or steer it</h2>
   <div class="card">
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <span class=meta>answer with:</span>
+    <select id=chatprov class=set style="width:auto;max-width:180px;display:inline-block;margin:0"><option value="">auto (router order)</option></select>
+    <button class=act onclick="regenChat()" title="re-ask the last question">↻ regenerate</button>
+    <button class="act danger" onclick="clearChat()" title="wipe the conversation">🗑 clear</button>
+   </div>
    <div id=chatlog class=chatlog>loading…</div>
    <div class=chatbar>
     <textarea id=chatmsg rows=2 placeholder="Ask a question, or tell it what to build next… (Enter to send, Shift+Enter for a newline)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
@@ -259,6 +270,8 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
    </div>
    <p class=meta>Answered here instantly — even while it's building. Tell it "build X next" or "focus on Y" and it queues that for its loop; teach it a fact and it remembers.</p>
   </div>
+  <div class="card"><div class=th>🧠 Live thinking — what the agent is doing right now <span class=meta id=lastllm style="float:right"></span></div>
+   <div id=think class=think>idle…</div></div>
  </section>
 
  <section id=projects class="tab">
@@ -342,6 +355,11 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <div class="card"><div id=notewrap class=meta>loading…</div></div>
   <h2>Lessons learned</h2>
   <div class="card"><div id=lessonwrap class=meta>loading…</div></div>
+  <h2>Raw memory <span class=meta id=memcount>— every key in its long-term store</span></h2>
+  <div class="card">
+   <p class=meta>Everything in the agent's key/value memory (state, settings, learned data). Click a key to inspect the full value; delete what you want it to forget. <b>settings</b> is protected here — edit it via Control → Settings.</p>
+   <div id=memwrap class=meta>loading…</div>
+  </div>
  </section>
 
  <section id=control class="tab">
@@ -782,7 +800,28 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      $('#modalout').textContent='Run this on the Pi:\\n\\n  sudo bash '+d.path+'\\n\\n--- script ---\\n'+d.script;
      $('#fixbtn').style.display='none';$('#modal').classList.add('show');});}
  function loadBrain(){const w=$('#skillwrap');if(!w)return;
-   fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';});}
+   fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';});
+   loadMemory();}
+ function loadMemory(){const w=$('#memwrap');if(!w)return;
+   fetch('/api/memory').then(r=>r.json()).then(d=>renderMemory(d.keys||[])).catch(()=>{w.textContent='error';});}
+ function renderMemory(keys){const w=$('#memwrap');if(!w)return;w.replaceChildren();
+   $('#memcount').textContent='('+keys.length+' keys)';
+   if(!keys.length){w.textContent='(empty)';return;}
+   keys.forEach(k=>{const row=document.createElement('div');row.className='memrow';
+     const mk=document.createElement('span');mk.className='mk';mk.textContent=k.key;mk.title='view value';
+     mk.onclick=()=>viewMemory(k.key);
+     const mp=document.createElement('span');mp.className='mp';mp.textContent=k.preview||'';
+     const sz=document.createElement('span');sz.className='meta';sz.textContent=fmtSize(k.size||0);
+     const del=document.createElement('button');del.className='cbtn';del.textContent='✕';del.title='delete this key';
+     if(k.key==='settings'){del.disabled=true;del.title='protected — edit via Control → Settings';}
+     else del.onclick=()=>{if(confirm('Forget \"'+k.key+'\"? The agent loses this state/knowledge.'))
+       fetch('/control/memory_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k.key})})
+       .then(r=>r.json()).then(d=>{toast(d.ok?'forgotten':'failed: '+(d.error||''));loadMemory();});};
+     row.append(mk,mp,sz,del);w.appendChild(row);});}
+ function viewMemory(key){$('#modaltitle').textContent='🧠 memory: '+key;$('#modalout').textContent='loading…';
+   $('#fixbtn').style.display='none';$('#modal').classList.add('show');
+   fetch('/api/memory/'+encodeURIComponent(key)).then(r=>r.json())
+   .then(d=>{$('#modalout').textContent=d.ok?d.value:(d.error||'error');}).catch(()=>{$('#modalout').textContent='error';});}
  function renderBrain(d){
    const kb=$('#kbsummary');
    if(kb){kb.replaceChildren();
@@ -939,20 +978,52 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      bar.append(bin,bout);
      const val=document.createElement('span');val.className='tokval';val.textContent=fmtTok(r.tot);
      row.append(lab,bar,val);w.appendChild(row);});}
+ // Markdown-lite for bot replies. SAFE: escape ALL html first, then re-insert a
+ // whitelist of tags (code fences, inline code, bold) — nothing else survives.
+ function mdlite(s){let x=esc(s||'');
+   x=x.replace(/```([a-z0-9+-]*)\\n?([\\s\\S]*?)```/g,(m,l,c)=>'<pre class=ccode>'+c.replace(/\\n$/,'')+'</pre>');
+   x=x.replace(/`([^`\\n]+)`/g,'<code>$1</code>');
+   x=x.replace(/\\*\\*([^*\\n]+)\\*\\*/g,'<b>$1</b>');
+   return x.replace(/\\n/g,'<br>');}
+ function chatCaption(m){const bits=[];
+   if(m.provider)bits.push(m.provider);
+   if(m.tin||m.tout)bits.push(fmtTok(m.tin)+'→'+fmtTok(m.tout)+' tok');
+   return bits.join(' · ');}
+ function botBubble(content,cap){const wrap=document.createElement('div');wrap.className='cmsg bot';
+   const body=document.createElement('div');body.innerHTML=mdlite(content);wrap.appendChild(body);
+   const foot=document.createElement('div');foot.className='cfoot';
+   const capEl=document.createElement('span');capEl.className='meta';capEl.textContent=cap||'';foot.appendChild(capEl);
+   const cp=document.createElement('button');cp.className='cbtn';cp.textContent='⧉ copy';cp.title='copy reply';
+   cp.onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(content).then(()=>toast('copied'));};
+   foot.appendChild(cp);wrap.appendChild(foot);return wrap;}
+ let _lastUserMsg='';
  function loadChat(){const w=$('#chatlog');if(!w)return;
-   fetch('/api/chat').then(r=>r.json()).then(d=>renderChat(d.history||[])).catch(()=>{w.textContent='error';});}
+   fetch('/api/chat').then(r=>r.json()).then(d=>{renderChat(d.history||[]);
+     const sel=$('#chatprov');if(sel&&d.providers){const cur=sel.value;sel.replaceChildren();
+       const auto=document.createElement('option');auto.value='';auto.textContent='auto (router order)';sel.appendChild(auto);
+       d.providers.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sel.appendChild(o);});
+       sel.value=cur&&d.providers.includes(cur)?cur:'';}
+   }).catch(()=>{w.textContent='error';});}
  function renderChat(h){const w=$('#chatlog');if(!w)return;w.replaceChildren();
    if(!h.length){const p=document.createElement('div');p.className='meta';p.textContent='Say hi 👋 — ask it what it is doing, or tell it what to build next.';w.appendChild(p);}
-   h.forEach(m=>{const b=document.createElement('div');b.className='cmsg '+(m.role==='user'?'user':'bot');b.textContent=m.content;w.appendChild(b);});
+   h.forEach(m=>{if(m.role==='user'){_lastUserMsg=m.content;
+       const b=document.createElement('div');b.className='cmsg user';b.textContent=m.content;w.appendChild(b);}
+     else w.appendChild(botBubble(m.content,chatCaption(m)));});
    w.scrollTop=w.scrollHeight;}
- function sendChat(){const t=$('#chatmsg');const msg=(t.value||'').trim();if(!msg)return;
+ function sendChat(msgOverride){const t=$('#chatmsg');const msg=(msgOverride||t.value||'').trim();if(!msg)return;
+   _lastUserMsg=msg;
    const w=$('#chatlog');const ub=document.createElement('div');ub.className='cmsg user';ub.textContent=msg;w.appendChild(ub);
    const pend=document.createElement('div');pend.className='cmsg bot';pend.textContent='…';w.appendChild(pend);w.scrollTop=w.scrollHeight;
-   t.value='';const btn=$('#chatsend');btn.disabled=true;
-   fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})})
-   .then(r=>r.json()).then(d=>{pend.textContent=d.reply||d.error||'(no reply)';
+   if(!msgOverride)t.value='';const btn=$('#chatsend');btn.disabled=true;
+   const prov=($('#chatprov')||{}).value||'';
+   fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,provider:prov})})
+   .then(r=>r.json()).then(d=>{
+     w.replaceChild(botBubble(d.reply||d.error||'(no reply)',chatCaption(d)),pend);
      if(d.applied&&d.applied.length){const n=document.createElement('div');n.className='meta';n.style.alignSelf='flex-start';n.textContent='✓ '+d.applied.join('; ');w.appendChild(n);}
      w.scrollTop=w.scrollHeight;}).catch(()=>{pend.textContent='(error reaching the agent)';}).finally(()=>{btn.disabled=false;});}
+ function regenChat(){if(!_lastUserMsg){toast('nothing to regenerate');return;}sendChat(_lastUserMsg);}
+ function clearChat(){if(!confirm('Wipe the whole conversation?'))return;
+   fetch('/control/chat_clear',{method:'POST'}).then(r=>r.json()).then(()=>{toast('chat cleared');loadChat();});}
  function renderThink(steps){const el=$('#think');if(!el)return;
    const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
    el.replaceChildren();
@@ -1258,7 +1329,52 @@ def create_app(cfg, mem: Memory) -> Flask:
 
     @app.route("/api/chat")
     def api_chat():
-        return {"ok": True, "history": mem.chat_history(40)}
+        provs = chat_router.provider_names() if chat_router else []
+        return {"ok": True, "history": mem.chat_history(40), "providers": provs}
+
+    @app.route("/control/chat_clear", methods=["POST"])
+    def control_chat_clear():
+        mem.remember("chat", [])
+        return {"ok": True}
+
+    @app.route("/api/memory")
+    def api_memory():
+        out = []
+        for e in mem.all_kv():
+            val = e.get("value")
+            try:
+                preview = val if isinstance(val, str) else json.dumps(val)
+            except Exception:
+                preview = str(val)
+            out.append({"key": e["key"], "preview": (preview or "")[:160],
+                        "size": len(preview or ""), "ts": e.get("ts")})
+        return {"ok": True, "keys": out}
+
+    @app.route("/api/memory/<path:key>")
+    def api_memory_key(key):
+        val = mem.recall(key)
+        if val is None:
+            return {"ok": False, "error": "no such key"}, 404
+        # Don't hand secrets to the browser: settings.env holds API keys.
+        if key == "settings" and isinstance(val, dict):
+            val = dict(val)
+            val["env"] = {k: "•••" for k in (val.get("env") or {})}
+        try:
+            body = json.dumps(val, indent=2, default=str, ensure_ascii=False)
+        except Exception:
+            body = str(val)
+        return {"ok": True, "key": key, "value": body[:20000]}
+
+    @app.route("/control/memory_delete", methods=["POST"])
+    def control_memory_delete():
+        key = ((request.get_json(silent=True) or {}).get("key") or "").strip()
+        if not key:
+            return {"ok": False, "error": "no key"}, 400
+        if key == "settings":
+            return {"ok": False, "error": "settings is protected — change it in Control → Settings"}, 400
+        mem.forget(key)
+        log.info("memory key '%s' deleted via dashboard", key)
+        return {"ok": True}
 
     @app.route("/chat", methods=["POST"])
     def chat():
@@ -1267,8 +1383,10 @@ def create_app(cfg, mem: Memory) -> Flask:
         # next project / mission / a learned note, which the loop then picks up.
         d = request.get_json(silent=True) or {}
         msg = (d.get("message") or "").strip()[:2000]
+        pin = (d.get("provider") or "").strip() or None      # picker: force one provider
         if not msg:
             return {"ok": False, "error": "empty message"}, 400
+        prior = mem.chat_history(12)                          # BEFORE adding this msg
         mem.add_chat("user", msg)
         if chat_router is None or not chat_router.provider_names():
             reply = "I've no LLM provider configured yet — add a key in Control → Settings."
@@ -1294,14 +1412,23 @@ def create_app(cfg, mem: Memory) -> Flask:
             lines.append("(Relevant from your knowledge base:\n"
                          + "\n".join(f"- [{x['kind']}] {x['title']}: {x['text']}" for x in kb) + ")")
         user = ("\n".join(lines) + "\n\n" if lines else "") + "Human: " + msg
+        # PROPER multi-turn: replay the recent conversation so it remembers what
+        # you talked about, not just the latest message.
+        messages = [{"role": "system", "content": system}]
+        for m in prior:
+            if m.get("role") in ("user", "assistant") and m.get("content"):
+                messages.append({"role": m["role"], "content": m["content"][:1500]})
+        messages.append({"role": "user", "content": user})
         try:
             from .loop import extract_json
-            text, _prov = chat_router.complete(system, user, temperature=0.5, max_tokens=700)
+            text, prov = chat_router.chat(messages, temperature=0.5, max_tokens=700, only=pin)
             obj = extract_json(text) or {}
         except Exception as e:
             reply = f"(couldn't reach a model right now: {e})"
             mem.add_chat("assistant", reply)
             return {"ok": True, "reply": reply, "applied": []}
+        usage = getattr(chat_router, "last_usage", None) or {}
+        tin, tout = usage.get("in", 0), usage.get("out", 0)
         reply = (obj.get("reply") or text or "").strip() or "(no reply)"
         applied = []
         if obj.get("next_project"):
@@ -1310,8 +1437,10 @@ def create_app(cfg, mem: Memory) -> Flask:
             mem.set_mission(str(obj["mission"])[:400]); applied.append("updated my standing mission")
         if obj.get("learned"):
             mem.add_note("from chat", str(obj["learned"])[:1000]); applied.append("saved that to memory")
-        mem.add_chat("assistant", reply + (("\n\n_(" + "; ".join(applied) + ")_") if applied else ""))
-        return {"ok": True, "reply": reply, "applied": applied}
+        mem.add_chat("assistant", reply + (("\n\n_(" + "; ".join(applied) + ")_") if applied else ""),
+                     provider=prov, tin=tin, tout=tout)
+        return {"ok": True, "reply": reply, "applied": applied,
+                "provider": prov, "tin": tin, "tout": tout}
 
     @app.route("/api/usage_graph")
     def api_usage_graph():

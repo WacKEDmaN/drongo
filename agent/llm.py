@@ -208,8 +208,9 @@ class Router:
             return 300         # other client error: may clear as context shrinks
         return 60              # 5xx / transient
 
-    def chat(self, messages, *, temperature=None, max_tokens=None):
-        """Return (text, provider_name). Raises AllProvidersFailed."""
+    def chat(self, messages, *, temperature=None, max_tokens=None, only=None):
+        """Return (text, provider_name). Raises AllProvidersFailed.
+        `only` pins the call to that provider name (the dashboard chat's picker)."""
         temperature = self.temperature if temperature is None else temperature
         max_tokens = max_tokens or self.max_tokens
         # Throttle: keep at least min_interval between calls.
@@ -221,6 +222,8 @@ class Router:
         errors = []
         manual_off = set(self.mem.providers_off())             # dashboard kill-switches (live)
         for p in self.providers:
+            if only and p.name != only:                        # pinned to one provider
+                continue
             if p.name in manual_off:                           # turned off from the dashboard
                 continue
             if not p.is_local and not self.mem.can_use(p.name, p.rpm_limit, p.daily_limit):
@@ -233,6 +236,7 @@ class Router:
                 self.mem.record_use(p.name, usage.get("in", 0), usage.get("out", 0))
                 self.mem.remember("last_llm", {"provider": p.name, "in": usage.get("in", 0),
                                                "out": usage.get("out", 0), "ts": time.time()})
+                self.last_usage = {"provider": p.name, **usage}   # race-free within this process
                 return text, p.name
             except RateLimited as e:
                 # Honour the PROVIDER's own Retry-After; nothing arbitrary.

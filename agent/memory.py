@@ -496,6 +496,12 @@ class Memory:
         except Exception:
             return row["value"]
 
+    def forget(self, key) -> bool:
+        """Remove a key from the kv store entirely (the dashboard memory browser)."""
+        cur = self._conn.execute("DELETE FROM kv WHERE key=?", (key,))
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def all_kv(self):
         rows = self._conn.execute("SELECT key,value,ts FROM kv ORDER BY ts DESC").fetchall()
         out = []
@@ -564,10 +570,13 @@ class Memory:
         return [dict(r) for r in rows]
 
     # ---- chat with the human (dashboard Chat tab) ---------------------
-    def add_chat(self, role, content):
+    def add_chat(self, role, content, provider="", tin=0, tout=0):
         v = self.recall("chat")
         v = v if isinstance(v, list) else []
-        v.append({"role": role, "content": str(content or "")[:4000], "ts": time.time()})
+        m = {"role": role, "content": str(content or "")[:4000], "ts": time.time()}
+        if provider:
+            m.update({"provider": provider, "tin": int(tin or 0), "tout": int(tout or 0)})
+        v.append(m)
         self.remember("chat", v[-60:])
 
     def chat_history(self, limit=40):
