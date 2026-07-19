@@ -485,6 +485,7 @@ sudo drongo doctor
 | "pip: permission denied" / can't install packages | It needs its writable venv at `/var/lib/drongo/runtime/venv`. `sudo ./update.sh` (or a restart) creates it; after that `pip install …` and `python …` in its shell use that venv automatically. Native packages (numpy etc.) need ARM wheels or build tools; pure-Python (Flask, etc.) just works. |
 | LED never blinks | Wrong `chip`/`line` (check `gpioinfo`), LED wired backwards (try `active_high: false`), or `python-periphery` missing. Confirm the `drongo` user is in the `gpio` group (`id drongo`). |
 | Cloud provider ignored | Its key is blank/invalid in `/etc/drongo/drongo.env`, or it's rate-limited (the dashboard's *usage* table shows cooldowns). Blank keys are skipped on purpose. |
+| `web_search` returns "no results" | Keyless web search is dead (DuckDuckGo blocks scraping). Add a **free** search key to `/etc/drongo/drongo.env` and restart: `BRAVE_API_KEY` (2000/mo, [brave.com/search/api](https://brave.com/search/api/)), `TAVILY_API_KEY`, or `SERPER_API_KEY`. |
 | `self_update` does nothing | You installed from a ZIP (no git remote). Self-update needs a real remote — `git clone` instead. Rollback still works either way. |
 | Want to start over | `sudo /opt/drongo/uninstall.sh --purge` then re-install. |
 | It's doing something I don't like | `touch /var/lib/drongo/runtime/workspace/STOP` to halt it now; investigate; delete the file to resume. |
