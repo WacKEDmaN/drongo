@@ -22,17 +22,35 @@ import time
 import urllib.request
 from pathlib import Path
 
-REPO = os.environ.get("DRONGO_REPO", "/opt/drongo")
-RUNTIME = os.environ.get("DRONGO_RUNTIME", "/var/lib/drongo/runtime")
-SERVICE = os.environ.get("DRONGO_SERVICE", "drongo.service")
-VENV_PY = os.environ.get("DRONGO_PYTHON", f"{REPO}/.venv/bin/python")
-DISCORD = os.environ.get("DRONGO_DISCORD_WEBHOOK", "")
-NTFY_SERVER = os.environ.get("DRONGO_NTFY_SERVER", "https://ntfy.sh")
-NTFY_TOPIC = os.environ.get("DRONGO_NTFY_TOPIC", "")
+def _env(name, default=""):
+    """Read an env var, tolerating an inline '# comment' after the value (systemd
+    EnvironmentFile keeps those) and surrounding whitespace — otherwise int() on
+    a commented line crashes the updater at import."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    raw = raw.split("#", 1)[0].strip()
+    return raw if raw != "" else default
+
+
+def _envint(name, default):
+    try:
+        return int(_env(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+REPO = _env("DRONGO_REPO", "/opt/drongo")
+RUNTIME = _env("DRONGO_RUNTIME", "/var/lib/drongo/runtime")
+SERVICE = _env("DRONGO_SERVICE", "drongo.service")
+VENV_PY = _env("DRONGO_PYTHON", f"{REPO}/.venv/bin/python")
+DISCORD = _env("DRONGO_DISCORD_WEBHOOK", "")
+NTFY_SERVER = _env("DRONGO_NTFY_SERVER", "https://ntfy.sh")
+NTFY_TOPIC = _env("DRONGO_NTFY_TOPIC", "")
 # How often to do a routine pull even without an explicit request (seconds).
-ROUTINE_INTERVAL = int(os.environ.get("DRONGO_UPDATE_INTERVAL", "86400"))
+ROUTINE_INTERVAL = _envint("DRONGO_UPDATE_INTERVAL", 86400)
 MARKER = Path(RUNTIME) / "workspace" / "UPDATE_REQUESTED"
-STATE = Path(os.environ.get("DRONGO_OBS_STATE", "/var/lib/drongo/observer")) / "updater.json"
+STATE = Path(_env("DRONGO_OBS_STATE", "/var/lib/drongo/observer")) / "updater.json"
 
 
 def log(m):

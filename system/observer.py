@@ -27,21 +27,47 @@ import time
 import urllib.request
 from pathlib import Path
 
+def _env(name, default=""):
+    """Read an env var, tolerating an inline '# comment' after the value and
+    surrounding whitespace. systemd's EnvironmentFile does NOT strip inline
+    comments, so a line like `FOO=900   # secs` yields '900   # secs' — which
+    used to crash int()/float() at import and take the whole observer down."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    raw = raw.split("#", 1)[0].strip()
+    return raw if raw != "" else default
+
+
+def _envint(name, default):
+    try:
+        return int(_env(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _envfloat(name, default):
+    try:
+        return float(_env(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 CFG = {
-    "service":        os.environ.get("DRONGO_SERVICE", "drongo.service"),
-    "runtime":        os.environ.get("DRONGO_RUNTIME", "/var/lib/drongo/runtime"),
-    "repo":           os.environ.get("DRONGO_REPO", "/opt/drongo"),
-    "state_dir":      os.environ.get("DRONGO_OBS_STATE", "/var/lib/drongo/observer"),
-    "hb_max_age":     int(os.environ.get("DRONGO_HEARTBEAT_MAX_AGE", "900")),
-    "max_restarts":   int(os.environ.get("DRONGO_MAX_RESTARTS", "5")),
-    "temp_crit":      float(os.environ.get("DRONGO_TEMP_CRIT", "90")),
-    "load_crit":      float(os.environ.get("DRONGO_LOAD_CRIT", str(os.cpu_count() * 4))),
-    "disk_crit":      float(os.environ.get("DRONGO_DISK_CRIT", "96")),
-    "allow_reboot":   os.environ.get("DRONGO_ALLOW_REBOOT", "0") == "1",
-    "discord":        os.environ.get("DRONGO_DISCORD_WEBHOOK", ""),
-    "ntfy_server":    os.environ.get("DRONGO_NTFY_SERVER", "https://ntfy.sh"),
-    "ntfy_topic":     os.environ.get("DRONGO_NTFY_TOPIC", ""),
-    "min_healthy_secs": int(os.environ.get("DRONGO_MIN_HEALTHY_SECS", "1200")),
+    "service":        _env("DRONGO_SERVICE", "drongo.service"),
+    "runtime":        _env("DRONGO_RUNTIME", "/var/lib/drongo/runtime"),
+    "repo":           _env("DRONGO_REPO", "/opt/drongo"),
+    "state_dir":      _env("DRONGO_OBS_STATE", "/var/lib/drongo/observer"),
+    "hb_max_age":     _envint("DRONGO_HEARTBEAT_MAX_AGE", 900),
+    "max_restarts":   _envint("DRONGO_MAX_RESTARTS", 5),
+    "temp_crit":      _envfloat("DRONGO_TEMP_CRIT", 90),
+    "load_crit":      _envfloat("DRONGO_LOAD_CRIT", (os.cpu_count() or 4) * 4),
+    "disk_crit":      _envfloat("DRONGO_DISK_CRIT", 96),
+    "allow_reboot":   _env("DRONGO_ALLOW_REBOOT", "0") == "1",
+    "discord":        _env("DRONGO_DISCORD_WEBHOOK", ""),
+    "ntfy_server":    _env("DRONGO_NTFY_SERVER", "https://ntfy.sh"),
+    "ntfy_topic":     _env("DRONGO_NTFY_TOPIC", ""),
+    "min_healthy_secs": _envint("DRONGO_MIN_HEALTHY_SECS", 1200),
 }
 
 
