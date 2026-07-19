@@ -249,13 +249,15 @@ sudo drongo doctor
 Most of this is now in the **dashboard** at `http://<pi-ip>:8080/` (password-protected,
 LAN-only):
 
-- **Home** — current activity, a live "thinking" stream (with the latest call's token
-  count), what it's working on, live host stats, the LLM-usage table, a **per-provider
-  token-usage chart** (in/out + totals), and recent journal.
-- **Chat** — **talk to DRONGO and steer it, any time — even while it's building.** It
-  answers in the web process (so it's instant), and can act on you: "build X next" queues
-  that project, a standing preference becomes its mission, and teaching it a fact saves it
-  to memory. See [Chat & steering](#chat--steering).
+- **Home** — current activity, what it's working on, live host stats, the LLM-usage
+  table, a **per-provider token-usage chart** (in/out + totals), and recent journal.
+- **Chat** — **talk to DRONGO and steer it, any time — even while it's building.**
+  Multi-turn (it remembers the conversation), markdown replies with code blocks, a
+  **provider picker** (answer with auto/router-order or a specific provider), per-reply
+  provider + token counts, copy/regenerate/clear — plus the **live thinking stream**
+  right below the conversation, so you chat and watch it work in one place. It can act
+  on you: "build X next" queues that project, a standing preference becomes its
+  mission, and teaching it a fact saves it to memory. See [Chat & steering](#chat--steering).
 - **Projects** — everything it built (HTML games/dashboards open in a click), each with
   **tags** and a **🔧 Fix this** button — flag a broken one and the agent works it *before*
   starting anything new.
@@ -265,7 +267,9 @@ LAN-only):
 - **Brain** — everything it has *learned*: a knowledge-base summary (repo files indexed /
   skills / notes / lessons / training examples), saved **skills** (code view + delete),
   **notes** and **lessons**. Import a skill by pasting JSON or downloading a pack from a URL,
-  and download the curated **training dataset** (JSONL).
+  and download the curated **training dataset** (JSONL). Plus a **raw memory browser** —
+  every key in its long-term store, inspectable (API keys masked) and deletable, so you
+  see and control exactly what it remembers.
 - **Control** — Run-now / Pause / Resume / Stop / Restart, **plus a full Settings panel**:
   API keys, **add / remove / re-order LLM providers**, per-provider enable/model, Discord /
   ntfy / LED, and all the cooldown/loop timers. Saved settings live in the agent's DB and
