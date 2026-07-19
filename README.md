@@ -249,23 +249,26 @@ sudo drongo doctor
 ## Operating it
 
 Most of this is now in the **dashboard** at `http://<pi-ip>:8080/` (password-protected,
-LAN-only). A modern **left sidebar** groups the pages (Overview · Workspace · Brain ·
-System) and expands **deep-link sub-items** for the active page — jump straight to
-*Knowledge base*, *MCP servers*, *Install policy*, *Settings*, etc. A top status bar
-shows live/heartbeat state, and every page is laid out on a full-width grid (the
-sidebar collapses to a hamburger on phones):
+LAN-only) — a **"command centre"** styled after desktop agent apps: a **left nav rail**,
+a **top bar with always-visible host vitals (CPU · RAM · temp)** and today's token
+meter, and a **command palette on ⌘K / Ctrl-K** to jump to any view or run any action.
+It's a dark cockpit; the accent colour is switchable (amber/mint/ice/synth) from the
+rail. The rail collapses to a hamburger on phones.
 
-- **Home** — current activity, what it's working on, live host stats, the **LLM-usage
-  table** (per-provider **calls · tokens in · tokens out · total**, with a **TOTAL row**),
-  a **per-provider token-usage chart** (in/out bars), and recent journal.
+- **Activity** — the default view, a **three-pane live cockpit**: the **live-thinking
+  stream** (everything it's doing, untruncated) down the middle, and an inspector on the
+  right showing **what it's building now**, a mini **latest-requests** list (tokens
+  in→out), and **host stats**. This is where you *watch it work*.
+- **Requests** — **every LLM call, metered per request**: time · purpose
+  (ideate/plan/execute/critique/chat) · provider·model · **tokens in · out · total** ·
+  latency · status. Plus summary tiles (calls, in/out, in:out ratio), a per-provider
+  in/out token chart, and the aggregate usage table. Full token observability.
 - **Chat** — **talk to DRONGO and steer it, any time — even while it's building.**
   Multi-turn (it remembers the conversation), markdown replies with code blocks, a
-  **provider picker** (answer with auto/router-order or a specific provider), per-reply
-  provider + token counts, copy/regenerate/clear — laid out **side-by-side with the
-  live thinking stream** (a full-height two-column view), so you chat and watch it work
-  in one place. It can act on you: "build X next" queues that project, a standing
-  preference becomes its mission, and teaching it a fact saves it to memory. See
-  [Chat & steering](#chat--steering).
+  **provider picker** (auto/router-order or a specific provider), per-reply provider +
+  token counts, copy/regenerate/clear. (Watch it think on the Activity tab.) It can act
+  on you: "build X next" queues that project, a standing preference becomes its mission,
+  and teaching it a fact saves it to memory. See [Chat & steering](#chat--steering).
 - **Projects** — everything it built (HTML games/dashboards open in a click), each with
   **tags** and a **🔧 Fix this** button — flag a broken one and the agent works it *before*
   starting anything new.
@@ -279,11 +282,15 @@ sidebar collapses to a hamburger on phones):
   and download the curated **training dataset** (JSONL). Plus a **raw memory browser** —
   every key in its long-term store, inspectable (API keys masked) and deletable, so you
   see and control exactly what it remembers.
-- **Control** — Run-now / Pause / Resume / Stop / Restart, **plus a full Settings panel**:
-  API keys, **add / remove / re-order LLM providers**, per-provider enable/model, Discord /
-  ntfy / LED, and all the cooldown/loop timers. Saved settings live in the agent's DB and
-  apply on the next restart ("Save & Restart" does both).
+- **Settings** — Run-now / Pause / Resume / Stop / Restart and **full control over
+  everything**: API keys, **add / remove / re-order LLM providers**, per-provider
+  enable/model, hardware scan, Discord / ntfy / LED, personality & interests, and all the
+  cooldown/loop timers. Saved settings live in the agent's DB and apply on the next
+  restart ("Save & Restart" does both).
 - **Help** — an SSH/admin cheat-sheet (where the key files live, the common commands).
+
+The dashboard template lives in [`agent/dashboard.html`](agent/dashboard.html) (rendered by
+the Flask app) if you want to tweak the UI.
 
 > Note: the dashboard is plain HTTP on your LAN (behind the password), so keys you
 > type into Settings cross the LAN in clear — same as the login itself. Fine for a

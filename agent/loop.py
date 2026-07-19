@@ -331,7 +331,7 @@ class AgentLoop:
         system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
 
         def _one():
-            text, provider = self.router.complete(system, user, temperature=0.95)
+            text, provider = self.router.complete(system, user, temperature=0.95, purpose="ideate")
             obj = extract_json(text) or {}
             return {"task_type": obj.get("task_type", "experiment"),
                     "title": obj.get("title") or "Untitled project",
@@ -431,7 +431,7 @@ class AgentLoop:
         for step in range(self.max_steps):
             watchdog.heartbeat(self.cfg)   # prove we're alive between steps
             try:
-                text, last_provider = self.router.chat(messages)
+                text, last_provider = self.router.chat(messages, purpose="execute")
             except AllProvidersFailed as e:
                 return f"LLM unavailable: {e}", last_provider, messages, False
             obj = extract_json(text)
@@ -509,7 +509,7 @@ class AgentLoop:
                   "numbered list and NOTHING else.")
         user = f"Project [{task['task_type']}]: {task['title']}\n{task['description']}"
         try:
-            text, _ = self.router.complete(system, user, temperature=0.5, max_tokens=220)
+            text, _ = self.router.complete(system, user, temperature=0.5, max_tokens=220, purpose="plan")
             return text.strip()
         except AllProvidersFailed:
             return ""
@@ -524,7 +524,7 @@ class AgentLoop:
                 "Reply ONE JSON: {\"done\": true|false, \"issues\": \"<what's missing "
                 "or broken if not done, else empty>\"}.")
         try:
-            text, _ = self.router.complete(system, user, temperature=0.3, max_tokens=200)
+            text, _ = self.router.complete(system, user, temperature=0.3, max_tokens=200, purpose="critique")
         except AllProvidersFailed:
             return {"done": True, "issues": ""}      # never block on an LLM outage
         obj = extract_json(text) or {}
@@ -565,7 +565,7 @@ class AgentLoop:
                 'what it does + when to reuse it>", "code": "<the snippet only>"}}\n'
                 'or  {"skip": true}  if nothing here is worth saving.')
         try:
-            text, _ = self.router.complete(system, user, temperature=0.3, max_tokens=800)
+            text, _ = self.router.complete(system, user, temperature=0.3, max_tokens=800, purpose="skill")
         except AllProvidersFailed:
             return
         sk = (extract_json(text) or {}).get("skill")
@@ -615,7 +615,7 @@ class AgentLoop:
         user = (f"Project: {task['title']}\nOutcome: {outcome}\nArtifacts:\n{arts}\n\n"
                 "Reply with the JSON now.")
         try:
-            text, _ = self.router.complete(system, user, temperature=0.6, max_tokens=320)
+            text, _ = self.router.complete(system, user, temperature=0.6, max_tokens=320, purpose="reflect")
         except AllProvidersFailed:
             return outcome, ""
         obj = extract_json(text) or {}

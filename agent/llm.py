@@ -208,9 +208,19 @@ class Router:
             return 300         # other client error: may clear as context shrinks
         return 60              # 5xx / transient
 
-    def chat(self, messages, *, temperature=None, max_tokens=None, only=None):
+    def _log_request(self, p, purpose, ti, tout, ms, status):
+        """Meter ONE call for the dashboard's per-request log. Never let a logging
+        failure break the actual LLM call."""
+        try:
+            self.mem.record_request(p.name, getattr(p, "model", ""), purpose or "",
+                                    ti, tout, ms, status)
+        except Exception:
+            pass
+
+    def chat(self, messages, *, temperature=None, max_tokens=None, only=None, purpose=None):
         """Return (text, provider_name). Raises AllProvidersFailed.
-        `only` pins the call to that provider name (the dashboard chat's picker)."""
+        `only` pins the call to that provider name (the dashboard chat's picker).
+        `purpose` labels the call (ideate/execute/critique/chat/…) in the request log."""
         temperature = self.temperature if temperature is None else temperature
         max_tokens = max_tokens or self.max_tokens
         # Throttle: keep at least min_interval between calls.
@@ -228,19 +238,24 @@ class Router:
                 continue
             if not p.is_local and not self.mem.can_use(p.name, p.rpm_limit, p.daily_limit):
                 continue                                       # provider-enforced cooldown
+            t0 = time.time()
             try:
                 to = self.local_timeout if p.is_local else self.timeout
                 text, usage = p.chat(messages, temperature, max_tokens, to)
                 if not text or not text.strip():
                     raise ValueError("empty response")
-                self.mem.record_use(p.name, usage.get("in", 0), usage.get("out", 0))
-                self.mem.remember("last_llm", {"provider": p.name, "in": usage.get("in", 0),
-                                               "out": usage.get("out", 0), "ts": time.time()})
+                ms = int((time.time() - t0) * 1000)
+                ti, tout = usage.get("in", 0), usage.get("out", 0)
+                self.mem.record_use(p.name, ti, tout)
+                self._log_request(p, purpose, ti, tout, ms, "ok")
+                self.mem.remember("last_llm", {"provider": p.name, "in": ti,
+                                               "out": tout, "ts": time.time()})
                 self.last_usage = {"provider": p.name, **usage}   # race-free within this process
                 return text, p.name
             except RateLimited as e:
                 # Honour the PROVIDER's own Retry-After; nothing arbitrary.
                 log.info("%s rate limited; cooldown %ds", p.name, e.seconds)
+                self._log_request(p, purpose, 0, 0, int((time.time() - t0) * 1000), "rate-limited")
                 if not p.is_local:
                     self.mem.set_cooldown(p.name, e.seconds)
                 errors.append(f"{p.name}: 429")
@@ -259,11 +274,13 @@ class Router:
                 else:                                          # other 4xx / 5xx
                     log.warning("%s HTTP %s; cooling %ds: %s",
                                 p.name, e.status, cool, e.body)
+                self._log_request(p, purpose, 0, 0, int((time.time() - t0) * 1000), f"http {e.status}")
                 if not p.is_local:
                     self.mem.set_cooldown(p.name, cool)
                 errors.append(f"{p.name}: HTTP {e.status}")
             except Exception as e:  # network, parse, etc.
                 log.warning("%s failed: %s", p.name, e)
+                self._log_request(p, purpose, 0, 0, int((time.time() - t0) * 1000), "error")
                 if not p.is_local:
                     self.mem.set_cooldown(p.name, 60)
                 errors.append(f"{p.name}: {e}")

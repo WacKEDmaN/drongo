@@ -53,6 +53,17 @@ CREATE TABLE IF NOT EXISTS usage_daily (
     tokens_out INTEGER DEFAULT 0,
     PRIMARY KEY (provider, day)
 );
+CREATE TABLE IF NOT EXISTS requests (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         REAL NOT NULL,
+    provider   TEXT,
+    model      TEXT,
+    purpose    TEXT,            -- ideate | plan | execute | critique | chat | …
+    tokens_in  INTEGER DEFAULT 0,
+    tokens_out INTEGER DEFAULT 0,
+    ms         INTEGER DEFAULT 0,
+    status     TEXT DEFAULT 'ok'
+);
 """
 
 
@@ -568,6 +579,33 @@ class Memory:
             "SELECT provider,day,calls,tokens_in,tokens_out FROM usage_daily "
             "ORDER BY day DESC LIMIT ?", (days * 12,)).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- per-request log (dashboard "Requests" view) ------------------
+    def record_request(self, provider, model="", purpose="", tokens_in=0,
+                        tokens_out=0, ms=0, status="ok"):
+        """Log ONE LLM call — tokens metered per request. Kept to the last ~500
+        rows so the table can't grow without bound on a long-running box."""
+        self._conn.execute(
+            "INSERT INTO requests (ts,provider,model,purpose,tokens_in,tokens_out,ms,status) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (time.time(), provider, model, purpose, int(tokens_in or 0),
+             int(tokens_out or 0), int(ms or 0), status))
+        self._conn.execute(
+            "DELETE FROM requests WHERE id <= (SELECT MAX(id)-500 FROM requests)")
+        self._conn.commit()
+
+    def recent_requests(self, limit=120):
+        rows = self._conn.execute(
+            "SELECT ts,provider,model,purpose,tokens_in,tokens_out,ms,status "
+            "FROM requests ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+        return [dict(r) for r in rows]
+
+    def requests_summary(self):
+        """Totals for the Requests view header (today + all-time in the ring)."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) c, COALESCE(SUM(tokens_in),0) ti, "
+            "COALESCE(SUM(tokens_out),0) to_ FROM requests").fetchone()
+        return {"count": row["c"], "tokens_in": row["ti"], "tokens_out": row["to_"]}
 
     # ---- chat with the human (dashboard Chat tab) ---------------------
     def add_chat(self, role, content, provider="", tin=0, tout=0):

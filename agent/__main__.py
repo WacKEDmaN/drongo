@@ -146,7 +146,7 @@ def cmd_doctor(args):
         print("LLM check:   testing - first run loads the model, can take ~a minute...")
         try:
             text, who = router.complete("You are a connectivity test.",
-                                        "Reply with exactly: OK", max_tokens=5)
+                                        "Reply with exactly: OK", max_tokens=5, purpose="test")
             print(f"             OK - a model replied via '{who}'")
         except AllProvidersFailed as e:
             print(f"             FAILED - no model answered ({e})")
