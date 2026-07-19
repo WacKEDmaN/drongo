@@ -264,7 +264,8 @@ LAN-only):
 - **Gallery** — every image it has generated (PNG/PPM), in a lightbox.
 - **Files** — browse the agent's workspace, view/run files, see its **package requests**,
   and set the **Install policy** (see [Letting it install packages](#letting-it-install-packages-scoped)).
-- **Brain** — everything it has *learned*: a knowledge-base summary (repo files indexed /
+- **Brain** — steer it and see everything it has *learned*: **suggest its next project**,
+  set its **standing mission**, a knowledge-base summary (repo files indexed /
   skills / notes / lessons / training examples), saved **skills** (code view + delete),
   **notes** and **lessons**. Import a skill by pasting JSON or downloading a pack from a URL,
   and download the curated **training dataset** (JSONL). Plus a **raw memory browser** —
