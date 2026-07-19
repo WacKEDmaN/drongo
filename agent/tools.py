@@ -40,6 +40,7 @@ class ToolContext:
     safe_mode: bool = False
     artifacts: list = field(default_factory=list)  # collected per cycle
     project_dir: str = ""    # e.g. "projects/snake-game" — bare writes land here
+    docs: object = None      # DocStore: uploaded reference docs (RAG source of truth)
 
     @property
     def workspace(self):
@@ -86,7 +87,7 @@ def build_registry(ctx: ToolContext) -> dict[str, Tool]:
             "remember": "files", "recall": "files",
             "save_skill": "files", "recall_skill": "files",
             "save_note": "files", "recall_notes": "files", "request_package": "files",
-            "recall_knowledge": "files", "download_skill": "web",
+            "recall_knowledge": "files", "download_skill": "web", "search_docs": "files",
         }.get(nm, nm)
         if t.get(section, {}).get("enabled", True):
             enabled[nm] = tl
@@ -998,6 +999,20 @@ def import_skills(mem, payload) -> tuple:
                                                  s.get("code", "")):
             saved.append(s.get("name", ""))
     return saved, ("ok" if saved else "no valid {name,description,code} entries")
+
+
+@tool("search_docs",
+      "Search the reference documents your human uploaded — your SOURCE OF TRUTH. "
+      "Look things up here (their API, hardware specs, how a library works) BEFORE "
+      "guessing. Returns the most relevant passages with the source file.",
+      "query: str")
+def search_docs(ctx: ToolContext, query: str = "", **_):
+    if ctx.docs is None:
+        return "no document store available"
+    hits = ctx.docs.search(query, k=6)
+    if not hits:
+        return "no matching passages (no docs uploaded yet, or nothing relevant to that query)"
+    return "\n\n".join(f"[{h['source']}]\n{h['snippet']}" for h in hits)
 
 
 @tool("recall_knowledge",

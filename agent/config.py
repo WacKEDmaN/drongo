@@ -135,13 +135,16 @@ class Config:
         self.state_dir = base / "state"
         self.logs_dir = base / "logs"
         self.db_path = self.state_dir / "agent.db"
+        # Uploaded reference docs (the RAG "source of truth") + their search index.
+        self.docs_dir = base / "docs"
+        self.docs_db = self.state_dir / "docs.db"
         # A writable virtualenv the agent CAN pip-install into (its own code dir
         # is read-only, and Debian blocks system-wide pip). Shell + Run use it.
         self.project_venv = base / "venv"
 
     def ensure_dirs(self) -> None:
         for d in (self.workspace, self.projects, self.images,
-                  self.dashboards, self.state_dir, self.logs_dir):
+                  self.dashboards, self.state_dir, self.logs_dir, self.docs_dir):
             d.mkdir(parents=True, exist_ok=True)
 
     def get(self, *keys, default=None):

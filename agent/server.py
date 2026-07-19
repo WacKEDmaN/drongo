@@ -342,6 +342,18 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div>
   </div>
   <div class="card"><div id=kbsummary class=meta>loading…</div></div>
+  <h2>📄 Reference docs <span class=meta id=doccount>— your uploaded "source of truth"</span></h2>
+  <div class="card">
+   <p class=meta>Upload docs the agent should treat as AUTHORITATIVE (API references, datasheets, specs). Text formats — .md .txt .py .html .json .csv … It searches these before guessing, and the most relevant passages are injected when it starts a related project. (You can also scp a folder into <code>runtime/docs/</code> — it indexes on restart.)</p>
+   <input type=file id=docfiles multiple class=set style="padding:6px;max-width:420px;display:inline-block">
+   <button class=act onclick="uploadDocs()">⬆ upload &amp; index</button>
+   <div style="margin-top:8px">
+     <input id=docq class=set placeholder="test a search over your docs…" style="max-width:300px;display:inline-block;margin-right:6px" onkeydown="if(event.key==='Enter')testDocSearch()">
+     <button class=act onclick="testDocSearch()">🔍 search</button>
+   </div>
+   <div id=docresults class=meta style="margin-top:8px"></div>
+   <div id=docwrap class=meta style="margin-top:8px">loading…</div>
+  </div>
   <div class="card">
    <div class=th>Import a skill</div>
    <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL to download from. Imported code is stored, never auto-run.</p>
@@ -802,7 +814,37 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      $('#fixbtn').style.display='none';$('#modal').classList.add('show');});}
  function loadBrain(){const w=$('#skillwrap');if(!w)return;
    fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';});
-   loadMemory();}
+   loadMemory();loadDocs();}
+ function loadDocs(){const w=$('#docwrap');if(!w)return;
+   fetch('/api/docs').then(r=>r.json()).then(renderDocs).catch(()=>{w.textContent='error';});}
+ function renderDocs(d){const w=$('#docwrap');if(!w)return;w.replaceChildren();
+   const docs=d.documents||[];const cnt=d.count||{};
+   $('#doccount').textContent='('+(cnt.documents||0)+' docs · '+(cnt.chunks||0)+' passages'+(d.fts?', BM25':', keyword')+')';
+   if(!docs.length){w.textContent='No reference docs yet — upload some above.';return;}
+   docs.forEach(dc=>{const row=document.createElement('div');row.className='memrow';
+     const nm=document.createElement('span');nm.className='mk';nm.style.minWidth='200px';nm.textContent=dc.source;nm.style.cursor='default';
+     const mp=document.createElement('span');mp.className='mp';mp.textContent=(dc.chunks||0)+' passages';
+     const sz=document.createElement('span');sz.className='meta';sz.textContent=fmtSize(dc.bytes||0);
+     const del=document.createElement('button');del.className='cbtn';del.textContent='✕';del.title='remove this doc';
+     del.onclick=()=>{if(confirm('Remove \"'+dc.source+'\" from the knowledge base?'))
+       fetch('/control/doc_delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:dc.source})})
+       .then(r=>r.json()).then(()=>{toast('removed');loadDocs();});};
+     row.append(nm,mp,sz,del);w.appendChild(row);});}
+ function uploadDocs(){const inp=$('#docfiles');if(!inp||!inp.files.length){toast('pick files first');return;}
+   const fd=new FormData();for(const f of inp.files)fd.append('files',f);
+   toast('uploading & indexing…');
+   fetch('/control/doc_upload',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+     if(!d.ok){toast(d.error||'failed');return;}
+     let m='indexed '+(d.saved||[]).length+' file(s), '+(d.chunks||0)+' passages';
+     if(d.skipped&&d.skipped.length)m+=' — skipped (unsupported): '+d.skipped.join(', ');
+     toast(m);inp.value='';loadDocs();}).catch(()=>toast('upload failed'));}
+ function testDocSearch(){const q=($('#docq').value||'').trim();const w=$('#docresults');if(!w)return;
+   if(!q){w.textContent='';return;}w.textContent='searching…';
+   fetch('/api/doc_search?q='+encodeURIComponent(q)).then(r=>r.json()).then(d=>{w.replaceChildren();
+     if(!d.hits||!d.hits.length){w.textContent='no matching passages.';return;}
+     d.hits.forEach(h=>{const b=document.createElement('div');b.className='cmsg bot';b.style.maxWidth='100%';b.style.marginTop='6px';
+       const src=document.createElement('div');src.className='meta';src.textContent='['+h.source+']';
+       const bd=document.createElement('div');bd.textContent=h.snippet;b.append(src,bd);w.appendChild(b);});});}
  function loadMemory(){const w=$('#memwrap');if(!w)return;
    fetch('/api/memory').then(r=>r.json()).then(d=>renderMemory(d.keys||[])).catch(()=>{w.textContent='error';});}
  function renderMemory(keys){const w=$('#memwrap');if(!w)return;w.replaceChildren();
@@ -1163,6 +1205,14 @@ def create_app(cfg, mem: Memory) -> Flask:
         chat_router = None
         log.warning("chat router unavailable: %s", e)
 
+    try:
+        from .docs import DocStore
+        docstore = DocStore(cfg.docs_db)
+    except Exception as e:
+        docstore = None
+        log.warning("doc store unavailable: %s", e)
+    app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024   # cap uploads (spare the SD)
+
     password = os.environ.get("DRONGO_WEB_PASSWORD", "")
     nets = []
     for c in os.environ.get("DRONGO_WEB_ALLOW", "").split(","):
@@ -1359,6 +1409,56 @@ def create_app(cfg, mem: Memory) -> Flask:
     def control_chat_clear():
         mem.remember("chat", [])
         return {"ok": True}
+
+    @app.route("/api/docs")
+    def api_docs():
+        if not docstore:
+            return {"ok": True, "documents": [], "count": {"documents": 0, "chunks": 0}, "fts": False}
+        return {"ok": True, "documents": docstore.documents(), "count": docstore.count(),
+                "fts": docstore.fts}
+
+    @app.route("/control/doc_upload", methods=["POST"])
+    def control_doc_upload():
+        if not docstore:
+            return {"ok": False, "error": "doc store unavailable"}, 500
+        files = request.files.getlist("files")
+        if not files:
+            return {"ok": False, "error": "no files"}, 400
+        from .docs import TEXT_EXTS
+        docdir = Path(cfg.docs_dir); docdir.mkdir(parents=True, exist_ok=True)
+        saved, skipped, chunks = [], [], 0
+        for f in files:
+            name = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(f.filename or ""))[:120]
+            if not name:
+                continue
+            if os.path.splitext(name)[1].lower() not in TEXT_EXTS:
+                skipped.append(name); continue
+            dest = docdir / name
+            f.save(str(dest))
+            chunks += docstore.add_file(dest, source=name)
+            saved.append(name)
+        log.info("docs uploaded: %s (%d passages)", ", ".join(saved) or "-", chunks)
+        return {"ok": True, "saved": saved, "skipped": skipped, "chunks": chunks}
+
+    @app.route("/control/doc_delete", methods=["POST"])
+    def control_doc_delete():
+        src = ((request.get_json(silent=True) or {}).get("source") or "").strip()
+        if not src:
+            return {"ok": False, "error": "no source"}, 400
+        if docstore:
+            docstore.delete(src)
+        try:
+            f = safeguard.safe_join(str(cfg.docs_dir), src)
+            if os.path.isfile(f):
+                os.remove(f)
+        except Exception:
+            pass
+        return {"ok": True}
+
+    @app.route("/api/doc_search")
+    def api_doc_search():
+        q = (request.args.get("q") or "").strip()
+        return {"ok": True, "hits": (docstore.search(q, k=6) if (docstore and q) else [])}
 
     @app.route("/api/memory")
     def api_memory():

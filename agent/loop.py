@@ -254,6 +254,12 @@ class AgentLoop:
         self.max_steps = cfg.get("loop", "max_steps", default=14)
         self.safe_mode = False
         self.safe_reason = ""
+        try:
+            from .docs import DocStore
+            self.docs = DocStore(cfg.docs_db)
+        except Exception as e:
+            self.docs = None
+            log.warning("doc store unavailable: %s", e)
 
     # ---- ideation ------------------------------------------------------
     def ideate(self, suggestion: str = "") -> dict:
@@ -387,6 +393,12 @@ class AgentLoop:
                               + "\n".join(f"- [{d['kind']}] "
                                           + (f"{d['title']}: " if d['title'] else "")
                                           + d['text'] for d in kb))
+            # RAG: the human's uploaded reference docs are the SOURCE OF TRUTH.
+            doc_hits = ctx.docs.search(f"{task['title']} {task['description']}", k=3) if ctx.docs else []
+            if doc_hits:
+                skill_txt += ("\n\nFrom your uploaded reference docs (SOURCE OF TRUTH — prefer these "
+                              "over guessing; use search_docs for more):\n"
+                              + "\n".join(f"- [{h['source']}] {h['snippet'][:300]}" for h in doc_hits))
             extras = self.mem.installed_extras()
             if extras:
                 skill_txt += "\n\nExtra system packages your human installed for you (use freely): " + ", ".join(extras[-20:]) + "."
@@ -694,7 +706,8 @@ class AgentLoop:
     def run_cycle(self) -> dict:
         t0 = time.time()
         ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
-                                alerter=self.alerter, log=log, safe_mode=self.safe_mode)
+                                alerter=self.alerter, log=log, safe_mode=self.safe_mode,
+                                docs=self.docs)
         max_attempts = self.cfg.get("loop", "max_resume_attempts", default=8)
         self._scan_hardware()                           # react to anything newly plugged in
         self._janitor()                                 # tidy up junk + empty folders
@@ -850,6 +863,13 @@ class AgentLoop:
             log.info("indexed %d of my own files into the knowledge base", n)
         except Exception as e:
             log.warning("repo index failed: %s", e)
+        if self.docs:                # index reference docs the human dropped in / uploaded
+            try:
+                n = self.docs.index_dir(self.cfg.docs_dir)
+                if n:
+                    log.info("indexed %d passages from uploaded reference docs", n)
+            except Exception as e:
+                log.warning("doc index failed: %s", e)
         watchdog.notify_ready()
         watchdog.heartbeat(self.cfg, force=True)
 
