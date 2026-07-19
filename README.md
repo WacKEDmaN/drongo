@@ -381,6 +381,10 @@ DRONGO accumulates a knowledge base it reuses over time — the realistic form o
 "self-improving" on a Pi (it can't *train* a model on a 4 GB CPU board, so instead it
 **learns by retrieval** and **curates a dataset you can fine-tune off-box**):
 
+- **Starter knowledge** — it ships **bootstrapped**: ~9 reusable starter skills (PPM/image
+  writers, a Mandelbrot renderer, Game of Life, a canvas-game template, the live-dashboard
+  pattern, a CLI template, native-C + retro/Z80 patterns), plus environment notes and
+  best-practice lessons — seeded on first boot so it knows a lot day one.
 - **Skills** — when a project finishes it **auto-harvests** one reusable code snippet into
   its library. Import your own on the **Brain** tab by pasting `{"name","description","code"}`
   JSON, or **download** a skill (or a `{"skills":[…]}` pack) from a URL — stored, never auto-run.
