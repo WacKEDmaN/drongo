@@ -69,11 +69,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .pill.ok{color:var(--ok);border-color:rgba(var(--ac-rgb),.35)} .pill.ok::before{animation:pulse 2s ease-in-out infinite}
  .pill.bad{color:var(--bad);border-color:rgba(255,93,108,.4)} .pill.warn{color:var(--warn);border-color:rgba(245,181,63,.4)}
  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
- nav{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
- nav button{font:600 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;background:rgba(255,255,255,.02);color:var(--mut);border:1px solid var(--bd);border-radius:7px;padding:8px 13px;cursor:pointer;transition:.15s}
- nav button:hover{color:var(--fg);border-color:var(--ac2)}
- nav button.on{background:linear-gradient(180deg,rgba(var(--ac-rgb),.18),rgba(var(--ac-rgb),.05));color:var(--ac);border-color:var(--ac);box-shadow:0 0 14px rgba(var(--ac-rgb),.25),inset 0 0 12px rgba(var(--ac-rgb),.07)}
- main{position:relative;z-index:1;max-width:1600px;margin:0 auto;padding:18px 22px 44px}
+ main{position:relative;z-index:1;padding:18px 22px 44px}
  .tab{display:none} .tab.on{display:block;animation:fade .26s ease}
  @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
  .card{position:relative;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--bd);border-radius:12px;padding:15px 17px;margin:12px 0;transition:border-color .18s,box-shadow .18s}
@@ -131,6 +127,7 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .usaget th{color:var(--mut);text-align:left;font-weight:500;padding-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
  .usaget td{border-top:1px solid var(--bd);padding:4px 0;color:var(--fg)}
  .usaget th:not(:first-child),.usaget td:not(:first-child){text-align:right}
+ .usaget tr.utot td{border-top:2px solid var(--bd2);color:var(--ac);font-weight:600;padding-top:5px}
  #suggbox,#missionbox{width:100%;background:#05090d;color:var(--fg);border:1px solid var(--bd2);border-radius:8px;padding:8px 10px;font:13px/1.5 var(--mono);resize:vertical}
  #missionbox:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px rgba(var(--ac-rgb),.13)}
  @media (max-width:760px){ header{padding:10px 14px} main{padding:16px 14px} }
@@ -183,6 +180,13 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .swatch{width:16px;height:16px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;transition:.15s}
  .swatch:hover{transform:scale(1.15)} .swatch.on{border-color:var(--fg)}
  .think{background:#03060a;border:1px solid var(--bd2);border-radius:10px;padding:10px 12px;height:38vh;min-height:260px;overflow:auto;font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+ .chatgrid{display:grid;grid-template-columns:minmax(300px,1fr) minmax(380px,1.35fr);gap:14px;align-items:stretch;height:calc(100vh - 168px);min-height:480px}
+ .chatgrid .chatcard{display:flex;flex-direction:column;margin:0;overflow:hidden}
+ .chatgrid .chatcard>.th{flex:0 0 auto}
+ .chatgrid #think{flex:1 1 auto;height:auto;min-height:0}
+ .chatgrid #chatlog{flex:1 1 auto;max-height:none;min-height:0}
+ .chatgrid .chatbar,.chatgrid .chatcard>p.meta{flex:0 0 auto}
+ @media(max-width:1000px){.chatgrid{grid-template-columns:1fr;height:auto} .chatgrid #think{height:34vh} .chatgrid #chatlog{max-height:52vh}}
  .think .tl{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
  .think .tl{padding:1px 0} .think .t-think{color:var(--mut)} .think .t-tool{color:var(--ac2)} .think .t-ok{color:var(--ac)} .think .t-warn{color:var(--warn)} .think .t-info{color:var(--fg)}
  .tokchart{display:flex;flex-direction:column;gap:7px;padding:4px 0}
@@ -207,24 +211,60 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  .memrow{display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--bd);font:12.5px var(--mono)}
  .memrow:last-child{border:0} .memrow .mk{color:var(--ac2);cursor:pointer;flex:none;min-width:140px} .memrow .mk:hover{color:var(--ac)}
  .memrow .mp{flex:1;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ /* ============ modern shell: left sidebar + topbar + full-width app ============ */
+ body{display:flex;align-items:stretch}
+ .sidebar{width:236px;flex:none;position:sticky;top:0;height:100vh;z-index:12;display:flex;flex-direction:column;
+   padding:15px 12px;background:rgba(9,13,19,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+   border-right:1px solid var(--bd);box-shadow:1px 0 0 rgba(var(--ac-rgb),.06)}
+ .sbbrand{display:flex;align-items:center;gap:10px;padding:5px 10px 2px;font:700 17px/1 var(--mono);letter-spacing:1.6px;color:var(--fg)}
+ .sbbrand .logo{width:14px;height:14px;border-radius:4px;background:linear-gradient(135deg,var(--ac),var(--ac2));box-shadow:0 0 14px rgba(var(--ac-rgb),.7)}
+ .sbver{font:10px var(--mono);color:var(--mut);padding:2px 10px 12px;letter-spacing:.05em}
+ .sbnav{display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto;margin:0;padding:0}
+ .sbgroup{font:600 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.17em;color:var(--mut);margin:15px 10px 5px;opacity:.7}
+ .sbitem{display:flex;align-items:center;gap:11px;width:100%;font:500 13.5px/1 ui-sans-serif,system-ui,sans-serif;color:var(--mut);
+   background:transparent;border:0;border-radius:9px;padding:9px 12px;cursor:pointer;text-align:left;transition:.14s;position:relative}
+ .sbitem:hover{color:var(--fg);background:rgba(255,255,255,.035)}
+ .sbitem.on{color:var(--ac);background:linear-gradient(90deg,rgba(var(--ac-rgb),.15),rgba(var(--ac-rgb),.02))}
+ .sbitem.on::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:3px;border-radius:3px;background:var(--ac);box-shadow:0 0 10px var(--ac)}
+ .sbitem .ic{width:20px;text-align:center;font-size:14.5px;flex:none}
+ .sbfoot{border-top:1px solid var(--bd);margin-top:8px;padding:12px 8px 2px}
+ .app{flex:1;min-width:0;display:flex;flex-direction:column}
+ .topbar{position:sticky;top:0;z-index:6;display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:11px 24px;
+   background:rgba(8,12,18,.72);backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);border-bottom:1px solid var(--bd)}
+ .hamb{display:none;background:transparent;border:1px solid var(--bd2);color:var(--fg);border-radius:7px;padding:4px 11px;cursor:pointer;font-size:17px;line-height:1}
+ main{max-width:none;margin:0;padding:22px 26px 52px}
+ @media (max-width:900px){
+   .sidebar{position:fixed;left:0;top:0;transform:translateX(-104%);transition:transform .22s ease;box-shadow:0 0 50px rgba(0,0,0,.65)}
+   .sidebar.open{transform:none}
+   .hamb{display:inline-block} main{padding:16px 15px 40px}
+ }
 </style></head><body>
-<header>
- <h1 class=brand><span class=logo></span>{{ name }}<span class=caret></span></h1>
+<aside class=sidebar id=sidebar>
+ <div class=sbbrand><span class=logo></span>{{ name }}</div>
+ <div class=sbver>autonomous agent</div>
+ <nav class=sbnav>
+  <div class=sbgroup>Overview</div>
+  <button class="sbitem on" data-t=home><span class=ic>◧</span>Dashboard</button>
+  <button class=sbitem data-t=chat><span class=ic>💬</span>Chat</button>
+  <div class=sbgroup>Workspace</div>
+  <button class=sbitem data-t=projects><span class=ic>📦</span>Projects</button>
+  <button class=sbitem data-t=gallery><span class=ic>🖼</span>Gallery</button>
+  <button class=sbitem data-t=files><span class=ic>📁</span>Files</button>
+  <div class=sbgroup>Brain</div>
+  <button class=sbitem data-t=brain><span class=ic>🧠</span>Brain</button>
+  <div class=sbgroup>System</div>
+  <button class=sbitem data-t=control><span class=ic>⚙</span>Control</button>
+  <button class=sbitem data-t=help><span class=ic>?</span>Help</button>
+ </nav>
+ <div class=sbfoot><div class=themes id=themes></div></div>
+</aside>
+<div class=app>
+<header class=topbar>
+ <button class=hamb onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
  <span id=p_status class="pill">booting</span>
  <span id=p_alive class="pill {{ 'ok' if alive else 'bad' }}">{{ 'alive '+hb if alive else 'no heartbeat' }}</span>
  {% if safe %}<span class="pill warn">SAFE MODE</span>{% endif %}
  <span class="pill {{ 'ok' if integ_ok else 'bad' }}">guard {{ 'ok' if integ_ok else 'CHECK' }}</span>
- <nav>
-  <button class="on" data-t=home>Home</button>
-  <button data-t=chat>Chat</button>
-  <button data-t=projects>Projects</button>
-  <button data-t=gallery>Gallery</button>
-  <button data-t=files>Files</button>
-  <button data-t=brain>Brain</button>
-  <button data-t=control>Control</button>
-  <button data-t=help>Help</button>
- </nav>
- <div class=themes id=themes></div>
 </header>
 <main>
 
@@ -234,16 +274,16 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
      <div class=nowtitle>{{ working_on.title }}</div>
      <span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
 
-   <div class="tile c8"><div class=th>System <span class=meta id=sysmodel></span></div>
+   <div class="tile c7"><div class=th>System <span class=meta id=sysmodel></span></div>
      <div class="stats" id=sysgrid><div class=stat><div class=k>loading…</div></div></div></div>
 
-   <div class="tile c4"><div class=th>LLM usage today</div>
+   <div class="tile c5"><div class=th>LLM usage — calls &amp; tokens</div>
      <table class=usaget id=usagetbl>
-      <tr><th>provider</th><th>today</th><th>tok</th><th>total</th><th>cd</th></tr>
-      {% for u in usage %}<tr><td>{{ u.provider }}</td><td>{{ u.day_count }}</td><td>{{ u.day_tokens }}</td><td>{{ u.total }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=5 class=meta>no calls yet</td></tr>{% endfor %}
+      <tr><th>provider</th><th>calls</th><th>tok in</th><th>tok out</th><th>total</th><th>cd</th></tr>
+      {% set ns = namespace(ti=0, to=0, c=0) %}{% for u in usage %}{% set ns.ti = ns.ti + (u.tokens_in or 0) %}{% set ns.to = ns.to + (u.tokens_out or 0) %}{% set ns.c = ns.c + (u.total or 0) %}<tr><td>{{ u.provider }}</td><td>{{ u.total }}</td><td>{{ u.tokens_in }}</td><td>{{ u.tokens_out }}</td><td>{{ u.tokens_in + u.tokens_out }}</td><td>{{ u.cool or '—' }}</td></tr>{% else %}<tr><td colspan=6 class=meta>no calls yet</td></tr>{% endfor %}{% if usage %}<tr class=utot><td>TOTAL</td><td>{{ ns.c }}</td><td>{{ ns.ti }}</td><td>{{ ns.to }}</td><td>{{ ns.ti + ns.to }}</td><td></td></tr>{% endif %}
      </table></div>
 
-   <div class="tile c12"><div class=th>Token usage by provider <span class=meta id=toktotal></span><span class=meta style="float:right">▮ in · ▮ out</span></div>
+   <div class="tile c12"><div class=th>Token usage by provider <span class=meta id=toktotal></span><span class=meta style="float:right">▮ in&nbsp;·&nbsp;▮ out</span></div>
      <div id=tokchart class=tokchart>loading…</div></div>
 
    <div class="tile c12"><div class=th>Recent activity</div>
@@ -257,21 +297,25 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
  <section id=chat class="tab">
   <h2>💬 Chat — ask DRONGO anything, or steer it</h2>
-  <div class="card"><div class=th>🧠 Live thinking — what the agent is doing right now <span class=meta id=lastllm style="float:right"></span></div>
-   <div id=think class=think>idle…</div></div>
-  <div class="card">
-   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-    <span class=meta>answer with:</span>
-    <select id=chatprov class=set style="width:auto;max-width:180px;display:inline-block;margin:0"><option value="">auto (router order)</option></select>
-    <button class=act onclick="regenChat()" title="re-ask the last question">↻ regenerate</button>
-    <button class="act danger" onclick="clearChat()" title="wipe the conversation">🗑 clear</button>
+  <div class=chatgrid>
+   <div class="card chatcard">
+    <div class=th>🧠 Live thinking — what it's doing right now <span class=meta id=lastllm style="float:right"></span></div>
+    <div id=think class=think>idle…</div>
    </div>
-   <div id=chatlog class=chatlog>loading…</div>
-   <div class=chatbar>
-    <textarea id=chatmsg rows=2 placeholder="Ask a question, or tell it what to build next… (Enter to send, Shift+Enter for a newline)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
-    <button class="act big" id=chatsend onclick="sendChat()">Send</button>
+   <div class="card chatcard">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+     <span class=meta>answer with:</span>
+     <select id=chatprov class=set style="width:auto;max-width:180px;display:inline-block;margin:0"><option value="">auto (router order)</option></select>
+     <button class=act onclick="regenChat()" title="re-ask the last question">↻ regenerate</button>
+     <button class="act danger" onclick="clearChat()" title="wipe the conversation">🗑 clear</button>
+    </div>
+    <div id=chatlog class=chatlog>loading…</div>
+    <div class=chatbar>
+     <textarea id=chatmsg rows=2 placeholder="Ask a question, or tell it what to build next… (Enter to send, Shift+Enter for a newline)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+     <button class="act big" id=chatsend onclick="sendChat()">Send</button>
+    </div>
+    <p class=meta>Answered here instantly — even while it's building. Tell it "build X next" or "focus on Y" and it queues that for its loop; teach it a fact and it remembers.</p>
    </div>
-   <p class=meta>Answered here instantly — even while it's building. Tell it "build X next" or "focus on Y" and it queues that for its loop; teach it a fact and it remembers.</p>
   </div>
  </section>
 
@@ -603,6 +647,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
   </div>
  </section>
 </main>
+</div>
 <div id=toast></div>
 <div class=modal id=modal onclick="if(event.target===this)this.classList.remove('show')">
   <div class=box><h3 id=modaltitle style="margin-top:0"></h3><pre id=modalout></pre>
@@ -623,8 +668,9 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
 <script>
  const $=s=>document.querySelector(s);
  function showTab(t){
-   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+   document.querySelectorAll('.sbitem').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));
+   const sb=document.getElementById('sidebar'); if(sb)sb.classList.remove('open');  // close on mobile
    history.replaceState(null,'','#'+t);
    if(t==='control')loadHW();
    if(t==='files'){loadFiles('');loadPkgs();loadPolicy();}
@@ -653,7 +699,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      b.onclick=()=>applyTheme(n);host.appendChild(b);});}
    let saved=null;try{saved=localStorage.getItem('theme');}catch(e){}
    applyTheme(saved&&THEMES[saved]?saved:'mint');}
- document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
+ document.querySelectorAll('.sbitem').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
  if(location.hash){const t=location.hash.slice(1); if($('#'+t)) showTab(t);}
  function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
  function ctl(a){fetch('/control/'+a,{method:'POST'}).then(r=>r.json()).then(d=>{toast(a+(d.ok?' ✓':' — '+(d.error||'failed')));refresh();});}
@@ -1044,9 +1090,12 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      const m=document.createElement('span');m.className='meta';m.textContent=(w.type||'')+' · attempt '+w.attempt;c.appendChild(m);el.appendChild(c);}}
  function fmtTok(n){n=n||0;return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':(''+n);}
  function renderUsage(usage){const t=$('#usagetbl'); if(!t)return;
-   let h='<tr><th>provider</th><th>today</th><th>tok</th><th>total</th><th>cd</th></tr>';
-   if(usage&&usage.length)usage.forEach(u=>{h+='<tr><td>'+esc(u.provider)+'</td><td>'+(u.day_count||0)+'</td><td>'+fmtTok(u.day_tokens)+'</td><td>'+(u.total||0)+'</td><td>'+esc(u.cool||'—')+'</td></tr>';});
-   else h+='<tr><td colspan=5 class=meta>no calls yet</td></tr>';
+   let h='<tr><th>provider</th><th>calls</th><th>tok in</th><th>tok out</th><th>total</th><th>cd</th></tr>';
+   let ci=0,co=0,cc=0;
+   if(usage&&usage.length){usage.forEach(u=>{const i=u.tokens_in||0,o=u.tokens_out||0;ci+=i;co+=o;cc+=u.total||0;
+       h+='<tr><td>'+esc(u.provider)+'</td><td>'+(u.total||0)+'</td><td>'+fmtTok(i)+'</td><td>'+fmtTok(o)+'</td><td>'+fmtTok(i+o)+'</td><td>'+esc(u.cool||'—')+'</td></tr>';});
+     h+='<tr class=utot><td>TOTAL</td><td>'+cc+'</td><td>'+fmtTok(ci)+'</td><td>'+fmtTok(co)+'</td><td>'+fmtTok(ci+co)+'</td><td></td></tr>';}
+   else h+='<tr><td colspan=6 class=meta>no calls yet</td></tr>';
    t.innerHTML=h;}
  function loadUsageGraph(){const w=$('#tokchart');if(!w)return;
    fetch('/api/usage_graph').then(r=>r.json()).then(d=>drawTok(d.totals||[])).catch(()=>{});}
