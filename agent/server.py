@@ -2092,6 +2092,23 @@ def create_app(cfg, mem: Memory) -> Flask:
                     pass
         mem.delete_journal(jid)
         mem.remove_fix(jid)
+        # If the agent is currently working on / resuming THIS project, drop that
+        # in-progress state too — otherwise it keeps trying to continue a project
+        # whose files we just removed and won't move on to anything new.
+        cur = mem.recall("current_project")
+        if isinstance(cur, dict):
+            task = cur.get("task") or {}
+            title = task.get("title") or ""
+            cur_paths = [a.get("path") for a in (cur.get("artifacts") or [])
+                         if isinstance(a, dict) and a.get("path")]
+            matches = (
+                (j["title"] and j["title"] == title) or ("Fix #%d:" % jid) in title or
+                any(cp == rp or (rp.endswith("/") and cp.startswith(rp))
+                    for cp in cur_paths for rp in removed))
+            if matches:
+                mem.remember("current_project", None)
+                mem.remember("working_on", None)
+                log.info("cleared in-progress state for deleted project '%s'", j["title"])
         log.info("deleted project: %s (%d path(s))", j["title"], len(removed))
         return {"ok": True, "removed": removed}
 

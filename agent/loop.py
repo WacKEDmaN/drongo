@@ -709,6 +709,29 @@ class AgentLoop:
             log.info(summary)
             self.mem.push_step("info", "🧹 " + summary)
 
+    def _project_files_gone(self, saved: dict) -> bool:
+        """True only if the resumable project once recorded artifacts and every
+        one of them is now missing from disk — i.e. it was deleted/cleaned while
+        we were idle. Conservative: if we can't safely verify a path, or any file
+        still exists, we keep the project (return False)."""
+        arts = saved.get("artifacts") or []
+        if not arts:
+            return False                       # nothing recorded yet — too early to judge
+        base = str(self.cfg.workspace)
+        checked = 0
+        for a in arts:
+            path = a.get("path") if isinstance(a, dict) else None
+            if not path:
+                continue
+            try:
+                full = safeguard.safe_join(base, path)
+            except Exception:
+                return False                   # unverifiable path → don't abandon
+            checked += 1
+            if os.path.exists(full):
+                return False                   # at least one file survives → keep going
+        return checked > 0                     # checked ≥1 path and none of them exist
+
     def run_cycle(self) -> dict:
         t0 = time.time()
         ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
@@ -722,6 +745,17 @@ class AgentLoop:
             self.mem.push_step("ok", "📦 now available: " + ", ".join(got))
         saved = self.mem.recall("current_project")
         saved = saved if isinstance(saved, dict) else None
+
+        # Self-heal: if the resumable project's files were deleted out from under
+        # us (dashboard delete, SSH rm, janitor cleanup) while we were idle, don't
+        # keep resuming a ghost — drop it and pick something new this cycle.
+        if saved and self._project_files_gone(saved):
+            title = (saved.get("task") or {}).get("title", "?")
+            log.info("Saved project '%s' has no files left — abandoning it.", title)
+            self.mem.push_step("info", f"🗑 '{title}' was deleted — moving on to something new")
+            self.mem.remember("current_project", None)
+            self.mem.remember("working_on", None)
+            saved = None
 
         # Resume an unfinished project, or start a new one.
         if saved and saved.get("attempts", 0) < max_attempts:
