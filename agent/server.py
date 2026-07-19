@@ -715,6 +715,11 @@ def create_app(cfg, mem: Memory) -> Flask:
                 stop.touch()
             elif action == "restart":
                 mem.remember("restart_requested", True)
+            elif action == "skip":
+                # abandon whatever it's stuck on and move to a fresh project now
+                mem.remember("current_project", None)
+                mem.remember("working_on", None)
+                mem.remember("run_now", True)
             else:
                 return {"ok": False, "error": "unknown action"}, 400
         except Exception as e:

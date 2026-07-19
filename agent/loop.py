@@ -732,6 +732,17 @@ class AgentLoop:
                 return False                   # at least one file survives → keep going
         return checked > 0                     # checked ≥1 path and none of them exist
 
+    def _should_abandon(self, saved: dict) -> bool:
+        """True if the resumable project no longer exists and we must stop trying.
+        Covers the case the file-check can't: a `fix` task whose target project was
+        deleted (its journal entry is gone) even though this cycle produced no files."""
+        task = saved.get("task") or {}
+        if task.get("task_type") == "fix":
+            m = re.search(r"#(\d+)", task.get("title", "") or "")
+            if m and not self.mem.journal_has(m.group(1)):
+                return True                    # fixing a project that was deleted
+        return self._project_files_gone(saved)
+
     def run_cycle(self) -> dict:
         t0 = time.time()
         ctx = tools.ToolContext(cfg=self.cfg, mem=self.mem, router=self.router,
@@ -746,12 +757,12 @@ class AgentLoop:
         saved = self.mem.recall("current_project")
         saved = saved if isinstance(saved, dict) else None
 
-        # Self-heal: if the resumable project's files were deleted out from under
-        # us (dashboard delete, SSH rm, janitor cleanup) while we were idle, don't
+        # Self-heal: if the resumable project was deleted out from under us
+        # (dashboard delete, SSH rm, janitor cleanup) while we were idle, don't
         # keep resuming a ghost — drop it and pick something new this cycle.
-        if saved and self._project_files_gone(saved):
+        if saved and self._should_abandon(saved):
             title = (saved.get("task") or {}).get("title", "?")
-            log.info("Saved project '%s' has no files left — abandoning it.", title)
+            log.info("Saved project '%s' is gone — abandoning it.", title)
             self.mem.push_step("info", f"🗑 '{title}' was deleted — moving on to something new")
             self.mem.remember("current_project", None)
             self.mem.remember("working_on", None)
@@ -784,6 +795,10 @@ class AgentLoop:
                 self.mem.push_step("info", f"💡 your suggestion → {task['title']} [{task['task_type']}]")
             elif fix:
                 arts = fix.get("artifacts") or []
+                # carry the target project's files so the self-heal can tell if the
+                # project gets deleted mid-fix and stop chasing a ghost.
+                prior_artifacts = [{"path": p, "label": p.rsplit("/", 1)[-1]}
+                                   for p in arts if isinstance(p, str)]
                 task = {
                     "task_type": "fix",
                     "title": f"Fix #{fix.get('id')}: {fix.get('title', 'a previous project')}",
@@ -809,6 +824,11 @@ class AgentLoop:
 
         self.mem.remember("working_on", {"title": task["title"], "attempt": attempt,
                                          "type": task["task_type"]})
+        # Record the attempt up-front so a crash mid-cycle can't loop forever on the
+        # same project — the counter advances even if execute() throws, so after
+        # max_attempts the resume branch gives up instead of retrying endlessly.
+        self.mem.remember("current_project", {"task": task, "messages": messages,
+                                              "attempts": attempt, "artifacts": prior_artifacts})
         outcome, provider, messages, finished = self.execute(task, ctx, messages)
         # Merge this cycle's artifacts with prior ones, deduped by path (a project
         # spans several cycles and rewrites files, so keep one entry per file).

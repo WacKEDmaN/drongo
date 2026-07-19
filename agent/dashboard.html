@@ -371,7 +371,7 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
    <div style="padding:15px 15px 6px">
     <div class=eyebrow>Now building <span class=meta id=lastllm style="margin-left:auto;font-weight:400"></span></div>
     <div id=workingon>{% if working_on %}<div class="nowcard"><div class=nowlbl>▶ Working on</div><div class=nowtitle>{{ working_on.title }}</div><span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
-    <div style="margin-top:10px;display:flex;gap:7px"><button class=act onclick="ctl('run')">▶ Run a cycle</button><button class=act onclick="showTab('chat')">💬 Chat</button></div>
+    <div style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap"><button class=act onclick="ctl('run')">▶ Run a cycle</button><button class="act danger" onclick="if(confirm('Abandon what it is working on and start something new?'))ctl('skip')" title="drop the current project and move on">⏭ Skip</button><button class=act onclick="showTab('chat')">💬 Chat</button></div>
    </div>
    <div style="padding:15px 15px 6px;border-top:1px solid var(--line)">
     <div class=eyebrow>Host <span class=meta id=sysmodel style="margin-left:auto;font-weight:400"></span></div>
@@ -1408,6 +1408,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    {t:'Pause the agent',k:'action',run:()=>ctl('pause')},
    {t:'Resume the agent',k:'action',run:()=>ctl('resume')},
    {t:'Restart the agent',k:'action',run:()=>{if(confirm('Restart the agent?'))ctl('restart');}},
+   {t:'Skip / abandon current project',k:'action',run:()=>{if(confirm('Abandon the current project and start fresh?'))ctl('skip');}},
    {t:'Scan for hardware',k:'action',run:()=>{showTab('control');goTo('control','c-hardware');}},
    {t:'Suggest the next project',k:'action',run:()=>{showTab('brain');goTo('brain','b-steer');}}];
  let _csel=0,_cf=CMDS;

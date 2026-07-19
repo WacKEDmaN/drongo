@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import time
@@ -145,6 +146,18 @@ def _project_env(cfg):
     return env
 
 
+def _kill_group(proc):
+    """SIGKILL the child's whole process group (reaps backgrounded grandchildren);
+    fall back to killing just the child off POSIX or if the group is gone."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 def _truncate(text: str, limit: int) -> str:
     if text is None:
         return ""
@@ -173,15 +186,26 @@ def shell(ctx: ToolContext, command: str = "", **_):
     except safeguard.CommandRejected as e:
         return f"REJECTED: {e}"
     try:
-        proc = subprocess.run(
-            command, shell=True, cwd=ctx.workspace, capture_output=True,
-            text=True, timeout=timeout, env=_project_env(ctx.cfg),
+        proc = subprocess.Popen(
+            command, shell=True, cwd=ctx.workspace,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env=_project_env(ctx.cfg), start_new_session=True,
             preexec_fn=safeguard.posix_limits(cpu_seconds=timeout),
         )
-        out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
-        return _truncate(f"(exit {proc.returncode})\n{out}".strip(), max_out)
-    except subprocess.TimeoutExpired:
-        return f"TIMEOUT after {timeout}s"
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            # Kill the WHOLE process group, not just the shell — otherwise a
+            # backgrounded child (a game loop, a server, a splash animation) orphans
+            # and pegs the CPU forever after this call returns.
+            _kill_group(proc)
+            try:
+                out, err = proc.communicate(timeout=5)
+            except Exception:
+                out, err = "", ""
+            return _truncate(f"TIMEOUT after {timeout}s (killed)\n{out or ''}".strip(), max_out)
+        combined = (out or "") + (("\n[stderr]\n" + err) if err else "")
+        return _truncate(f"(exit {proc.returncode})\n{combined}".strip(), max_out)
     except Exception as e:
         return f"ERROR: {e}"
 

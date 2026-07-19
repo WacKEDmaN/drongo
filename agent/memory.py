@@ -478,6 +478,15 @@ class Memory:
         if len(kept) != len(q):
             self.remember("fix_queue", kept)
 
+    def journal_has(self, journal_id) -> bool:
+        """True if a journal entry with this id still exists (False once deleted)."""
+        try:
+            row = self._conn.execute("SELECT 1 FROM journal WHERE id=?",
+                                     (int(journal_id),)).fetchone()
+        except (TypeError, ValueError):
+            return False
+        return row is not None
+
     def pop_fix(self):
         q = self.recall("fix_queue") or []
         if not q:
