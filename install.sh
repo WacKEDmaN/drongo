@@ -207,10 +207,21 @@ if [ "$STRIP_DESKTOP" -eq 1 ]; then
   # we just stop the GUI from starting — it frees the same RAM and is fully
   # reversible. Sensors/GPIO/I2C come from the kernel + device tree, not the DE.
   systemctl set-default multi-user.target || true
-  systemctl stop display-manager 2>/dev/null || true   # free the RAM now, no reboot needed
+  systemctl disable display-manager 2>/dev/null || true   # don't respawn it at boot
+  systemctl stop display-manager 2>/dev/null || true      # free the RAM now, no reboot needed
   warn "Desktop is OFF (still installed). Re-enable any time:"
-  warn "  sudo systemctl set-default graphical.target && sudo reboot"
+  warn "  sudo systemctl enable display-manager && sudo systemctl set-default graphical.target && sudo reboot"
 fi
+
+# apport / whoopsie (crash reporter, shipped on many vendor SBC images) is useless
+# on a headless agent and is the documented cause of "/sbin/init splash" pegging a
+# CPU core in a systemd restart-loop when a stale crash report is stuck
+# (Ubuntu LP#1895286). Turn it off + clear the crash spool so PID 1 stops churning.
+say "1c/10 Disabling apport crash-reporter (prevents a systemd restart-loop CPU hog)"
+systemctl disable --now apport.service whoopsie.service 2>/dev/null || true
+systemctl mask --runtime apport-autoreport.service apport-forward.socket 2>/dev/null || true
+rm -f /var/crash/* 2>/dev/null || true
+[ -f /etc/default/apport ] && sed -i 's/^enabled=1/enabled=0/' /etc/default/apport 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 say "2/10  Dedicated unprivileged user '$AGENT_USER'"
