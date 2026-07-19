@@ -73,6 +73,7 @@ can also hand-edit `/etc/drongo/drongo.env` — see [Alerts](#alerts--discord-or
 | Senses its hardware | Scans i2c/spi/1-wire/thermals/USB/cameras, builds dashboards |
 | Learns from its work | Indexes its own repo + past projects, auto-harvests reusable skills, retrieves relevant knowledge (RAG), downloads skill packs, and curates a fine-tuning dataset |
 | Uses YOUR docs as truth | Upload reference docs (API/specs/datasheets) — indexed with FTS5 and searched/injected when it builds, so it stops guessing |
+| Extends via MCP | Connect Model Context Protocol servers (stdio/http) — their tools become the agent's tools, sandboxed like everything else |
 | Talk to it & steer it | A **Chat** tab — ask what it's doing or tell it what to build next, any time (even mid-project); teaching it facts saves them to memory |
 | Shows its token usage | Per-provider tokens (in/out) + totals, charted live, with the latest call's count by the thinking stream |
 | Installs its own packages | Requests apt packages; a scoped root helper installs the ones you allow (policy + hard allow-list) |
@@ -299,6 +300,22 @@ LAN-only):
 
 The agent only pushes an alert when it finishes something with artifacts (set
 `alerts.notify_every_cycle: true` for a ping every cycle).
+
+---
+
+## MCP tool servers
+
+Give the agent external tools via the **Model Context Protocol**. On the **Brain**
+tab, add an MCP server — **stdio** (a command like `npx -y @modelcontextprotocol/
+server-filesystem /path`, needs Node) or **http** (a URL). Its tools become
+`mcp__<server>__<tool>` that the ReAct loop can call like any built-in; **test** a
+server from the dashboard to see the tools it exposes before relying on it. Servers
+connect at agent startup (add one → restart).
+
+The client is dependency-light (stdlib JSON-RPC + `requests`, no heavy SDK). An MCP
+server runs inside the agent's **own sandbox** (unprivileged `drongo`, no sudo) and
+gets a clean environment, so it's no more privileged than the `shell` tool and never
+sees DRONGO's LLM keys. MCP tools are disabled in **safe mode**.
 
 ---
 
