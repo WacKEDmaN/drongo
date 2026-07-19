@@ -275,23 +275,6 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=projects class="tab">
-  <div class="card">
-    <h3 style="margin-top:0">💡 Suggest the next project</h3>
-    <p class="meta">Tell {{ name }} what to build next. It finishes anything in
-      progress first, then takes your suggestion on before inventing its own idea.</p>
-    <textarea id=suggbox rows=2 placeholder="e.g. a Pong clone where the paddles speed up with CPU temperature"></textarea>
-    <div style="margin-top:8px">
-      <button class="act big" onclick="sendSuggest()">Send suggestion</button>
-      <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span>
-    </div>
-  </div>
-  <div class="card">
-    <h3 style="margin-top:0">🎯 Standing mission</h3>
-    <p class="meta">A persistent theme that biases EVERY new project it dreams up (on top of its
-      interests). Unlike a one-off suggestion this sticks until you change it. Blank = no mission.</p>
-    <textarea id=missionbox rows=2 placeholder="e.g. focus on retro Amstrad / Z80 projects this month">{{ mission }}</textarea>
-    <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div>
-  </div>
   <h2>Projects it has built — open, run, tag, or flag broken ones for a fix</h2>
   <div id=projlist>
   {% for j in projects %}
@@ -339,7 +322,24 @@ PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
  </section>
 
  <section id=brain class="tab">
-  <h2>🧠 Brain — what DRONGO has learned</h2>
+  <h2>🧠 Brain — steer it, and see what it has learned</h2>
+  <div class="card">
+    <h3 style="margin-top:0">💡 Suggest the next project</h3>
+    <p class="meta">Tell {{ name }} what to build next. It finishes anything in
+      progress first, then takes your suggestion on before inventing its own idea.</p>
+    <textarea id=suggbox rows=2 placeholder="e.g. a Pong clone where the paddles speed up with CPU temperature"></textarea>
+    <div style="margin-top:8px">
+      <button class="act big" onclick="sendSuggest()">Send suggestion</button>
+      <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span>
+    </div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">🎯 Standing mission</h3>
+    <p class="meta">A persistent theme that biases EVERY new project it dreams up (on top of its
+      interests). Unlike a one-off suggestion this sticks until you change it. Blank = no mission.</p>
+    <textarea id=missionbox rows=2 placeholder="e.g. focus on retro Amstrad / Z80 projects this month">{{ mission }}</textarea>
+    <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div>
+  </div>
   <div class="card"><div id=kbsummary class=meta>loading…</div></div>
   <div class="card">
    <div class=th>Import a skill</div>
@@ -1208,11 +1208,33 @@ def create_app(cfg, mem: Memory) -> Flask:
                 seen[a["path"]] = a
         return list(seen.values())
 
+    def _clean_note(body):
+        """Older journal rows can hold the model's raw JSON instead of the note
+        (a reflect() parse failure). Show the human-readable part instead."""
+        t = (body or "").strip()
+        if not t.startswith("{"):
+            return body or ""
+        try:
+            obj = json.loads(t)
+        except Exception:
+            m = re.search(r'"(?:note|reply|final)"\s*:\s*"((?:[^"\\]|\\.)*)"?', t)
+            if m:
+                try:
+                    return json.loads('"' + m.group(1) + '"')
+                except Exception:
+                    return m.group(1)
+            return body or ""
+        if isinstance(obj, dict):
+            for k in ("note", "reply", "final", "description", "summary"):
+                if isinstance(obj.get(k), str) and obj[k].strip():
+                    return obj[k].strip()
+        return body or ""
+
     def _journal(limit, kind=None):
         rows = []
         for j in mem.recent_journal(limit, kind=kind):
             rows.append({"id": j["id"], "title": j["title"] or "", "kind": j["kind"],
-                         "task_type": j["task_type"], "body": j["body"] or "",
+                         "task_type": j["task_type"], "body": _clean_note(j["body"]),
                          "provider": j["provider"], "ok": bool(j["ok"]),
                          "when": utc_iso(j["ts"]), "ts": j["ts"],
                          "arts": _dedupe_arts(json.loads(j["artifacts"] or "[]")),

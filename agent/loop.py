@@ -586,7 +586,20 @@ class AgentLoop:
         except AllProvidersFailed:
             return outcome, ""
         obj = extract_json(text) or {}
-        note = (obj.get("note") or text).strip()
+        note = str(obj.get("note") or "").strip()
+        if not note:
+            # The model's JSON didn't parse. NEVER surface raw JSON as the
+            # project card's description — rescue the "note" value by regex, or
+            # fall back to the plain-prose outcome.
+            m = re.search(r'"note"\s*:\s*"((?:[^"\\]|\\.)*)"?', text or "")
+            if m:
+                try:
+                    note = json.loads('"' + m.group(1) + '"').strip()
+                except Exception:
+                    note = m.group(1).strip()
+            if not note:
+                t = (text or "").strip()
+                note = outcome if (not t or t.startswith("{")) else t
         return note, (obj.get("lesson") or "").strip()
 
     # ---- alerts: ONLY on completion or a problem ----------------------
