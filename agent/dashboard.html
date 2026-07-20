@@ -93,11 +93,30 @@ code{font:12px var(--mono);background:rgba(87,183,230,.1);color:var(--info);padd
 /* ---- view frame ---- */
 main{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .tab{flex:1;min-height:0;display:none}
-.tab.on{display:flex;flex-direction:column}
-.tab.split-tab.on{display:grid;grid-template-columns:1fr 348px}
+.tab.on{display:block;overflow-y:auto;overflow-x:hidden;padding:18px 22px}   /* default: a scrollable page */
+.tab.split-tab.on{display:grid;grid-template-columns:1fr 348px;overflow:hidden;padding:0}   /* activity: fixed panes */
+.tab.chat-tab.on{display:flex;flex-direction:column;overflow:hidden;padding:0}              /* chat: fixed, log scrolls */
 .center{min-width:0;min-height:0;overflow-y:auto;padding:18px 20px}
 .inspect{border-left:1px solid var(--line);background:var(--sunken);min-height:0;overflow-y:auto}
-.scroll{flex:1;min-height:0;overflow-y:auto;padding:18px 22px}
+.scroll{display:block}   /* legacy no-op — the tab itself scrolls now */
+/* ---- two-pane "sub-page" tabs: Brain, Settings (left sub-nav, one page at a time) ---- */
+.tab.pane-tab.on{display:flex;flex-direction:column;overflow:hidden;padding:0}
+.panehead{flex:none;padding:15px 22px 13px;border-bottom:1px solid var(--line)}
+.panehead h2{font-size:18px}
+.panehead .sub{color:var(--mut);font:12px var(--mono);margin-top:4px;display:block}
+.panewrap{flex:1;min-height:0;display:grid;grid-template-columns:214px 1fr}
+.subnav{border-right:1px solid var(--line);background:var(--sunken);padding:12px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:1px}
+.subnav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;color:var(--mut);padding:8px 11px;border-radius:var(--r);font:500 13px var(--sans);position:relative;transition:.13s}
+.subnav button:hover{background:#131d26;color:var(--fg)}
+.subnav button.on{background:var(--acc-glow);color:var(--fg)}
+.subnav button.on::before{content:"";position:absolute;left:-9px;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:var(--acc);box-shadow:0 0 10px var(--acc)}
+.subnav .ic{width:17px;text-align:center;font-size:14px;flex:none;color:var(--faint)}
+.subnav button.on .ic{color:var(--acc)}
+.subnav .subgrp{font:600 10px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:13px 10px 4px}
+.subbody{overflow-y:auto;padding:20px 24px;min-width:0}
+.subpage{display:none} .subpage.on{display:block}
+.subpage>.sph{font-size:16px;margin:0 0 3px} .subpage>.sphd{margin:0 0 16px;color:var(--mut);font:12px/1.5 var(--mono);max-width:76ch}
+@media(max-width:900px){.panewrap{grid-template-columns:1fr;grid-template-rows:auto 1fr} .subnav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)} .subnav button.on::before{display:none}}
 .pagehead{margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
 .pagehead h2{font-size:18px}
 .pagehead .sub{color:var(--mut);font:12px var(--mono);margin-top:5px;display:block}
@@ -174,16 +193,27 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
 .pkgck{accent-color:var(--acc)}
 
 /* ---- projects ---- */
-.pnum{font:11px var(--mono);color:var(--faint);margin-right:2px}
-#projlist .card h3{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.pcontent{font-size:12.5px;color:var(--mut);margin-top:6px;flex:1;overflow:hidden}
-.pcontent p{margin:0 0 8px;color:var(--fg)}
-.card.expanded .pcontent{overflow:visible}
-.pactions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
-.chips{display:flex;gap:5px;flex-wrap:wrap}
+.pgrid{align-items:start}
+.proj{position:relative;overflow:hidden;padding:14px 15px 12px;display:flex;flex-direction:column;transition:border-color .15s,transform .12s}
+.proj:hover{border-color:var(--line2);transform:translateY(-1px)}
+.proj::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--good)}
+.proj.s-bad::before{background:var(--crit)} .proj.s-fix::before{background:var(--warn)}
+.phdr{display:flex;align-items:baseline;gap:8px}
+.phdr .pnum{font:11px var(--mono);color:var(--faint);flex:none}
+.phdr .ptitle{font-weight:600;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptype{font:9.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--info);background:rgba(87,183,230,.1);border:1px solid rgba(87,183,230,.25);padding:2px 7px;border-radius:5px;flex:none}
+.pmeta{font:11px var(--mono);color:var(--mut);margin-top:5px}
+.pbody{font-size:12.5px;color:#cbd7e3;margin-top:8px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.card.expanded .pbody{-webkit-line-clamp:unset;display:block}
+.parts{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px}
+.chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
 .chip{display:inline-block;font:10px var(--mono);padding:2px 7px;border-radius:5px;border:1px solid var(--line2);color:var(--mut)}
 .chip.fix{color:var(--crit);border-color:rgba(236,106,79,.4)}
-.art{color:var(--info);font:11.5px var(--mono);margin-right:8px;cursor:pointer}
+.pill.bad,.pill.warn{padding:1px 7px}
+.pactions{display:flex;gap:5px;flex-wrap:wrap;margin-top:auto;padding-top:11px}
+.pactions .act{padding:4px 9px;font-size:12px}
+.art{color:var(--info);font:11px var(--mono);cursor:pointer;padding:2px 8px;border:1px solid var(--line2);border-radius:5px;background:var(--sunken);white-space:nowrap;text-decoration:none}
+.art:hover{border-color:var(--acc);color:var(--acc);text-decoration:none}
 
 /* ---- buttons ---- */
 .act,.runbtn{background:var(--raised);border:1px solid var(--line2);color:var(--fg);padding:5px 11px;border-radius:6px;font:11.5px var(--sans);font-weight:500}
@@ -313,22 +343,23 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
   <div class=navwrap data-t=chat><button class=sbitem data-t=chat><span class=ic>◗</span>Chat</button></div>
   <div class=navwrap data-t=brain><button class=sbitem data-t=brain><span class=ic>🧠</span>Brain</button>
    <div class=sbsub>
-    <button onclick="goTo('brain','b-steer')">Steering</button>
-    <button onclick="goTo('brain','b-kb')">Knowledge base</button>
-    <button onclick="goTo('brain','b-docs')">Reference docs</button>
-    <button onclick="goTo('brain','b-mcp')">MCP servers</button>
-    <button onclick="goTo('brain','b-skills')">Skills</button>
-    <button onclick="goTo('brain','b-notes')">Notes &amp; lessons</button>
-    <button onclick="goTo('brain','b-memory')">Raw memory</button>
+    <button onclick="goSub('brain','steer')">Steering</button>
+    <button onclick="goSub('brain','kb')">Knowledge base</button>
+    <button onclick="goSub('brain','docs')">Reference docs</button>
+    <button onclick="goSub('brain','mcp')">MCP servers</button>
+    <button onclick="goSub('brain','skills')">Skills</button>
+    <button onclick="goSub('brain','notes')">Notes &amp; lessons</button>
+    <button onclick="goSub('brain','memory')">Raw memory</button>
    </div></div>
   <div class=sbgroup>System</div>
   <div class=navwrap data-t=control><button class=sbitem data-t=control><span class=ic>⚙</span>Settings</button>
    <div class=sbsub>
-    <button onclick="goTo('control','c-ctl')">Agent controls</button>
-    <button onclick="goTo('control','c-alerts')">Alerts</button>
-    <button onclick="goTo('control','c-providers')">LLM providers</button>
-    <button onclick="goTo('control','c-hardware')">Hardware</button>
-    <button onclick="goTo('control','c-settings')">All settings</button>
+    <button onclick="goSub('control','controls')">Controls</button>
+    <button onclick="goSub('control','providers')">Providers &amp; keys</button>
+    <button onclick="goSub('control','tuning')">LLM tuning</button>
+    <button onclick="goSub('control','loop')">Loop &amp; cadence</button>
+    <button onclick="goSub('control','alerts')">Alerts &amp; LED</button>
+    <button onclick="goSub('control','hardware')">Hardware</button>
    </div></div>
   <div class=navwrap data-t=help><button class=sbitem data-t=help><span class=ic>?</span>Help</button></div>
  </nav>
@@ -407,7 +438,7 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
   </div>
  </section>
 
- <section id=chat class="tab">
+ <section id=chat class="tab chat-tab">
   <div style="flex:1;min-height:0;display:flex;flex-direction:column;padding:16px 20px">
    <div class=pagehead style="flex:none;margin-bottom:12px"><div><h2>Chat</h2><div class=sub>Ask {{ name }} anything or steer it — answered instantly, even mid-build. Watch it think on the Activity tab.</div></div>
     <div class=acts><select id=chatprov class=set style="width:auto;max-width:200px;margin:0"><option value="">auto (router order)</option></select>
@@ -426,16 +457,12 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
     <div class=sub>Everything it has built — open or run them, tag them, or flag a broken one and it fixes that before starting anything new.</div></div></div>
   <div id=projlist class=pgrid>
   {% for j in projects %}
-   <div class="card" data-id="{{ j.id }}">
-     <h3><span class=pnum>#{{ j.id }}</span> {{ j.title }} {% if not j.ok %}<span class="pill bad">unfinished</span>{% endif %}</h3>
-     <div class="meta"><span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span>{% if j.provider %} · via {{ j.provider }}{% endif %}</div>
-     <div class=pcontent>
-       <p>{{ j.body }}</p>
-       {% for a in j.arts %}<span style="white-space:nowrap">{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith(('.py', '.sh')) and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}</span> {% endfor %}
-       <div class="chips" id="chips-{{ j.id }}" style="margin-top:8px">
-         {% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}
-       </div>
-     </div>
+   <div class="card proj {{ 's-fix' if 'needs-fix' in j.tags else ('s-bad' if not j.ok else 's-ok') }}" data-id="{{ j.id }}">
+     <div class=phdr><span class=pnum>#{{ j.id }}</span><span class=ptitle>{{ j.title }}</span>{% if j.task_type %}<span class=ptype>{{ j.task_type }}</span>{% endif %}</div>
+     <div class=pmeta><span class=ts data-ts="{{ j.ts }}">{{ j.when }}</span>{% if j.provider %} · {{ j.provider }}{% endif %}{% if not j.ok %} · <span style="color:var(--crit)">unfinished</span>{% endif %}</div>
+     <div class=pbody>{{ j.body }}</div>
+     {% if j.arts %}<div class=parts>{% for a in j.arts %}{% if a.view %}<a class="art" href="#" onclick='viewfile({{ a.path|tojson }});return false'>▸ {{ a.label }}</a>{% else %}<a class="art" href="/file/{{ a.path }}" target=_blank>▸ {{ a.label }}</a>{% endif %}{% if a.path.endswith(('.py', '.sh')) and allow_run %}<button class="runbtn" onclick='runpy({{ a.path|tojson }},{{ j.id }})'>▶ run</button>{% endif %}{% endfor %}</div>{% endif %}
+     <div class="chips" id="chips-{{ j.id }}">{% for t in j.tags %}<span class="chip {{ 'fix' if t=='needs-fix' else '' }}">{{ t }}</span>{% endfor %}</div>
      <div class=pactions>
        <button class="act" onclick="rate({{ j.id }},'loved')" title="more like this">⭐</button>
        <button class="act" onclick="rate({{ j.id }},'meh')" title="less like this">👎</button>
@@ -471,158 +498,200 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
   </div>
  </section>
 
- <section id=brain class="tab">
-  <div class=pagehead><div><h2>Brain</h2><div class=sub>Steer {{ name }} and see everything it has learned — its knowledge base, reference docs, tools, skills, notes and raw memory.</div></div></div>
+ <section id=brain class="tab pane-tab">
+  <div class=panehead><h2>Brain</h2><span class=sub>Steer {{ name }} and see everything it has learned.</span></div>
+  <div class=panewrap>
+   <nav class=subnav>
+    <button class=on data-p=steer><span class=ic>🎯</span>Steering</button>
+    <button data-p=kb><span class=ic>📚</span>Knowledge base</button>
+    <button data-p=docs><span class=ic>📄</span>Reference docs</button>
+    <button data-p=mcp><span class=ic>🔌</span>MCP servers</button>
+    <button data-p=skills><span class=ic>🧩</span>Skills</button>
+    <button data-p=notes><span class=ic>📝</span>Notes &amp; lessons</button>
+    <button data-p=memory><span class=ic>🗄</span>Raw memory</button>
+   </nav>
+   <div class=subbody>
 
-  <div class="secthead anchor" id=b-steer><span class=si>🎯</span>Steering</div>
-  <div class=dash>
-   <div class="tile c6"><div class=th>💡 Suggest the next project</div>
-     <p class="meta">Tell {{ name }} what to build next. It finishes anything in progress first, then takes your suggestion on before inventing its own idea.</p>
-     <textarea id=suggbox rows=2 placeholder="e.g. a Pong clone where the paddles speed up with CPU temperature"></textarea>
-     <div style="margin-top:8px"><button class="act big" onclick="sendSuggest()">Send suggestion</button>
-       <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span></div></div>
-   <div class="tile c6"><div class=th>🎯 Standing mission</div>
-     <p class="meta">A persistent theme that biases EVERY new project it dreams up (on top of its interests). Unlike a one-off suggestion this sticks until you change it. Blank = no mission.</p>
-     <textarea id=missionbox rows=2 placeholder="e.g. focus on retro Amstrad / Z80 projects this month">{{ mission }}</textarea>
-     <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div></div>
-  </div>
+    <div class="subpage on" data-p=steer>
+     <h3 class=sph>Steering</h3><p class=sphd>Tell it what to build next, or set a lasting theme.</p>
+     <div class=dash>
+      <div class="tile c6"><div class=th>💡 Suggest the next project</div>
+        <p class="meta">Tell {{ name }} what to build next. It finishes anything in progress first, then takes your suggestion on before inventing its own idea.</p>
+        <textarea id=suggbox rows=2 placeholder="e.g. a Pong clone where the paddles speed up with CPU temperature"></textarea>
+        <div style="margin-top:8px"><button class="act big" onclick="sendSuggest()">Send suggestion</button>
+          <span class="meta" id=suggcur>{% if suggestion %}Queued: {{ suggestion }}{% endif %}</span></div></div>
+      <div class="tile c6"><div class=th>🎯 Standing mission</div>
+        <p class="meta">A persistent theme that biases EVERY new project it dreams up (on top of its interests). Unlike a one-off suggestion this sticks until you change it. Blank = no mission.</p>
+        <textarea id=missionbox rows=2 placeholder="e.g. focus on retro Amstrad / Z80 projects this month">{{ mission }}</textarea>
+        <div style="margin-top:8px"><button class="act big" onclick="saveMission()">Save mission</button></div></div>
+     </div>
+    </div>
 
-  <div class="secthead anchor" id=b-kb><span class=si>📚</span>Knowledge base</div>
-  <div class="tile c12"><div id=kbsummary class=meta>loading…</div></div>
+    <div class=subpage data-p=kb>
+     <h3 class=sph>Knowledge base</h3><p class=sphd>What it has indexed and learned so far.</p>
+     <div class="tile c12"><div id=kbsummary class=meta>loading…</div></div>
+    </div>
 
-  <div class="secthead anchor" id=b-docs><span class=si>📄</span>Reference docs <span class=meta id=doccount>— your uploaded "source of truth"</span></div>
-  <div class="tile c12">
-   <p class=meta>Upload docs the agent should treat as AUTHORITATIVE (API references, datasheets, specs). Text formats — .md .txt .py .html .json .csv … It searches these before guessing, and the most relevant passages are injected when it starts a related project. (You can also scp a folder into <code>runtime/docs/</code> — it indexes on restart.)</p>
-   <input type=file id=docfiles multiple class=set style="padding:6px;max-width:420px;display:inline-block">
-   <button class=act onclick="uploadDocs()">⬆ upload &amp; index</button>
-   <div style="margin-top:8px">
-     <input id=docq class=set placeholder="test a search over your docs…" style="max-width:300px;display:inline-block;margin-right:6px" onkeydown="if(event.key==='Enter')testDocSearch()">
-     <button class=act onclick="testDocSearch()">🔍 search</button>
+    <div class=subpage data-p=docs>
+     <h3 class=sph>Reference docs <span class=meta id=doccount></span></h3><p class=sphd>Docs it treats as authoritative — searched before it guesses, and injected into related projects.</p>
+     <div class="tile c12">
+      <p class=meta>Upload docs the agent should treat as AUTHORITATIVE (API references, datasheets, specs). Text formats — .md .txt .py .html .json .csv … (You can also scp a folder into <code>runtime/docs/</code> — it indexes on restart.)</p>
+      <input type=file id=docfiles multiple class=set style="padding:6px;max-width:420px;display:inline-block">
+      <button class=act onclick="uploadDocs()">⬆ upload &amp; index</button>
+      <div style="margin-top:8px">
+        <input id=docq class=set placeholder="test a search over your docs…" style="max-width:300px;display:inline-block;margin-right:6px" onkeydown="if(event.key==='Enter')testDocSearch()">
+        <button class=act onclick="testDocSearch()">🔍 search</button>
+      </div>
+      <div id=docresults class=meta style="margin-top:8px"></div>
+      <div id=docwrap class=meta style="margin-top:8px">loading…</div>
+     </div>
+    </div>
+
+    <div class=subpage data-p=mcp>
+     <h3 class=sph>MCP tool servers</h3><p class=sphd>Give it external tools (filesystem, GitHub, web, DBs…) via Model Context Protocol.</p>
+     <div class="tile c12">
+      <p class=meta>Connect <a href="https://modelcontextprotocol.io" target=_blank>MCP</a> servers; their tools become <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> the agent can call. <b>stdio</b> launches a command (needs Node); <b>http</b> connects to a URL. They run in the agent's sandbox (no sudo) and take effect on <b>restart</b>.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+       <input id=mcpname class=set placeholder="name (e.g. fs)" style="max-width:130px;display:inline-block">
+       <select id=mcptransport class=set style="width:auto;display:inline-block" onchange="mcpFormMode()"><option value=stdio>stdio (command)</option><option value=http>http (url)</option></select>
+      </div>
+      <div id=mcpstdio style="margin-top:6px">
+       <input id=mcpcmd class=set placeholder="command (e.g. npx)" style="max-width:200px;display:inline-block;margin-right:6px">
+       <input id=mcpargs class=set placeholder="args (e.g. -y @modelcontextprotocol/server-filesystem /var/lib/drongo/runtime/workspace)" style="max-width:520px;display:inline-block">
+      </div>
+      <div id=mcphttp style="margin-top:6px;display:none">
+       <input id=mcpurl class=set placeholder="https://…/mcp" style="max-width:420px;display:inline-block">
+      </div>
+      <div style="margin-top:8px"><button class=act onclick="mcpAdd()">+ add server</button></div>
+      <div id=mcpwrap class=meta style="margin-top:10px">loading…</div>
+     </div>
+    </div>
+
+    <div class=subpage data-p=skills>
+     <h3 class=sph>Skills <span class=meta id=skillcount></span></h3><p class=sphd>Reusable code patterns it harvests from finished projects — plus any you import.</p>
+     <div class=dash>
+      <div class="tile c5"><div class=th>Import a skill</div>
+       <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL. Imported code is stored, never auto-run.</p>
+       <input id=skillurl class=set placeholder="https://…/skills.json (public URL)">
+       <button class=act onclick="dlSkill()">⬇ Download from URL</button>
+       <textarea id=skilljson class=set placeholder='{"name":"my-skill","description":"what it does + when to reuse","code":"def f(): ..."}' style="min-height:88px"></textarea>
+       <button class=act onclick="importSkill()">+ Add skill</button></div>
+      <div class="tile c7"><div class=th>Saved skills</div><div id=skillwrap class=meta>loading…</div></div>
+     </div>
+    </div>
+
+    <div class=subpage data-p=notes>
+     <h3 class=sph>Notes &amp; lessons</h3><p class=sphd>Facts it saved and lessons it drew from its work.</p>
+     <div class=dash>
+      <div class="tile c6"><div class=th>Notes <span class=meta id=notecount></span></div><div id=notewrap class=meta>loading…</div></div>
+      <div class="tile c6"><div class=th>Lessons learned</div><div id=lessonwrap class=meta>loading…</div></div>
+     </div>
+    </div>
+
+    <div class=subpage data-p=memory>
+     <h3 class=sph>Raw memory <span class=meta id=memcount></span></h3><p class=sphd>Every key in its long-term store. Click a key to inspect it; delete what you want it to forget.</p>
+     <div class="tile c12">
+      <p class=meta><b>settings</b> is protected here — edit it via Settings.</p>
+      <div id=memwrap class=meta>loading…</div>
+     </div>
+    </div>
+
    </div>
-   <div id=docresults class=meta style="margin-top:8px"></div>
-   <div id=docwrap class=meta style="margin-top:8px">loading…</div>
-  </div>
-
-  <div class="secthead anchor" id=b-mcp><span class=si>🔌</span>MCP tool servers <span class=meta>— give it external tools (filesystem, GitHub, web, DBs…)</span></div>
-  <div class="tile c12">
-   <p class=meta>Connect <a href="https://modelcontextprotocol.io" target=_blank>Model Context Protocol</a> servers; their tools become <code>mcp__&lt;server&gt;__&lt;tool&gt;</code> the agent can call. <b>stdio</b> launches a command (e.g. <code>npx&nbsp;-y&nbsp;@modelcontextprotocol/server-filesystem&nbsp;/path</code> — needs Node); <b>http</b> connects to a URL. They run in the agent's sandbox (no sudo) and take effect on <b>restart</b>. Test before you rely on one.</p>
-   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-    <input id=mcpname class=set placeholder="name (e.g. fs)" style="max-width:130px;display:inline-block">
-    <select id=mcptransport class=set style="width:auto;display:inline-block" onchange="mcpFormMode()"><option value=stdio>stdio (command)</option><option value=http>http (url)</option></select>
-   </div>
-   <div id=mcpstdio style="margin-top:6px">
-    <input id=mcpcmd class=set placeholder="command (e.g. npx)" style="max-width:200px;display:inline-block;margin-right:6px">
-    <input id=mcpargs class=set placeholder="args (e.g. -y @modelcontextprotocol/server-filesystem /var/lib/drongo/runtime/workspace)" style="max-width:520px;display:inline-block">
-   </div>
-   <div id=mcphttp style="margin-top:6px;display:none">
-    <input id=mcpurl class=set placeholder="https://…/mcp" style="max-width:420px;display:inline-block">
-   </div>
-   <div style="margin-top:8px"><button class=act onclick="mcpAdd()">+ add server</button></div>
-   <div id=mcpwrap class=meta style="margin-top:10px">loading…</div>
-  </div>
-
-  <div class="secthead anchor" id=b-skills><span class=si>🧩</span>Skills <span class=meta id=skillcount></span></div>
-  <div class=dash>
-   <div class="tile c5"><div class=th>Import a skill</div>
-    <p class=meta>Paste a skill as JSON <code>{"name","description","code"}</code> (or a pack <code>{"skills":[…]}</code>), or give a public URL to download from. Imported code is stored, never auto-run.</p>
-    <input id=skillurl class=set placeholder="https://…/skills.json (public URL)">
-    <button class=act onclick="dlSkill()">⬇ Download from URL</button>
-    <textarea id=skilljson class=set placeholder='{"name":"my-skill","description":"what it does + when to reuse","code":"def f(): ..."}' style="min-height:88px"></textarea>
-    <button class=act onclick="importSkill()">+ Add skill</button></div>
-   <div class="tile c7"><div class=th>Saved skills</div><div id=skillwrap class=meta>loading…</div></div>
-  </div>
-
-  <div class="secthead anchor" id=b-notes><span class=si>📝</span>Notes &amp; lessons</div>
-  <div class=dash>
-   <div class="tile c6"><div class=th>Notes <span class=meta id=notecount></span></div><div id=notewrap class=meta>loading…</div></div>
-   <div class="tile c6"><div class=th>Lessons learned</div><div id=lessonwrap class=meta>loading…</div></div>
-  </div>
-
-  <div class="secthead anchor" id=b-memory><span class=si>🗄</span>Raw memory <span class=meta id=memcount>— every key in its long-term store</span></div>
-  <div class="tile c12">
-   <p class=meta>Everything in the agent's key/value memory (state, settings, learned data). Click a key to inspect the full value; delete what you want it to forget. <b>settings</b> is protected here — edit it via Control → Settings.</p>
-   <div id=memwrap class=meta>loading…</div>
   </div>
  </section>
 
- <section id=control class="tab">
-  <div class=pagehead><div><h2>Control</h2><div class=sub>Run, pause or restart {{ name }}, tune alerts and hardware, and configure every setting — providers, keys, cadence, behaviour and more.</div></div></div>
-  <div class=ctlgrid>
-  <div class="panel open anchor" id=c-ctl data-panel=ctl>
-   <button class=phead onclick="togglePanel(this)">Agent controls<span class=chev>▾</span></button>
-   <div class=pbody>
-    <button class="act big" onclick="ctl('run')">▶ Run a cycle now</button>
-    <button class="act big" onclick="ctl('pause')">⏸ Pause</button>
-    <button class="act big" onclick="ctl('resume')">⏵ Resume</button>
-    <button class="act big" onclick="ctl('stop')">⏹ Stop (dormant)</button>
-    <button class="act big danger" onclick="if(confirm('Restart the agent?'))ctl('restart')">⟳ Restart</button>
-    <p class="meta">Pause/Stop just idle it (removable). Restart relaunches via systemd.
-      Flagged fixes are worked before new projects.</p>
-    <p class="meta" id=fixq></p>
-    <div class=swrow style="margin-top:10px">
-     <label class=sw><input type=checkbox id=turbo {{ 'checked' if turbo }} onchange="toggleTurbo(this.checked)"><span class=sl></span></label>
-     <div><div class=lbl>⚡ Turbo mode</div><div class=sub>Work back-to-back (~20-40s between projects) instead of the normal gap — keeps it (and the CPU) busy. Cloud limits will fall back to the local model.</div></div>
-    </div>
-   </div>
+ <section id=control class="tab pane-tab">
+  <div class=panehead style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap">
+   <div><h2>Settings</h2><span class=sub>How {{ name }} runs. Saved to the agent — “Save &amp; Restart” to apply.</span></div>
+   <div style="display:flex;gap:8px;flex:none"><button class="act big" onclick="saveSettings(false)">Save</button><button class="act big danger" onclick="saveSettings(true)">Save &amp; Restart</button></div>
   </div>
+  <div class=panewrap>
+   <nav class=subnav>
+    <button class=on data-p=controls><span class=ic>▶</span>Controls</button>
+    <button data-p=providers><span class=ic>🔌</span>Providers &amp; keys</button>
+    <button data-p=tuning><span class=ic>🎛</span>LLM tuning</button>
+    <button data-p=loop><span class=ic>🔁</span>Loop &amp; cadence</button>
+    <button data-p=behaviour><span class=ic>⚖</span>Behaviour</button>
+    <button data-p=images><span class=ic>🖼</span>Image generation</button>
+    <button data-p=alerts><span class=ic>🔔</span>Alerts &amp; LED</button>
+    <button data-p=persona><span class=ic>🎭</span>Personality</button>
+    <button data-p=hardware><span class=ic>🔧</span>Hardware</button>
+   </nav>
+   <div class="subbody set">
 
-  <div class="panel open anchor" id=c-alerts data-panel=alerts>
-   <button class=phead onclick="togglePanel(this)">Discord alerts <span class=chev>▾</span></button>
-   <div class=pbody>
-    <div class=swrow>
-     <label class=sw><input type=checkbox id=al_agent {{ 'checked' if alerts_agent_on }} onchange="toggleAlerts('agent',this.checked)"><span class=sl></span></label>
-     <div><div class=lbl>Agent alerts</div><div class=sub>“project complete” + problems (and the LED, if wired). Turn off to stop the per-project spam.</div></div>
+    <div class="subpage on" data-p=controls>
+     <h3 class=sph>Agent controls</h3><p class=sphd>Run, pause or restart it. Flagged fixes are worked before new projects.</p>
+     <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="act big" onclick="ctl('run')">▶ Run a cycle now</button>
+      <button class="act big" onclick="ctl('pause')">⏸ Pause</button>
+      <button class="act big" onclick="ctl('resume')">⏵ Resume</button>
+      <button class="act big" onclick="ctl('stop')">⏹ Stop</button>
+      <button class="act big" onclick="if(confirm('Abandon the current project and start fresh?'))ctl('skip')">⏭ Skip</button>
+      <button class="act big danger" onclick="if(confirm('Restart the agent?'))ctl('restart')">⟳ Restart</button>
+     </div>
+     <p class="meta" id=fixq style="margin-top:10px"></p>
+     <div class=swrow style="margin-top:10px">
+      <label class=sw><input type=checkbox id=turbo {{ 'checked' if turbo }} onchange="toggleTurbo(this.checked)"><span class=sl></span></label>
+      <div><div class=lbl>⚡ Turbo mode</div><div class=sub>Work back-to-back (~20-40s between projects). Cloud limits fall back to the local model.</div></div>
+     </div>
     </div>
-    <div class=swrow>
-     <label class=sw><input type=checkbox id=al_observer {{ 'checked' if alerts_observer_on }} onchange="toggleAlerts('observer',this.checked)"><span class=sl></span></label>
-     <div><div class=lbl>Observer alerts</div><div class=sub>crash-loops, rollbacks &amp; host-health from the root watchdog/updater. Best left on.</div></div>
+
+    <div class=subpage data-p=providers>
+     <h3 class=sph>LLM providers &amp; keys</h3><p class=sphd>Toggle providers live, set model/key, and re-order. “active” = the agent actually loads it (a cloud provider with no key is skipped). Added/removed providers apply on restart.</p>
+     <div class=th style="margin-top:4px">Live on / off</div>
+     {% for p in sv.providers %}
+     <div class=swrow>
+      <label class=sw><input type=checkbox id="prov_{{ p.name }}" {{ 'checked' if p.name not in providers_off }} onchange="toggleProvider('{{ p.name }}',this.checked)"><span class=sl></span></label>
+      <div><div class=lbl>{{ p.name }} <span class=meta>{{ p.model }}</span>
+        {% if p.usable %}<span class=pill-ok>active</span>{% else %}<span class=pill-bad>{{ 'no key — inactive' if p.key_env and not p.key_set else 'inactive' }}</span>{% endif %}</div></div>
+     </div>
+     {% endfor %}
+     <div class=th style="margin-top:18px">Model, key &amp; order</div>
+     {% for p in sv.providers %}
+      <div class=prow data-name="{{ p.name }}">
+        <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}{% if p.custom %} <span class=meta>(custom)</span>{% endif %}</label>
+        <input id="pm_{{ p.name }}" value="{{ p.model }}" placeholder="model">
+        {% if p.key_env %}<input id="pk_{{ p.name }}" type=password autocomplete=off placeholder="{{ 'key set — blank keeps it' if p.key_set else 'paste '+p.key_env }}">{% endif %}
+        <button class="act" onclick="moveProvider(this,-1)" title="try earlier">▲</button>
+        <button class="act" onclick="moveProvider(this,1)" title="try later">▼</button>
+        {% if p.custom %}<button class="act danger" onclick="removeProvider('{{ p.name }}')" title="remove this provider">✕</button>{% endif %}
+      </div>
+     {% endfor %}
+     <h3 style="margin-top:16px">Add a provider</h3>
+     <label>Preset<select id=ap_preset onchange="apPreset()">
+       <option value=custom>Custom (OpenAI-compatible)</option>
+       <option value=ollama>Ollama Cloud (free — gpt-oss, qwen, deepseek)</option>
+       <option value=nemotron>Ollama Cloud — Nemotron (NVIDIA, no NVIDIA key)</option>
+       <option value=nvidia>NVIDIA NIM (direct — needs NVIDIA key)</option>
+       <option value=github>GitHub Models (free w/ PAT)</option>
+       <option value=cerebras>Cerebras (free)</option>
+       <option value=groq>Groq (free)</option>
+       <option value=gemini>Google Gemini (free)</option>
+       <option value=mistral>Mistral (free)</option>
+       <option value=together>Together AI (free tier)</option>
+       <option value=openrouter>OpenRouter (free models)</option></select></label>
+     <label>Name<input id=ap_name placeholder="e.g. github"></label>
+     <label>Base URL<input id=ap_url placeholder="https://…/v1"></label>
+     <label>Model<input id=ap_model placeholder="provider/model-name"></label>
+     <label>API-key env var<input id=ap_keyenv placeholder="GITHUB_TOKEN"></label>
+     <label>API key (optional — paste to set)<input id=ap_key type=password autocomplete=off></label>
+     <button class="act big" onclick="addProvider()">+ Add provider</button>
     </div>
-    <p class="meta">Both take effect immediately — only notifications are silenced.</p>
-   </div>
-  </div>
 
-  <div class="panel anchor" id=c-providers data-panel=providers>
-   <button class=phead onclick="togglePanel(this)">LLM providers<span class=chev>▾</span></button>
-   <div class=pbody>
-    {% for p in sv.providers %}
-    <div class=swrow>
-     <label class=sw><input type=checkbox id="prov_{{ p.name }}" {{ 'checked' if p.name not in providers_off }} onchange="toggleProvider('{{ p.name }}',this.checked)"><span class=sl></span></label>
-     <div><div class=lbl>{{ p.name }} <span class=meta>{{ p.model }}</span>
-       {% if p.usable %}<span class=pill-ok>active</span>{% else %}<span class=pill-bad>{{ 'no key — inactive' if p.key_env and not p.key_set else 'inactive' }}</span>{% endif %}</div>
-       <div class=sub>{% if p.key_env and not p.key_set %}⚠ the agent will SKIP this until a key is set (add it under Providers &amp; API keys, then Save &amp; Restart). {% endif %}off = router skips it until flipped back on</div></div>
+    <div class=subpage data-p=tuning>
+     <h3 class=sph>LLM tuning</h3><p class=sphd>How the model is called.</p>
+     <label>Temperature (0–1.5)<input id=s_temp value="{{ sv.temperature }}"></label>
+     <label>Max tokens per reply<input id=s_maxtok value="{{ sv.max_tokens }}"></label>
+     <label>Cloud request timeout (seconds)<input id=s_timeout value="{{ sv.req_timeout }}"></label>
+     <label>Local model timeout (seconds) — raise if local replies time out<input id=s_localtimeout value="{{ sv.local_timeout }}"></label>
+     <label>Min seconds between LLM calls (throttle)<input id=s_minc value="{{ sv.min_call }}"></label>
+     <label>Provider order<select id=s_prefer>
+       <option value=cloud_first {{ 'selected' if sv.prefer=='cloud_first' }}>cloud first</option>
+       <option value=local_first {{ 'selected' if sv.prefer=='local_first' }}>local first</option></select></label>
     </div>
-    {% endfor %}
-    <p class="meta">“active” = the agent actually loads it. A cloud provider with no API key is skipped. Toggle to mute one that's exhausted but still erroring.</p>
-   </div>
-  </div>
 
-  <div class="panel anchor" id=c-hardware data-panel=hardware>
-   <button class=phead onclick="togglePanel(this)">Hardware <span class=chev>▾</span></button>
-   <div class=pbody>
-    <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
-    <span class=meta id=hwts></span>
-    <p class="meta">Probes USB, I²C (addresses), SPI, 1-wire, cameras &amp; GPIO. Anything newly attached becomes the agent's next project idea.</p>
-    <div id=hwbody class=meta>loading…</div>
-   </div>
-  </div>
-
-  </div><!-- /ctlgrid -->
-  <div class="panel anchor" id=c-settings data-panel=settings>
-   <button class=phead onclick="togglePanel(this)">Settings <span class=chev>▾</span></button>
-   <div class="pbody set">
-   <p class="meta" style="margin-top:0">Stored on the agent; “Save &amp; Restart” to apply.</p>
-
-   <div class="panel" data-panel=set-persona>
-    <button class=phead onclick="togglePanel(this)">Personality &amp; interests<span class=chev>▾</span></button>
-    <div class=pbody>
-     <label>Persona — how it behaves and talks<textarea id=s_persona rows=5>{{ sv.persona }}</textarea></label>
-     <label>Interests — one per line; it picks its projects from these<textarea id=s_interests rows=7>{{ sv.interests_text }}</textarea></label>
-    </div>
-   </div>
-
-   <div class="panel" data-panel=set-loop>
-    <button class=phead onclick="togglePanel(this)">Loop &amp; cadence<span class=chev>▾</span></button>
-    <div class=pbody>
+    <div class=subpage data-p=loop>
+     <h3 class=sph>Loop &amp; cadence</h3><p class=sphd>How often and how hard it works.</p>
      <label>Seconds between projects (cycle gap)<input id=s_interval value="{{ sv.loop.interval_seconds }}"></label>
      <label>Jitter (± seconds)<input id=s_jitter value="{{ sv.loop.jitter_seconds }}"></label>
      <label>Tool steps per cycle<input id=s_steps value="{{ sv.loop.max_steps }}"></label>
@@ -630,95 +699,57 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
      <label>Idea candidates per project (deep-think)<input id=s_ideas value="{{ sv.idea_candidates }}"></label>
      <label>Hardware re-scan interval (seconds)<input id=s_hwscan value="{{ sv.hw_scan }}"></label>
      <label>Cleanup janitor interval (seconds)<input id=s_cleanint value="{{ sv.cleanup_int }}"></label>
-     <label>Min seconds between LLM calls (throttle)<input id=s_minc value="{{ sv.min_call }}"></label>
-     <label>Provider order<select id=s_prefer>
-       <option value=cloud_first {{ 'selected' if sv.prefer=='cloud_first' }}>cloud first</option>
-       <option value=local_first {{ 'selected' if sv.prefer=='local_first' }}>local first</option></select></label>
     </div>
-   </div>
 
-   <div class="panel" data-panel=set-behaviour>
-    <button class=phead onclick="togglePanel(this)">Behaviour<span class=chev>▾</span></button>
-    <div class=pbody>
+    <div class=subpage data-p=behaviour>
+     <h3 class=sph>Behaviour</h3><p class=sphd>What it does around each project.</p>
      <label><input type=checkbox id=s_critique {{ 'checked' if sv.self_critique }}> Self-review before finishing a project</label>
      <label><input type=checkbox id=s_git {{ 'checked' if sv.git_history }}> Keep per-project git history</label>
      <label><input type=checkbox id=s_cleanup {{ 'checked' if sv.cleanup_enabled }}> Auto-clean junk &amp; empty folders</label>
     </div>
-   </div>
 
-   <div class="panel" data-panel=set-llm>
-    <button class=phead onclick="togglePanel(this)">LLM tuning<span class=chev>▾</span></button>
-    <div class=pbody>
-     <label>Temperature (0–1.5)<input id=s_temp value="{{ sv.temperature }}"></label>
-     <label>Max tokens per reply<input id=s_maxtok value="{{ sv.max_tokens }}"></label>
-     <label>Cloud request timeout (seconds)<input id=s_timeout value="{{ sv.req_timeout }}"></label>
-     <label>Local model timeout (seconds) — raise if local replies time out<input id=s_localtimeout value="{{ sv.local_timeout }}"></label>
-    </div>
-   </div>
-
-   <div class="panel" data-panel=set-images>
-    <button class=phead onclick="togglePanel(this)">Image generation<span class=chev>▾</span></button>
-    <div class=pbody>
+    <div class=subpage data-p=images>
+     <h3 class=sph>Image generation</h3><p class=sphd>Where generated images come from.</p>
      <label>Provider<select id=s_imgprov>
        <option value=pollinations {{ 'selected' if sv.img_provider=='pollinations' }}>pollinations (free cloud — fast)</option>
        <option value=local {{ 'selected' if sv.img_provider=='local' }}>local (offline — slow on this box)</option></select></label>
      <label>Local command — {prompt} and {out} are filled in (shell-quoted)<input id=s_imgcmd value="{{ sv.img_cmd }}" placeholder="/opt/imggen/sd --turbo --models-path /opt/imggen/models/&lt;dir&gt; --steps 1 --prompt {prompt} --output {out}"></label>
-     <p class="meta">Run <code>sudo /opt/drongo/system/image-gen.sh</code> to build a local generator, then switch the provider to “local”.</p>
+     <p class="meta">Run <code>sudo /opt/drongo/system/image-gen.sh</code> to build a local generator, then switch to “local”.</p>
     </div>
-   </div>
 
-   <div class="panel" data-panel=set-providers>
-    <button class=phead onclick="togglePanel(this)">Providers &amp; API keys<span class=chev>▾</span></button>
-    <div class=pbody>
-    {% for p in sv.providers %}
-     <div class=prow data-name="{{ p.name }}">
-       <label style="flex:0 0 auto;margin:0"><input type=checkbox id="pe_{{ p.name }}" {{ 'checked' if p.enabled }}> {{ p.name }}{% if p.custom %} <span class=meta>(custom)</span>{% endif %}</label>
-       <input id="pm_{{ p.name }}" value="{{ p.model }}" placeholder="model">
-       {% if p.key_env %}<input id="pk_{{ p.name }}" type=password autocomplete=off placeholder="{{ 'key set — blank keeps it' if p.key_set else 'paste '+p.key_env }}">{% endif %}
-       <button class="act" onclick="moveProvider(this,-1)" title="try earlier">▲</button>
-       <button class="act" onclick="moveProvider(this,1)" title="try later">▼</button>
-       {% if p.custom %}<button class="act danger" onclick="removeProvider('{{ p.name }}')" title="remove this provider">✕</button>{% endif %}
+    <div class=subpage data-p=alerts>
+     <h3 class=sph>Alerts &amp; LED</h3><p class=sphd>How it pings you. Live toggles take effect immediately; channels apply on Save.</p>
+     <div class=th>Live</div>
+     <div class=swrow>
+      <label class=sw><input type=checkbox id=al_agent {{ 'checked' if alerts_agent_on }} onchange="toggleAlerts('agent',this.checked)"><span class=sl></span></label>
+      <div><div class=lbl>Agent alerts</div><div class=sub>“project complete” + problems (and the LED, if wired).</div></div>
      </div>
-    {% endfor %}
-    <h3 style="margin-top:14px">Add a provider</h3>
-    <label>Preset<select id=ap_preset onchange="apPreset()">
-      <option value=custom>Custom (OpenAI-compatible)</option>
-      <option value=ollama>Ollama Cloud (free — gpt-oss, qwen, deepseek)</option>
-      <option value=nemotron>Ollama Cloud — Nemotron (NVIDIA, no NVIDIA key)</option>
-      <option value=nvidia>NVIDIA NIM (direct — needs NVIDIA key)</option>
-      <option value=github>GitHub Models (free w/ PAT)</option>
-      <option value=cerebras>Cerebras (free)</option>
-      <option value=groq>Groq (free)</option>
-      <option value=gemini>Google Gemini (free)</option>
-      <option value=mistral>Mistral (free)</option>
-      <option value=together>Together AI (free tier)</option>
-      <option value=openrouter>OpenRouter (free models)</option></select></label>
-    <label>Name<input id=ap_name placeholder="e.g. github"></label>
-    <label>Base URL<input id=ap_url placeholder="https://…/v1"></label>
-    <label>Model<input id=ap_model placeholder="provider/model-name"></label>
-    <label>API-key env var<input id=ap_keyenv placeholder="GITHUB_TOKEN"></label>
-    <label>API key (optional — paste to set)<input id=ap_key type=password autocomplete=off></label>
-    <button class="act big" onclick="addProvider()">+ Add provider</button>
-    <p class="meta">Added providers take effect after a restart. Use the live on/off
-      switches above the Settings panel to toggle any provider instantly.</p>
-    </div>
-   </div>
-
-   <div class="panel" data-panel=set-alerts>
-    <button class=phead onclick="togglePanel(this)">Alerts &amp; LED<span class=chev>▾</span></button>
-    <div class=pbody>
+     <div class=swrow>
+      <label class=sw><input type=checkbox id=al_observer {{ 'checked' if alerts_observer_on }} onchange="toggleAlerts('observer',this.checked)"><span class=sl></span></label>
+      <div><div class=lbl>Observer alerts</div><div class=sub>crash-loops, rollbacks &amp; host-health from the root watchdog. Best left on.</div></div>
+     </div>
+     <div class=th style="margin-top:18px">Channels</div>
      <label><input type=checkbox id=s_notify {{ 'checked' if sv.notify }}> Alert on every cycle (not just completions)</label>
      <label>Discord webhook URL<input id=s_discord type=password autocomplete=off placeholder="{{ 'set — blank keeps it' if sv.discord_set else 'paste webhook URL' }}"></label>
      <label>ntfy topic (optional)<input id=s_ntfy value="{{ sv.ntfy }}"></label>
      <label>LED gpiochip<input id=s_ledchip value="{{ sv.led_chip }}"></label>
      <label>LED line offset (blank = LED off)<input id=s_ledline value="{{ sv.led_line }}"></label>
     </div>
-   </div>
 
-   <div style="margin-top:12px">
-     <button class="act big" onclick="saveSettings(false)">Save</button>
-     <button class="act big danger" onclick="saveSettings(true)">Save &amp; Restart</button>
-   </div>
+    <div class=subpage data-p=persona>
+     <h3 class=sph>Personality &amp; interests</h3><p class=sphd>How it behaves and talks, and what it likes to build.</p>
+     <label>Persona — how it behaves and talks<textarea id=s_persona rows=6>{{ sv.persona }}</textarea></label>
+     <label>Interests — one per line; it picks its projects from these<textarea id=s_interests rows=9>{{ sv.interests_text }}</textarea></label>
+    </div>
+
+    <div class=subpage data-p=hardware>
+     <h3 class=sph>Hardware</h3><p class=sphd>What's attached. Anything newly plugged in becomes the agent's next project idea.</p>
+     <button class="act big" id=hwbtn onclick="scanHW()">⟳ Scan for hardware</button>
+     <span class=meta id=hwts></span>
+     <p class="meta">Probes USB, I²C (addresses), SPI, 1-wire, cameras &amp; GPIO.</p>
+     <div id=hwbody class=meta>loading…</div>
+    </div>
+
    </div>
   </div>
  </section>
@@ -814,6 +845,13 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      el.classList.remove('tgtflash');void el.offsetWidth;el.classList.add('tgtflash');
    });
  }
+ function showSub(tabId,p){                        // switch the visible sub-page in a two-pane tab
+   const sec=document.getElementById(tabId); if(!sec)return;
+   sec.querySelectorAll('.subnav button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
+   sec.querySelectorAll('.subpage').forEach(x=>x.classList.toggle('on',x.dataset.p===p));
+   const body=sec.querySelector('.subbody'); if(body)body.scrollTop=0;
+ }
+ function goSub(tabId,p){ showTab(tabId); requestAnimationFrame(()=>showSub(tabId,p)); }
  function togglePanel(h){const p=h.closest('.panel');const open=p.classList.toggle('open');
    try{localStorage.setItem('panel:'+p.dataset.panel,open?'1':'0');}catch(e){}}
  function restorePanels(){document.querySelectorAll('.panel').forEach(p=>{
@@ -834,6 +872,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    let saved=null;try{saved=localStorage.getItem('accent');}catch(e){}
    applyTheme(saved&&ACCENTS[saved]?saved:'amber');}
  document.querySelectorAll('.sbitem').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
+ document.querySelectorAll('.subnav button').forEach(b=>b.onclick=()=>showSub(b.closest('.tab').id,b.dataset.p));
  if(location.hash){const t=location.hash.slice(1); if($('#'+t)) showTab(t);}
  function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
  function ctl(a){fetch('/control/'+a,{method:'POST'}).then(r=>r.json()).then(d=>{toast(a+(d.ok?' ✓':' — '+(d.error||'failed')));refresh();});}
@@ -1181,31 +1220,35 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    const t=document.createElement('span');t.className='evt';t.textContent=j.title||'(untitled)';
    const m=document.createElement('span');m.className='meta';m.textContent=(j.task_type||j.kind||'')+' · '+(fmtLocal(j.ts)||j.when);
    r.appendChild(dot);r.appendChild(t);r.appendChild(m);return r;}
- function mkProjCard(j){const c=document.createElement('div');c.className='card';c.dataset.id=j.id;
-   const h=document.createElement('h3');
-   const num=document.createElement('span');num.className='pnum';num.textContent='#'+j.id;h.appendChild(num);
-   h.appendChild(document.createTextNode(' '+j.title+' '));
-   if(!j.ok){const pill=document.createElement('span');pill.className='pill bad';pill.textContent='unfinished';h.appendChild(pill);}
-   c.appendChild(h);
-   const m=document.createElement('div');m.className='meta';m.textContent=(fmtLocal(j.ts)||j.when)+(j.provider?' · via '+j.provider:'');c.appendChild(m);
-   const pc=document.createElement('div');pc.className='pcontent';
-   const p=document.createElement('p');p.textContent=j.body||'';pc.appendChild(p);
-   (j.arts||[]).forEach(a=>{const span=document.createElement('span');span.style.whiteSpace='nowrap';
-     span.appendChild(mkArtLink(a));
-     if((a.path.endsWith('.py')||a.path.endsWith('.sh'))&&ALLOW_RUN){const b=document.createElement('button');b.className='runbtn';b.textContent='▶ run';
-       b.addEventListener('click',()=>runpy(a.path,j.id));span.appendChild(b);}
-     pc.appendChild(span);pc.appendChild(document.createTextNode(' '));});
-   const chips=document.createElement('div');chips.className='chips';chips.id='chips-'+j.id;chips.style.marginTop='8px';
-   (j.tags||[]).forEach(t=>{const s=document.createElement('span');s.className='chip'+(t==='needs-fix'?' fix':'');s.textContent=t;chips.appendChild(s);});
-   pc.appendChild(chips); c.appendChild(pc);
-   const mk=(cls,txt,fn)=>{const b=document.createElement('button');b.className=cls;b.textContent=txt;b.addEventListener('click',fn);return b;};
+ function mkProjCard(j){const tags=j.tags||[];
+   const status=tags.includes('needs-fix')?'s-fix':(j.ok?'s-ok':'s-bad');
+   const c=document.createElement('div');c.className='card proj '+status;c.dataset.id=j.id;
+   const hdr=document.createElement('div');hdr.className='phdr';
+   const num=document.createElement('span');num.className='pnum';num.textContent='#'+j.id;
+   const ti=document.createElement('span');ti.className='ptitle';ti.textContent=j.title||'(untitled)';ti.title=j.title||'';
+   hdr.append(num,ti);
+   if(j.task_type){const ty=document.createElement('span');ty.className='ptype';ty.textContent=j.task_type;hdr.appendChild(ty);}
+   c.appendChild(hdr);
+   const m=document.createElement('div');m.className='pmeta';
+   m.textContent=(fmtLocal(j.ts)||j.when)+(j.provider?' · '+j.provider:'')+(j.ok?'':' · unfinished');c.appendChild(m);
+   const body=document.createElement('div');body.className='pbody';body.textContent=j.body||'';c.appendChild(body);
+   const arts=(j.arts||[]);
+   if(arts.length){const pa=document.createElement('div');pa.className='parts';
+     arts.forEach(a=>{pa.appendChild(mkArtLink(a));
+       if((a.path.endsWith('.py')||a.path.endsWith('.sh'))&&ALLOW_RUN){const b=document.createElement('button');b.className='runbtn';b.textContent='▶ run';
+         b.addEventListener('click',()=>runpy(a.path,j.id));pa.appendChild(b);}});
+     c.appendChild(pa);}
+   const chips=document.createElement('div');chips.className='chips';chips.id='chips-'+j.id;
+   tags.forEach(t=>{const s=document.createElement('span');s.className='chip'+(t==='needs-fix'?' fix':'');s.textContent=t;chips.appendChild(s);});
+   c.appendChild(chips);
+   const mk=(cls,txt,fn,tt)=>{const b=document.createElement('button');b.className=cls;b.textContent=txt;if(tt)b.title=tt;b.addEventListener('click',fn);return b;};
    const act=document.createElement('div');act.className='pactions';
-   act.appendChild(mk('act','⭐',()=>rate(j.id,'loved')));
-   act.appendChild(mk('act','👎',()=>rate(j.id,'meh')));
+   act.appendChild(mk('act','⭐',()=>rate(j.id,'loved'),'more like this'));
+   act.appendChild(mk('act','👎',()=>rate(j.id,'meh'),'less like this'));
    act.appendChild(mk('act danger','🔧 Fix',()=>fixit(j.id)));
    act.appendChild(mk('act','+ tag',()=>addtag(j.id)));
    act.appendChild(mk('act danger','🗑',e=>delproj(j.id,e.currentTarget)));
-   act.appendChild(mk('act','⤢',e=>toggleExpand(e.currentTarget)));
+   act.appendChild(mk('act','⤢',e=>toggleExpand(e.currentTarget),'expand / collapse'));
    c.appendChild(act);
    return c;}
  function toggleExpand(btn){const c=btn.closest('.card');if(c)c.classList.toggle('expanded');}
@@ -1409,8 +1452,8 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    {t:'Resume the agent',k:'action',run:()=>ctl('resume')},
    {t:'Restart the agent',k:'action',run:()=>{if(confirm('Restart the agent?'))ctl('restart');}},
    {t:'Skip / abandon current project',k:'action',run:()=>{if(confirm('Abandon the current project and start fresh?'))ctl('skip');}},
-   {t:'Scan for hardware',k:'action',run:()=>{showTab('control');goTo('control','c-hardware');}},
-   {t:'Suggest the next project',k:'action',run:()=>{showTab('brain');goTo('brain','b-steer');}}];
+   {t:'Scan for hardware',k:'action',run:()=>goSub('control','hardware')},
+   {t:'Suggest the next project',k:'action',run:()=>goSub('brain','steer')}];
  let _csel=0,_cf=CMDS;
  function renderCmdList(){const l=$('#cmdList');if(!l)return;
    l.innerHTML=_cf.map((c,i)=>'<div class="opt'+(i===_csel?' sel':'')+'" data-i="'+i+'"><span class=ic>›</span>'+esc(c.t)+'<span class=kind>'+c.k+'</span></div>').join('')||'<div class=opt style="color:var(--faint)">no matches</div>';
