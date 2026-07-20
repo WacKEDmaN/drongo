@@ -89,6 +89,16 @@ code{font:12px var(--mono);background:rgba(87,183,230,.1);color:var(--info);padd
 .cmdkbtn{display:flex;align-items:center;gap:7px;background:var(--sunken);border:1px solid var(--line2);color:var(--mut);padding:6px 10px;border-radius:var(--r);font-size:12px}
 .cmdkbtn:hover{border-color:var(--acc);color:var(--fg)}
 .cmdkbtn kbd{font:10px var(--mono);background:#0c1219;border:1px solid var(--line2);border-radius:4px;padding:1px 5px}
+/* ---- persistent bottom status bar (host stats + tokens + model, all pages) ---- */
+.statusbar{flex:none;display:flex;align-items:center;height:27px;padding:0 6px 0 14px;border-top:1px solid var(--line);background:var(--sunken);font:11px var(--mono);color:var(--mut);overflow-x:auto;white-space:nowrap;z-index:15}
+.statusbar::-webkit-scrollbar{height:0}
+.statusbar .stseg{display:flex;align-items:center;gap:6px;padding:0 11px;border-right:1px solid var(--line);flex:none;height:100%}
+.statusbar .stseg i{font-style:normal;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.statusbar .stseg b{font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums}
+.statusbar .stseg b.warn{color:var(--warn)} .statusbar .stseg b.crit{color:var(--crit)}
+.statusbar .stseg b.in{color:var(--info)} .statusbar .stseg b.out{color:var(--acc)}
+.statusbar .stdot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
+.statusbar .stsp{flex:1;min-width:10px;border:0;padding:0}
 
 /* ---- view frame ---- */
 main{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
@@ -377,16 +387,6 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
  {% if safe %}<span class="pill warn">SAFE MODE</span>{% endif %}
  <span class="pill {{ 'ok' if integ_ok else 'bad' }}">guard {{ 'ok' if integ_ok else 'CHECK' }}</span>
  <div class=spacer></div>
- <div class=sys>
-  <div class=s><div class=sk>CPU</div><div class=sv id=tb_cpu>—</div><div class=sbar><i id=tb_cpubar style="width:0"></i></div></div>
-  <div class=s><div class=sk>RAM</div><div class=sv id=tb_ram>—</div><div class=sbar><i id=tb_rambar style="width:0"></i></div></div>
-  <div class=s><div class=sk>Temp</div><div class=sv id=tb_temp>—</div><div class=sbar><i id=tb_tempbar style="width:0"></i></div></div>
- </div>
- <div class=meter>
-  <div class=m><div class=k>tok in</div><div class="val in" id=tb_in>0</div></div>
-  <div class=m><div class=k>out</div><div class="val out" id=tb_out>0</div></div>
-  <div class=m><div class=k>calls</div><div class=val id=tb_calls>0</div></div>
- </div>
  <button class=cmdkbtn onclick="openCmd()">Search <kbd>⌘K</kbd></button>
 </header>
 <main>
@@ -403,10 +403,6 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
     <div class=eyebrow>Now building <span class=meta id=lastllm style="margin-left:auto;font-weight:400"></span></div>
     <div id=workingon>{% if working_on %}<div class="nowcard"><div class=nowlbl>▶ Working on</div><div class=nowtitle>{{ working_on.title }}</div><span class=meta>{{ working_on.type }} · attempt {{ working_on.attempt }}</span></div>{% endif %}</div>
     <div style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap"><button class=act onclick="ctl('run')">▶ Run a cycle</button><button class="act danger" onclick="if(confirm('Abandon what it is working on and start something new?'))ctl('skip')" title="drop the current project and move on">⏭ Skip</button><button class=act onclick="showTab('chat')">💬 Chat</button></div>
-   </div>
-   <div style="padding:15px 15px 6px;border-top:1px solid var(--line)">
-    <div class=eyebrow>Host <span class=meta id=sysmodel style="margin-left:auto;font-weight:400"></span></div>
-    <div class=stats id=sysgrid style="grid-template-columns:1fr 1fr"><div class=stat><div class=k>loading…</div></div></div>
    </div>
    <div style="padding:15px 15px 16px;border-top:1px solid var(--line)">
     <div class=eyebrow>Latest requests — tok in→out</div>
@@ -795,6 +791,20 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
   </div>
  </section>
 </main>
+<footer class=statusbar id=statusbar>
+ <span class=stseg><span class=stdot id=st_dot></span><b id=st_status>—</b></span>
+ <span class=stseg><i>CPU</i><b id=st_cpu>—</b></span>
+ <span class=stseg><i>RAM</i><b id=st_ram>—</b></span>
+ <span class=stseg><i>Disk</i><b id=st_disk>—</b></span>
+ <span class=stseg><i>Load</i><b id=st_load>—</b></span>
+ <span class=stseg><i>Temp</i><b id=st_temp>—</b></span>
+ <span class=stseg><i>Up</i><b id=st_up>—</b></span>
+ <span class=stseg><i>Proj</i><b id=st_proj>—</b></span>
+ <span class=stseg><i>Fix&nbsp;Q</i><b id=st_fixq>—</b></span>
+ <span class=stsp></span>
+ <span class=stseg><i>Tok</i><b class=in id=st_tin>0</b>↑&nbsp;<b class=out id=st_tout>0</b>↓&nbsp;<b id=st_calls>0</b></span>
+ <span class=stseg><i>Model</i><b id=st_model>—</b></span>
+</footer>
 </div>
 <div class=cmdk id=cmdk onclick="if(event.target===this)closeCmd()">
   <div class=box>
@@ -1379,38 +1389,25 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
  function pct(v){return v==null?'—':v+'%';}
  function refresh(){fetch('/api/system').then(r=>r.json()).then(d=>{
    const s=d.stats||{};
-   // always-visible top-bar vitals
-   const setV=(id,txt,cls)=>{const e=$(id);if(e){e.textContent=txt;e.className='sv'+(cls?' '+cls:'');}};
-   const setB=(id,p,warn,crit)=>{const e=$(id);if(e)e.style.cssText='width:'+Math.min(100,p||0)+'%'+(p>=crit?';background:var(--crit)':p>=warn?';background:var(--warn)':'');};
-   if(s.cpu_pct!=null){setV('#tb_cpu',Math.round(s.cpu_pct)+'%',s.cpu_pct>90?'crit':s.cpu_pct>75?'warn':'');setB('#tb_cpubar',s.cpu_pct,75,90);}
-   if(s.mem_pct!=null){setV('#tb_ram',(s.mem_used_mb/1024).toFixed(1)+'G',s.mem_pct>92?'crit':s.mem_pct>80?'warn':'');setB('#tb_rambar',s.mem_pct,80,92);}
-   const _tp=(s.temps&&s.temps.length)?Math.max.apply(null,s.temps.map(t=>t.c)):null;
-   if(_tp!=null){setV('#tb_temp',Math.round(_tp)+'°',_tp>80?'crit':_tp>65?'warn':'');setB('#tb_tempbar',_tp,65,80);}
-   const _u=d.usage||[];let _ti=0,_to=0,_cc=0;_u.forEach(x=>{_ti+=x.tokens_in||0;_to+=x.tokens_out||0;_cc+=x.total||0;});
-   if($('#tb_in'))$('#tb_in').textContent=_ti.toLocaleString();
-   if($('#tb_out'))$('#tb_out').textContent=_to.toLocaleString();
-   if($('#tb_calls'))$('#tb_calls').textContent=_cc;
-   const status=(d.status||'?')+(d.next_cycle_in!=null&&d.status=='sleeping'?' · next in '+d.next_cycle_in+'s':'');
+   const status=(d.status||'?')+(d.next_cycle_in!=null&&d.status=='sleeping'?' · next '+d.next_cycle_in+'s':'');
    $('#p_status').textContent=status;
-   const now=new Date();
-   const ltime=now.toLocaleTimeString([],{hour12:false});
-   const ldate=now.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short',year:'numeric'});
-   const cells=[
-     ['status',d.status||'?'],['time',ltime],['uptime',s.uptime||'—'],
-     ['cpu',pct(s.cpu_pct)],['memory',s.mem_pct!=null?s.mem_used_mb+'/'+s.mem_total_mb+'MB':'—'],
-     ['disk',s.disk_pct!=null?s.disk_used_gb+'/'+s.disk_total_gb+'GB':'—'],
-     ['load',(s.load||[]).join(' ')||'—'],
-     ['temps',(s.temps||[]).map(t=>t.label.replace('-thermal','')+' '+t.c+'°C').join('  ')||'—'],
-     ['projects',d.projects||0],
-     ['fix queue',d.fix_queue||0],
-   ];
-   $('#sysgrid').innerHTML=cells.map(([k,v])=>{
-     let bar='';const p={cpu:s.cpu_pct,memory:s.mem_pct,disk:s.disk_pct}[k];
-     if(p!=null)bar='<div class=bar><i style="width:'+Math.min(100,p)+'%;background:'+(p>90?'var(--bad)':p>70?'var(--warn)':'var(--ac)')+'"></i></div>';
-     return '<div class=stat><div class=k>'+k+'</div><div class=v>'+v+'</div>'+bar+'</div>';
-   }).join('');
-   $('#sysmodel').textContent=(s.model||'')+'  ·  '+ldate;
-   $('#fixq').textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
+   // bottom status bar — host stats + tokens + model, visible on every page
+   const setSt=(id,txt,cls)=>{const e=$(id);if(e){e.textContent=txt;e.className=cls||'';}};
+   const dot=$('#st_dot');if(dot)dot.style.background=({running:'var(--good)',sleeping:'var(--info)',paused:'var(--warn)',stopped:'var(--faint)'}[d.status]||'var(--mut)');
+   setSt('#st_status',d.status||'?');
+   if(s.cpu_pct!=null)setSt('#st_cpu',Math.round(s.cpu_pct)+'%',s.cpu_pct>90?'crit':s.cpu_pct>75?'warn':'');
+   if(s.mem_pct!=null)setSt('#st_ram',(s.mem_used_mb/1024).toFixed(1)+'/'+(s.mem_total_mb/1024).toFixed(1)+'G',s.mem_pct>92?'crit':s.mem_pct>80?'warn':'');
+   if(s.disk_pct!=null)setSt('#st_disk',s.disk_pct+'%',s.disk_pct>92?'crit':s.disk_pct>80?'warn':'');
+   setSt('#st_load',(s.load||[]).slice(0,3).join(' ')||'—');
+   const _tp=(s.temps&&s.temps.length)?Math.max.apply(null,s.temps.map(t=>t.c)):null;
+   if(_tp!=null)setSt('#st_temp',Math.round(_tp)+'°',_tp>80?'crit':_tp>65?'warn':'');
+   setSt('#st_up',s.uptime||'—');
+   setSt('#st_proj',d.projects||0);
+   setSt('#st_fixq',d.fix_queue||0,d.fix_queue?'warn':'');
+   const _u=d.usage||[];let _ti=0,_to=0,_cc=0;_u.forEach(x=>{_ti+=x.tokens_in||0;_to+=x.tokens_out||0;_cc+=x.total||0;});
+   setSt('#st_tin',fmtTok(_ti),'in');setSt('#st_tout',fmtTok(_to),'out');setSt('#st_calls',_cc);
+   setSt('#st_model',s.model||'—');
+   const fq=$('#fixq');if(fq)fq.textContent=(d.fix_queue||0)+' project(s) queued for fixing.';
    if(d.usage)renderUsage(d.usage);
    const ll=$('#lastllm'); if(ll)ll.textContent=d.last_llm?('last: '+d.last_llm.provider+' '+fmtTok(d.last_llm.in)+'→'+fmtTok(d.last_llm.out)+' tok'):'';
    renderWorking(d.working_on);
