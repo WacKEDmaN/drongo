@@ -970,18 +970,40 @@ class AgentLoop:
                 self.mcp.close()          # stop any MCP server subprocesses
 
     def _ensure_project_venv(self):
-        """Create the agent's writable project venv if missing, so it can
-        pip-install dependencies for its projects."""
-        venv = Path(self.cfg.project_venv)
-        if (venv / "bin" / "python").exists() or (venv / "Scripts" / "python.exe").exists():
-            return
+        """Create — or REPAIR — the agent's writable project venv so it can
+        pip-install dependencies. A bad `pip install --force-reinstall` can corrupt
+        the venv's own pip (import errors); if pip no longer runs, rebuild the venv
+        from scratch rather than limp along unable to install anything."""
         import subprocess
+        import shutil
+        venv = Path(self.cfg.project_venv)
+        py = venv / "bin" / "python"
+        if not py.exists():
+            py = venv / "Scripts" / "python.exe"
+        if py.exists():
+            try:
+                r = subprocess.run([str(py), "-m", "pip", "--version"],
+                                   capture_output=True, text=True, timeout=60)
+                if r.returncode == 0:
+                    return                                  # venv + pip healthy
+                log.warning("project venv pip is broken; rebuilding it: %s",
+                            (r.stderr or r.stdout or "").strip()[-160:])
+            except Exception as e:
+                log.warning("project venv pip check failed (%s); rebuilding it", e)
+            shutil.rmtree(venv, ignore_errors=True)         # wipe the corrupted venv
         log.info("Creating project venv at %s …", venv)
         try:
             r = subprocess.run(["python3", "-m", "venv", str(venv)],
                                capture_output=True, text=True, timeout=180)
             if r.returncode != 0:
                 log.warning("project venv creation failed: %s", (r.stderr or "")[:200])
+                return
+            newpy = venv / "bin" / "python"
+            # make sure the fresh venv has a working, current pip
+            subprocess.run([str(newpy), "-m", "ensurepip", "--upgrade"],
+                           capture_output=True, text=True, timeout=120)
+            subprocess.run([str(newpy), "-m", "pip", "install", "-q", "--upgrade", "pip"],
+                           capture_output=True, text=True, timeout=180)
         except Exception as e:
             log.warning("could not create project venv: %s", e)
 
