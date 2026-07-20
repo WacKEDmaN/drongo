@@ -716,9 +716,11 @@ def create_app(cfg, mem: Memory) -> Flask:
             elif action == "restart":
                 mem.remember("restart_requested", True)
             elif action == "skip":
-                # abandon whatever it's stuck on and move to a fresh project now
+                # abandon whatever it's stuck on AND drop a queued "build X next"
+                # suggestion, so it can't immediately re-pick the same failing task
                 mem.remember("current_project", None)
                 mem.remember("working_on", None)
+                mem.set_suggestion("")
                 mem.remember("run_now", True)
             else:
                 return {"ok": False, "error": "unknown action"}, 400

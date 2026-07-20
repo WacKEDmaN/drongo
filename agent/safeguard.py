@@ -116,9 +116,15 @@ def check_command(command: str, *, allow_sudo: bool = False, extra_deny=None) ->
         if ".." in target or not allowed:
             raise CommandRejected(f"refusing to write outside workspace: {target}")
 
-    # ...and writes aimed at protected system paths via common verbs.
+    # ...and writes aimed at protected system paths via common verbs. Match the
+    # protected path only as a STANDALONE absolute path — preceded by start, a
+    # space or a shell operator, and not continuing into a longer word — so the
+    # agent's OWN venv (e.g. /var/lib/drongo/runtime/venv/bin/pip, which contains
+    # "/bin") and its workspace under /var/lib (which contains "/lib") are not
+    # mistaken for system /bin or /lib. `pip install <pkg>` must be allowed.
+    _bound = r"(?:^|[\s;&|`'\"=(><])"
     for p in PROTECTED_PATHS:
-        if p in low and re.search(_WRITE_VERBS + r"\b[^\n]*" + re.escape(p), low):
+        if re.search(_WRITE_VERBS + r"\b[^\n]*" + _bound + re.escape(p) + r"(?![\w-])", low):
             raise CommandRejected(f"refusing to modify protected path: {p}")
 
 
