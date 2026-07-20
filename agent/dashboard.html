@@ -951,7 +951,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    if((info.usb||[]).length){el.appendChild(hwHead('USB'));
      info.usb.forEach(u=>el.appendChild(hwRow(u.id,u.name)));}
    const ts=$('#hwts'); if(ts)ts.textContent=info.ts?('· scanned '+hwRel(info.ts)):'';}
- function loadHW(){fetch('/api/hardware').then(r=>r.json()).then(d=>renderHW(d.info)).catch(()=>{});}
+ function loadHW(){return fetch('/api/hardware').then(r=>r.json()).then(d=>renderHW(d.info)).catch(()=>{});}
  function scanHW(){const b=$('#hwbtn');if(b){b.disabled=true;b.textContent='⟳ scanning…';}
    toast('scanning hardware…');
    fetch('/control/scan',{method:'POST'}).then(r=>r.json()).then(d=>{
@@ -990,8 +990,8 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    if(e.img){_images=[e.path];openLightbox(0);return;}   // view images in the lightbox
    if(e.view){viewfile(e.path);return;}                  // text in the modal
    window.open('/file/'+e.path.split('/').map(encodeURIComponent).join('/'),'_blank');}
- function loadPkgs(){const w=$('#pkgwrap');if(!w)return;
-   fetch('/api/pkgs').then(r=>r.json()).then(d=>renderPkgs(d.requests||[],d.installed||[])).catch(()=>{});}
+ function loadPkgs(){const w=$('#pkgwrap');if(!w)return Promise.resolve();
+   return fetch('/api/pkgs').then(r=>r.json()).then(d=>renderPkgs(d.requests||[],d.installed||[])).catch(()=>{});}
  function renderPkgs(reqs,installed){const w=$('#pkgwrap');w.replaceChildren();
    if(!reqs.length){const p=document.createElement('div');p.className='meta';p.textContent='Nothing requested — the agent calls request_package when it needs an apt package.';w.appendChild(p);}
    else{reqs.forEach(p=>{const r=document.createElement('div');r.className='pkgrow';
@@ -1007,8 +1007,8 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      e.textContent='Installed & available to the agent: '+installed.join(', ');w.appendChild(e);}}
  function pkgResolve(name,action){fetch('/control/pkg',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,name})})
    .then(r=>r.json()).then(d=>{toast(d.ok?(action==='installed'?name+' marked installed ✓':name+' dismissed'):'failed');loadPkgs();});}
- function loadPolicy(){const w=$('#pkgpolwrap');if(!w)return;
-   fetch('/api/pkg_policy').then(r=>r.json()).then(renderPolicy).catch(()=>{});}
+ function loadPolicy(){const w=$('#pkgpolwrap');if(!w)return Promise.resolve();
+   return fetch('/api/pkg_policy').then(r=>r.json()).then(renderPolicy).catch(()=>{});}
  function renderPolicy(p){const w=$('#pkgpolwrap');if(!w)return;w.replaceChildren();
    const modeRow=document.createElement('div');modeRow.style.marginBottom='10px';
    ['manual','auto'].forEach(m=>{const b=document.createElement('button');b.className='act';
@@ -1048,16 +1048,18 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      $('#modaltitle').textContent='📦 pkg-installer.sh ('+d.count+' package'+(d.count>1?'s':'')+')';
      $('#modalout').textContent='Run this on the Pi:\n\n  sudo bash '+d.path+'\n\n--- script ---\n'+d.script;
      $('#fixbtn').style.display='none';$('#modal').classList.add('show');});}
- function loadBrain(){const w=$('#skillwrap');if(!w)return;
-   fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';});
-   loadMemory();loadDocs();}
- function loadDocs(){const w=$('#docwrap');if(!w)return;
-   fetch('/api/docs').then(r=>r.json()).then(renderDocs).catch(()=>{w.textContent='error';});
-   loadMcp();}
+ function loadBrain(){const w=$('#skillwrap');if(!w)return Promise.resolve();
+   return Promise.allSettled([
+     fetch('/api/knowledge').then(r=>r.json()).then(renderBrain).catch(()=>{w.textContent='error';}),
+     loadMemory(), loadDocs()]);}
+ function loadDocs(){const w=$('#docwrap');if(!w)return Promise.resolve();
+   return Promise.allSettled([
+     fetch('/api/docs').then(r=>r.json()).then(renderDocs).catch(()=>{w.textContent='error';}),
+     loadMcp()]);}
  function mcpFormMode(){const t=($('#mcptransport')||{}).value;
    const s=$('#mcpstdio'),h=$('#mcphttp');if(s)s.style.display=t==='http'?'none':'block';if(h)h.style.display=t==='http'?'block':'none';}
- function loadMcp(){const w=$('#mcpwrap');if(!w)return;
-   fetch('/api/mcp').then(r=>r.json()).then(d=>renderMcp(d.servers||[])).catch(()=>{w.textContent='error';});}
+ function loadMcp(){const w=$('#mcpwrap');if(!w)return Promise.resolve();
+   return fetch('/api/mcp').then(r=>r.json()).then(d=>renderMcp(d.servers||[])).catch(()=>{w.textContent='error';});}
  function renderMcp(servers){const w=$('#mcpwrap');if(!w)return;w.replaceChildren();
    if(!servers.length){w.textContent='No MCP servers yet — add one above.';return;}
    servers.forEach(s=>{const row=document.createElement('div');row.className='pkgrow';
@@ -1108,8 +1110,8 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      d.hits.forEach(h=>{const b=document.createElement('div');b.className='cmsg bot';b.style.maxWidth='100%';b.style.marginTop='6px';
        const src=document.createElement('div');src.className='meta';src.textContent='['+h.source+']';
        const bd=document.createElement('div');bd.textContent=h.snippet;b.append(src,bd);w.appendChild(b);});});}
- function loadMemory(){const w=$('#memwrap');if(!w)return;
-   fetch('/api/memory').then(r=>r.json()).then(d=>renderMemory(d.keys||[])).catch(()=>{w.textContent='error';});}
+ function loadMemory(){const w=$('#memwrap');if(!w)return Promise.resolve();
+   return fetch('/api/memory').then(r=>r.json()).then(d=>renderMemory(d.keys||[])).catch(()=>{w.textContent='error';});}
  function renderMemory(keys){const w=$('#memwrap');if(!w)return;w.replaceChildren();
    $('#memcount').textContent='('+keys.length+' keys)';
    if(!keys.length){w.textContent='(empty)';return;}
@@ -1274,8 +1276,8 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      h+='<tr class=utot><td>TOTAL</td><td>'+cc+'</td><td>'+fmtTok(ci)+'</td><td>'+fmtTok(co)+'</td><td>'+fmtTok(ci+co)+'</td><td></td></tr>';}
    else h+='<tr><td colspan=6 class=meta>no calls yet</td></tr>';
    t.innerHTML=h;}
- function loadUsageGraph(){const w=$('#tokchart');if(!w)return;
-   fetch('/api/usage_graph').then(r=>r.json()).then(d=>drawTok(d.totals||[])).catch(()=>{});}
+ function loadUsageGraph(){const w=$('#tokchart');if(!w)return Promise.resolve();
+   return fetch('/api/usage_graph').then(r=>r.json()).then(d=>drawTok(d.totals||[])).catch(()=>{});}
  function drawTok(totals){const w=$('#tokchart');if(!w)return;
    const rows=totals.map(t=>({p:t.provider,inn:t.tokens_in||0,out:t.tokens_out||0,tot:(t.tokens_in||0)+(t.tokens_out||0)})).filter(r=>r.tot>0).sort((a,b)=>b.tot-a.tot);
    const grand=rows.reduce((s,r)=>s+r.tot,0);
@@ -1420,7 +1422,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
        renderHome(jd.journal||[]); renderProjects(jd.projects||[]); renderGallery(jd.images||[]);}).catch(()=>{});
    }
  }).catch(()=>{});}
- function loadRequests(){fetch('/api/requests?limit=120').then(r=>r.json()).then(d=>renderRequests(d.requests||[],d.summary||{})).catch(()=>{});}
+ function loadRequests(){return fetch('/api/requests?limit=120').then(r=>r.json()).then(d=>renderRequests(d.requests||[],d.summary||{})).catch(()=>{});}
  function reqRow(r,mini){const purp=(r.purpose||'').toLowerCase();
    const tm=new Date((r.ts||0)*1000).toLocaleTimeString([],{hour12:false});
    const chip='<span class="chip '+esc(purp)+'">'+esc(r.purpose||'?')+'</span>';
@@ -1473,13 +1475,18 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
  // keep the whole dashboard live: poll aggregate data + whatever tab is open, so
  // Brain/Files/Requests don't go stale until a manual refresh. (Settings form is
  // deliberately never auto-reloaded — it would wipe what you're typing.)
- setInterval(()=>{
-   loadUsageGraph(); loadRequests();
-   const active=document.querySelector('.tab.on'); const id=active?active.id:'';
-   if(id==='brain')loadBrain();
-   else if(id==='files'){loadPkgs();loadPolicy();}
-   else if(id==='control'){const hw=document.querySelector('#control .subpage[data-p=hardware].on'); if(hw)loadHW();}
- },10000);
+ let _pollBusy=false;
+ function autoPoll(){
+   if(_pollBusy)return;                          // don't pile up if a slow endpoint is still pending
+   const jobs=[loadUsageGraph(),loadRequests()];
+   const id=(document.querySelector('.tab.on')||{}).id;
+   if(id==='brain')jobs.push(loadBrain());
+   else if(id==='files'){jobs.push(loadPkgs(),loadPolicy());}
+   else if(id==='control'&&document.querySelector('#control .subpage[data-p=hardware].on'))jobs.push(loadHW());
+   _pollBusy=true;
+   Promise.allSettled(jobs.filter(Boolean)).finally(()=>{_pollBusy=false;});
+ }
+ setInterval(autoPoll,10000);
  document.addEventListener('keydown',e=>{
    if(e.key==='Escape'){closeLightbox();const m=$('#modal');if(m)m.classList.remove('show');}
    else if($('#lightbox').classList.contains('show')){
