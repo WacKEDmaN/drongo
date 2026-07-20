@@ -803,7 +803,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
     <div class=foot><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> run</span><span><kbd>esc</kbd> close</span></div>
   </div>
 </div>
-<div id=toast></div>
+<div id=toast class=toast></div>
 <div class=modal id=modal onclick="if(event.target===this)this.classList.remove('show')">
   <div class=box><h3 id=modaltitle style="margin-top:0"></h3><pre id=modalout></pre>
     <button class="act danger" id=fixbtn style="display:none" onclick="fixFromRun()">🔧 Fix this with the error above</button>
@@ -1469,7 +1469,17 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      else if(e.key==='Escape')closeCmd();});
    document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#cmdk').classList.contains('open')?closeCmd():openCmd();}});}
  initThemes(); renderGallery(_images); restorePanels(); localizeTimes(); loadHW(); refresh(); setInterval(refresh,4000);
- loadUsageGraph(); loadRequests(); setInterval(()=>{loadUsageGraph();loadRequests();},12000); initCmdk();
+ loadUsageGraph(); loadRequests(); initCmdk();
+ // keep the whole dashboard live: poll aggregate data + whatever tab is open, so
+ // Brain/Files/Requests don't go stale until a manual refresh. (Settings form is
+ // deliberately never auto-reloaded — it would wipe what you're typing.)
+ setInterval(()=>{
+   loadUsageGraph(); loadRequests();
+   const active=document.querySelector('.tab.on'); const id=active?active.id:'';
+   if(id==='brain')loadBrain();
+   else if(id==='files'){loadPkgs();loadPolicy();}
+   else if(id==='control'){const hw=document.querySelector('#control .subpage[data-p=hardware].on'); if(hw)loadHW();}
+ },10000);
  document.addEventListener('keydown',e=>{
    if(e.key==='Escape'){closeLightbox();const m=$('#modal');if(m)m.classList.remove('show');}
    else if($('#lightbox').classList.contains('show')){
