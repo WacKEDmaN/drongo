@@ -28,6 +28,8 @@
 #    --local           also install a local fallback model (Ollama); off by default
 #    --model NAME      install a local fallback using this Ollama model (implies --local)
 #    --strip-desktop   stop the GUI to free RAM (reversible; nothing uninstalled)
+#    --purge-desktop   REMOVE the desktop packages entirely (X, DM, plymouth,
+#                      audio, cups); frees disk. Kernel/firmware/boot untouched.
 #    --retro           install the Z80/Amstrad toolchain (sdcc/z88dk/CPCtelera)
 #    --imggen          build the local image generator (OnnxStream — slow on a Pi)
 #    --yes, -y         accept all defaults, don't prompt (non-interactive)
@@ -42,7 +44,8 @@ AGENT_USER=drongo
 # there's no terminal). A flag pre-answers the matching question.
 MODEL=""
 WANT_LOCAL=""         # install a local Ollama fallback model? off by default (cloud-first)
-STRIP_DESKTOP=""
+STRIP_DESKTOP=""      # disable the GUI (reversible, nothing uninstalled)
+PURGE_DESKTOP=""      # actually REMOVE the desktop packages (frees disk; stronger)
 RETRO=""
 IMGGEN=""
 ASSUME_YES=0
@@ -53,6 +56,7 @@ trap 'rc=$?; [ $rc -ne 0 ] && printf "\n\033[1;31m[install] FAILED (exit %s) nea
 while [ $# -gt 0 ]; do
   case "$1" in
     --strip-desktop) STRIP_DESKTOP=1 ;;
+    --purge-desktop) PURGE_DESKTOP=1; STRIP_DESKTOP=1 ;;   # remove the packages outright
     --retro) RETRO=1 ;;
     --imggen) IMGGEN=1 ;;
     --local) WANT_LOCAL=1 ;;
@@ -149,6 +153,9 @@ if [ "$_TTY" -eq 1 ]; then
   if [ -z "$STRIP_DESKTOP" ]; then
     if confirm 'Disable the desktop GUI to free RAM (recommended if headless)?' N; then STRIP_DESKTOP=1; else STRIP_DESKTOP=0; fi
   fi
+  if [ "$STRIP_DESKTOP" = 1 ] && [ -z "$PURGE_DESKTOP" ]; then
+    if confirm 'Go further and REMOVE the desktop packages (X, display manager, plymouth, audio, cups)? Frees disk; undo means reinstalling them.' N; then PURGE_DESKTOP=1; else PURGE_DESKTOP=0; fi
+  fi
   if [ -z "$RETRO" ]; then
     if confirm 'Install the retro Z80/Amstrad toolchain (sdcc/z88dk/CPCtelera - heavy source builds)?' N; then RETRO=1; else RETRO=0; fi
   fi
@@ -160,9 +167,10 @@ fi
 WANT_LOCAL="${WANT_LOCAL:-0}"
 MODEL="${MODEL:-$DEF_MODEL}"
 STRIP_DESKTOP="${STRIP_DESKTOP:-0}"
+PURGE_DESKTOP="${PURGE_DESKTOP:-0}"
 RETRO="${RETRO:-0}"
 IMGGEN="${IMGGEN:-0}"
-echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
+echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP  purge-desktop=$PURGE_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
 
 # ---------------------------------------------------------------------------
 # Memory headroom via ZRAM (compressed swap that lives in RAM) — deliberately NOT
@@ -200,12 +208,28 @@ $APT install -y --no-install-recommends \
   i2c-tools gpiod usbutils lm-sensors util-linux \
   build-essential libffi-dev libssl-dev pkg-config   # lets the agent pip-compile native deps
 
-if [ "$STRIP_DESKTOP" -eq 1 ]; then
+if [ "$PURGE_DESKTOP" -eq 1 ]; then
+  say "1b/10 REMOVING the desktop packages (headless agent — frees disk + RAM)"
+  systemctl set-default multi-user.target || true
+  systemctl stop display-manager 2>/dev/null || true
+  # Pin the things autoremove must NEVER touch — kernel, firmware, bootloader and
+  # device tree. X/the desktop is not a dependency of any of them, so the board
+  # still boots headless with full hardware support after the GUI is gone.
+  apt-mark manual 'linux-image-*' 'linux-headers-*' '*-firmware*' 'u-boot*' \
+                  '*-dtb' 'rockchip-*' 'radxa-*' >/dev/null 2>&1 || true
+  # Purge only the desktop packages that are ACTUALLY installed (so a missing one
+  # can't abort the whole apt call), explicitly sparing kernel/firmware/boot.
+  purge_list=$(dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E \
+    '^(xserver-xorg|xserver-common|xinit|x11-|lightdm|gdm3|sddm|.*-greeter|plymouth|pipewire|wireplumber|pulseaudio|cups($|-)|xfce4|lxde|lxqt|openbox|gnome-shell|gnome-session|mutter|mate-|marco|cinnamon|kwin|plasma|task-.*desktop)' \
+    | grep -vE 'firmware|^linux-|u-boot|dtb|rockchip|radxa' || true)
+  [ -n "$purge_list" ] && DEBIAN_FRONTEND=noninteractive apt-get purge -y $purge_list >/dev/null 2>&1 || true
+  DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y >/dev/null 2>&1 || true
+  apt-get clean >/dev/null 2>&1 || true
+  say "Desktop packages removed — kernel/firmware/boot left intact."
+elif [ "$STRIP_DESKTOP" -eq 1 ]; then
   say "1b/10 Disabling the desktop (frees RAM; nothing is uninstalled)"
-  # IMPORTANT: we do NOT purge/autoremove packages. On a vendor SBC image that
-  # can drag out hardware/firmware/overlay packages you actually need. Instead
-  # we just stop the GUI from starting — it frees the same RAM and is fully
-  # reversible. Sensors/GPIO/I2C come from the kernel + device tree, not the DE.
+  # Reversible: just stop the GUI from starting. Sensors/GPIO/I2C come from the
+  # kernel + device tree, not the DE, so hardware is unaffected either way.
   systemctl set-default multi-user.target || true
   systemctl disable display-manager 2>/dev/null || true   # don't respawn it at boot
   systemctl stop display-manager 2>/dev/null || true      # free the RAM now, no reboot needed
