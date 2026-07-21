@@ -71,12 +71,11 @@ BUILTIN_DENY = [
     r"\b(userdel|groupdel|usermod|adduser|useradd|visudo)\b",
     r"\bpasswd\b(?!\s+-S)",
     r"\bsudoers\b",
-    # --- I2C bus probing: on this SoC the PMIC/RTC live on I2C and actively
-    #     scanning it HARD-LOCKS the whole board (a freeze the watchdog can't
-    #     catch). Safe hardware discovery goes through discover_sensors / sysfs,
-    #     never these. Blocks i2cdetect and the i2c read/write CLIs outright.
+    # --- I2C BLIND SCAN: i2cdetect sweeps every address on a bus, which pokes the
+    #     PMIC/regulators and HARD-LOCKS the board. Targeted i2cget/i2cset to a KNOWN
+    #     sensor are fine (and the power bus i2c-0 is blocked at the OS level), so we
+    #     only forbid the scanner here — real sensor work still works.
     r"\bi2cdetect\b",
-    r"\bi2c(set|get|dump|transfer)\b",
     # --- network / egress controls (the "Data Cage" must stay up) ---
     r"\b(iptables|nft|nftables)\b.*\b(-f|flush|delete)\b",
     r"\bufw\s+disable\b",

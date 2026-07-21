@@ -127,15 +127,16 @@ Rules:
   `[ -d "$CPCT_PATH" ]`: sdcc (C for Z80), zcc (z88dk — C+asm for CPC/Spectrum),
   pasmo (Z80 assembler, also for SymbOS), and CPCtelera at $CPCT_PATH (Amstrad CPC
   games). Produce a runnable .dsk/.cdt/.tap or .bin and document how to load it.
-- I2C IS OFF-LIMITS — DO NOT USE IT. Do not `import smbus`/`smbus2`, do not open
-  /dev/i2c-*, do not run `i2cdetect`/`i2cget`/`i2cset`, and do not build any project
-  that talks to I2C. On this SoC the power-management IC and the CPU/GPU voltage
-  regulators sit on the I2C bus; touching them LOCKS UP THE WHOLE MACHINE (a hard
-  freeze no watchdog can recover). OS access is blocked too, so smbus code just
-  errors — it is never worth attempting. If a project idea needs I2C, pick a
-  DIFFERENT idea. Discover hardware ONLY passively: the discover_sensors tool and
-  reading /sys/bus/i2c/devices/* (never by probing). The same "look, don't poke"
-  rule applies to raw /dev memory, GPIO banks, and SPI/1-wire.
+- I2C — fine for a KNOWN sensor, but NEVER blind-scan the bus. You MAY talk to a
+  specific sensor at a specific bus+address (that's what i2c/smbus is for). You must
+  NOT sweep/probe the bus — no `i2cdetect`, no `for addr in range(...): bus.read_byte(addr)`
+  smbus loops. Blind scanning pokes EVERY chip, including the power-management IC and
+  CPU/GPU voltage regulators, and that HARD-LOCKS the whole board. The power bus
+  (i2c-0) is blocked at the OS level so a slip can't brick us, but scanning is still
+  wrong — do it once wrong and you wedge the machine. If you don't KNOW a sensor is
+  wired and at what address, don't build an i2c project; find what's present PASSIVELY
+  with discover_sensors / /sys/bus/i2c/devices/* first. Same "look, don't poke" rule
+  for raw /dev memory, GPIO banks and SPI/1-wire blind probing.
 - Return "final" ONLY when the artifact actually exists and works and you've
   verified it (e.g. read the file back / ran it). NEVER return "final" just
   because you're stuck, blocked, rate-limited, or out of ideas — that falsely
@@ -296,23 +297,20 @@ class AgentLoop:
         interests = self.cfg.get("interests", default=[])
         mission = self.mem.get_mission()
         hw = self.mem.recall("hardware")
-        # NOTE: i2c is deliberately NOT advertised here. On this board the only i2c
-        # buses are the PMIC/power bus (probing it HARD-LOCKS the machine) and two
-        # display buses — there is no usable sensor bus, and OS access is blocked.
-        # Advertising i2c just tempts the model into an smbus project that wedges
-        # the Pi, so we tell it i2c is off-limits instead.
-        _i2c_ban = ("\nI2C/SMBus is OFF-LIMITS on this box — do NOT propose or write any "
-                    "i2c/smbus project. The only buses are the power-management bus (touching "
-                    "it hard-locks the board) and display buses; OS access is blocked anyway, "
-                    "so smbus code just errors. Discover hardware passively via discover_sensors.")
+        # i2c is allowed for a KNOWN sensor, but blind-scanning wedges the board, so
+        # we spell out the rule rather than advertise the raw bus list as a target.
+        _i2c_note = ("\nI2C: you MAY talk to a specific sensor at a known bus+address, but NEVER "
+                     "blind-scan/probe the bus (no i2cdetect, no smbus address sweeps) — that pokes "
+                     "the power regulators and hard-locks the board. The power bus i2c-0 is blocked "
+                     "at the OS level. If no sensor is known to be wired, don't build an i2c project.")
         if hw:
             hw_hint = (f"\nKnown hardware: model={hw.get('model')}, "
-                       f"1-wire={hw.get('onewire')}, "
+                       f"i2c={hw.get('i2c_buses')}, 1-wire={hw.get('onewire')}, "
                        f"cameras={hw.get('video_devices')}, "
-                       f"thermals={[t.get('type') for t in hw.get('thermals', [])]}." + _i2c_ban)
+                       f"thermals={[t.get('type') for t in hw.get('thermals', [])]}." + _i2c_note)
         else:
             hw_hint = ("\n(You haven't scanned your hardware yet — discover_sensors lists what's "
-                       "attached, if a project ever needs it.)" + _i2c_ban)
+                       "attached, if a project ever needs it.)" + _i2c_note)
         if suggestion:
             user = (f"Your human has asked for this NEXT: \"{suggestion}\"\n"
                     f"Build exactly that. Pick the best-matching task_type and flesh it "
