@@ -47,8 +47,21 @@ for _ in $(seq 1 15); do docker info >/dev/null 2>&1 && break; sleep 1; done
 docker info >/dev/null 2>&1 || { warn "the Docker daemon isn't responding (systemctl status docker)"; exit 1; }
 
 # 2) Config with the JSON API ON -------------------------------------------
+# Self-healing: write our config if none exists OR if an existing one doesn't
+# enable JSON (e.g. left over from a manual `docker run` with default settings —
+# the usual reason /search?format=json returns 403). We back up before rewriting.
 mkdir -p "$CONF"
+need_write=0
 if [ ! -f "$CONF/settings.yml" ]; then
+  need_write=1
+elif ! grep -qiE 'json' "$CONF/settings.yml"; then
+  warn "existing $CONF/settings.yml doesn't enable the JSON API — backing it up and rewriting."
+  cp -a "$CONF/settings.yml" "$CONF/settings.yml.bak.$(date +%s)" 2>/dev/null || true
+  need_write=1
+else
+  say "$CONF/settings.yml already enables JSON — leaving it untouched."
+fi
+if [ "$need_write" -eq 1 ]; then
   say "Writing $CONF/settings.yml (JSON API enabled, limiter off) …"
   SECRET="$(openssl rand -hex 32 2>/dev/null || head -c32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   cat > "$CONF/settings.yml" <<YML
@@ -65,10 +78,6 @@ search:
     - html
     - json
 YML
-else
-  say "$CONF/settings.yml already exists — leaving it untouched."
-  grep -qE '^[[:space:]]*-[[:space:]]*json' "$CONF/settings.yml" \
-    || warn "  JSON may NOT be enabled — add '- json' under search.formats, then: docker restart $NAME"
 fi
 
 # 3) (Re)create the container ----------------------------------------------
