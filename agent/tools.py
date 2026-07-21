@@ -390,6 +390,24 @@ def web_search(ctx: ToolContext, query: str = "", **_):
         return "ERROR: web_search needs a query"
     timeout = ctx.cfg.get("tools", "web", "timeout", default=30)
 
+    # 0) Self-hosted SearXNG (open-source metasearch, no API key, no cloud). Point
+    #    SEARXNG_URL at your instance (e.g. http://192.168.1.50:8888) and it wins.
+    #    Needs JSON output enabled in its settings.yml (search.formats: [html, json]).
+    searx = (os.environ.get("SEARXNG_URL") or "").strip().rstrip("/")
+    if searx:
+        try:
+            r = requests.get(f"{searx}/search",
+                             params={"q": q, "format": "json"},
+                             headers={"User-Agent": "drongo/1.0"}, timeout=timeout)
+            r.raise_for_status()
+            hits = r.json().get("results") or []
+            out = [f"- {(h.get('title') or '').strip()}\n  {h.get('url','')}\n  {(h.get('content') or '').strip()[:200]}"
+                   for h in hits[:6]]
+            if out:
+                return "\n".join(out)
+        except Exception as e:
+            ctx.log and ctx.log.warning("searxng search failed: %s", e)
+
     # 1) A real search API if a (free-tier) key is set — DuckDuckGo now blocks
     #    scraping (202 bot-challenge), so a key is how you get real web results.
     brave = os.environ.get("BRAVE_API_KEY")
@@ -464,7 +482,9 @@ def web_search(ctx: ToolContext, query: str = "", **_):
     if out:
         return "\n".join(out[:6])
     return ("no results — keyless web search is unreliable now (DuckDuckGo blocks it). "
-            "For real results, add a FREE search key to /etc/drongo/drongo.env and restart:\n"
+            "Two ways to get real results (set either in /etc/drongo/drongo.env, then restart):\n"
+            "  SEARXNG_URL     self-hosted, no key, no cloud — run SearXNG and point here\n"
+            "                  (e.g. http://127.0.0.1:8888); enable JSON in its settings.yml\n"
             "  BRAVE_API_KEY   (2000 free/mo — https://brave.com/search/api/)\n"
             "  TAVILY_API_KEY  (https://tavily.com)   or   SERPER_API_KEY (https://serper.dev)")
 

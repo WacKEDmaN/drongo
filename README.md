@@ -535,6 +535,46 @@ SSH-key repo that's usually not the case, so `update.sh` is the reliable path.)*
 
 ---
 
+## Self-hosted web search (SearXNG)
+
+Don't want to hand a cloud search provider your queries? Run **[SearXNG](https://github.com/searxng/searxng)**
+— an open-source metasearch engine that aggregates real results from Google/Bing/
+DuckDuckGo/etc., exposes a JSON API, and needs **no API key**. DRONGO uses it
+before any cloud provider when `SEARXNG_URL` is set.
+
+Run it (Docker is easiest; the image is multi-arch so it works on the Pi's arm64,
+but it's happiest on a spare box on your LAN):
+
+```bash
+docker run -d --name searxng --restart unless-stopped -p 8888:8080 \
+  -v searxng:/etc/searxng searxng/searxng:latest
+```
+
+Enable the JSON API (off by default) — add to the `search:` block of
+`/etc/searxng/settings.yml`, then `docker restart searxng`:
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+Point DRONGO at it and restart:
+
+```bash
+echo 'SEARXNG_URL=http://127.0.0.1:8888' | sudo tee -a /etc/drongo/drongo.env   # or http://<lan-ip>:8888
+sudo systemctl restart drongo drongo-web
+```
+
+Test it: `curl 'http://127.0.0.1:8888/search?q=rk3399&format=json'` should return
+JSON with a `results` array. If it 403s, JSON isn't enabled yet (step above). On a
+4 GB Pi it's light when idle; if you also run a local LLM, prefer putting SearXNG
+on another LAN machine. If you enforce egress filtering, SearXNG needs to reach
+the upstream engines.
+
+---
+
 ## Troubleshooting
 
 **First move, always:** run the doctor — it tells you in plain English what's wrong.
@@ -558,7 +598,7 @@ sudo drongo doctor
 | "pip: permission denied" / can't install packages | It needs its writable venv at `/var/lib/drongo/runtime/venv`. `sudo ./update.sh` (or a restart) creates it; after that `pip install …` and `python …` in its shell use that venv automatically. Native packages (numpy etc.) need ARM wheels or build tools; pure-Python (Flask, etc.) just works. |
 | LED never blinks | Wrong `chip`/`line` (check `gpioinfo`), LED wired backwards (try `active_high: false`), or `python-periphery` missing. Confirm the `drongo` user is in the `gpio` group (`id drongo`). |
 | Cloud provider ignored | Its key is blank/invalid in `/etc/drongo/drongo.env`, or it's rate-limited (the dashboard's *usage* table shows cooldowns). Blank keys are skipped on purpose. |
-| `web_search` returns "no results" | Keyless web search is dead (DuckDuckGo blocks scraping). Add a **free** search key to `/etc/drongo/drongo.env` and restart: `BRAVE_API_KEY` (2000/mo, [brave.com/search/api](https://brave.com/search/api/)), `TAVILY_API_KEY`, or `SERPER_API_KEY`. |
+| `web_search` returns "no results" | Keyless scraping is dead (DuckDuckGo blocks it). **Best no-cloud option: self-host [SearXNG](https://github.com/searxng/searxng)** (open-source metasearch, no API key) and set `SEARXNG_URL=http://<host>:8888` in `/etc/drongo/drongo.env` — see [Self-hosted search](#self-hosted-web-search-searxng). Or add a free key: `BRAVE_API_KEY` (2000/mo), `TAVILY_API_KEY`, or `SERPER_API_KEY`. Restart after. |
 | `self_update` does nothing | You installed from a ZIP (no git remote). Self-update needs a real remote — `git clone` instead. Rollback still works either way. |
 | Want to start over | `sudo /opt/drongo/uninstall.sh --purge` then re-install. |
 | It's doing something I don't like | `touch /var/lib/drongo/runtime/workspace/STOP` to halt it now; investigate; delete the file to resume. |
