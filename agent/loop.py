@@ -1050,11 +1050,21 @@ class AgentLoop:
             log.warning("could not create project venv: %s", e)
 
     def _should_wake(self):
-        """Cut a nap/idle short when a dashboard control (or restart) arrives."""
+        """Cut a NORMAL nap short when a dashboard control (or restart) arrives."""
         if self.mem.recall("run_now") or self.mem.recall("restart_requested"):
             return True
         ws = Path(self.cfg.workspace)
         return (ws / "STOP").exists() or (ws / "PAUSE").exists()
+
+    def _should_leave_dormant(self):
+        """Wake a PAUSED/STOPPED nap the moment the human LIFTS it (removes the
+        PAUSE/STOP file) or asks for a restart — NOT while the file still exists.
+        Using _should_wake here would return True on every iteration (the file is
+        still there), spinning the loop at 100% CPU and hammering the DB."""
+        if self.mem.recall("restart_requested"):
+            return True
+        ws = Path(self.cfg.workspace)
+        return not ((ws / "STOP").exists() or (ws / "PAUSE").exists())
 
     def _restart_if_requested(self):
         if self.mem.recall("restart_requested"):
@@ -1075,11 +1085,11 @@ class AgentLoop:
             if stop_file.exists():
                 self.mem.remember("status", "stopped")
                 self.mem.remember("working_on", None)
-                watchdog.sleep_with_heartbeat(self.cfg, 15, self._should_wake)
+                watchdog.sleep_with_heartbeat(self.cfg, 15, self._should_leave_dormant)
                 continue
             if pause_file.exists():
                 self.mem.remember("status", "paused")
-                watchdog.sleep_with_heartbeat(self.cfg, min(interval, 60), self._should_wake)
+                watchdog.sleep_with_heartbeat(self.cfg, min(interval, 60), self._should_leave_dormant)
                 continue
 
             self.mem.remember("status", "running")
