@@ -20,8 +20,18 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/drongo
 PrivateTmp=true
-TasksMax=64
+# --- Resource caps: the dashboard must NEVER be able to starve the box. It's a
+#     background UI, so it yields CPU + disk I/O to the agent and the system. This
+#     prevents a busy dashboard (or heavy DB/WAL polling on slow SD storage) from
+#     locking the whole Pi.
+TasksMax=32
+MemoryHigh=320M
 MemoryMax=512M
+CPUWeight=20
+CPUQuota=60%
+Nice=10
+IOSchedulingClass=idle
+IOWeight=20
 
 # --- Network: the dashboard may ONLY be reached from loopback + private LAN.
 #     Public/internet source addresses are dropped by the kernel (BPF), so even

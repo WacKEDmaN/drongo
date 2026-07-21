@@ -1387,7 +1387,9 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      .then(d=>toast(d.ok?(restart?'Saved — restarting…':'Saved ✓ (restart to apply)'):('failed: '+(d.error||''))));
  }
  function pct(v){return v==null?'—':v+'%';}
- function refresh(){fetch('/api/system').then(r=>r.json()).then(d=>{
+ let _refreshBusy=false;
+ function refresh(){if(_refreshBusy||document.hidden)return;_refreshBusy=true;
+   fetch('/api/system').then(r=>r.json()).then(d=>{
    const s=d.stats||{};
    const status=(d.status||'?')+(d.next_cycle_in!=null&&d.status=='sleeping'?' · next '+d.next_cycle_in+'s':'');
    $('#p_status').textContent=status;
@@ -1418,7 +1420,7 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      fetch('/api/journal').then(r=>r.json()).then(jd=>{
        renderHome(jd.journal||[]); renderProjects(jd.projects||[]); renderGallery(jd.images||[]);}).catch(()=>{});
    }
- }).catch(()=>{});}
+ }).catch(()=>{}).finally(()=>{_refreshBusy=false;});}
  function loadRequests(){return fetch('/api/requests?limit=120').then(r=>r.json()).then(d=>renderRequests(d.requests||[],d.summary||{})).catch(()=>{});}
  function reqRow(r,mini){const purp=(r.purpose||'').toLowerCase();
    const tm=new Date((r.ts||0)*1000).toLocaleTimeString([],{hour12:false});
@@ -1467,14 +1469,14 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      else if(e.key==='Enter'){if(_cf[_csel]){_cf[_csel].run();closeCmd();}}
      else if(e.key==='Escape')closeCmd();});
    document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#cmdk').classList.contains('open')?closeCmd():openCmd();}});}
- initThemes(); renderGallery(_images); restorePanels(); localizeTimes(); loadHW(); refresh(); setInterval(refresh,4000);
+ initThemes(); renderGallery(_images); restorePanels(); localizeTimes(); loadHW(); refresh(); setInterval(refresh,5000);
  loadUsageGraph(); loadRequests(); initCmdk();
  // keep the whole dashboard live: poll aggregate data + whatever tab is open, so
  // Brain/Files/Requests don't go stale until a manual refresh. (Settings form is
  // deliberately never auto-reloaded — it would wipe what you're typing.)
  let _pollBusy=false;
  function autoPoll(){
-   if(_pollBusy)return;                          // don't pile up if a slow endpoint is still pending
+   if(_pollBusy||document.hidden)return;         // don't pile up, and don't poll a backgrounded tab
    const jobs=[loadUsageGraph(),loadRequests()];
    const id=(document.querySelector('.tab.on')||{}).id;
    if(id==='brain')jobs.push(loadBrain());
@@ -1483,7 +1485,10 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
    _pollBusy=true;
    Promise.allSettled(jobs.filter(Boolean)).finally(()=>{_pollBusy=false;});
  }
- setInterval(autoPoll,10000);
+ setInterval(autoPoll,15000);
+ // pause ALL polling while the tab is hidden — a backgrounded tab shouldn't keep
+ // hammering the Pi's dashboard (and its shared DB) for hours.
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden){refresh();autoPoll();}});
  document.addEventListener('keydown',e=>{
    if(e.key==='Escape'){closeLightbox();const m=$('#modal');if(m)m.classList.remove('show');}
    else if($('#lightbox').classList.contains('show')){

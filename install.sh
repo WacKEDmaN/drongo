@@ -247,6 +247,25 @@ systemctl mask --runtime apport-autoreport.service apport-forward.socket 2>/dev/
 rm -f /var/crash/* 2>/dev/null || true
 [ -f /etc/default/apport ] && sed -i 's/^enabled=1/enabled=0/' /etc/default/apport 2>/dev/null || true
 
+# Hardware watchdog: the userspace observer can't recover a FULL system lockup
+# (it's starved too). The RK3399 has a hardware watchdog — point systemd at it so
+# that if the kernel/systemd stops responding for ~1min the board hard-reboots on
+# its own. No-op if the platform exposes no /dev/watchdog.
+say "1d/10 Enabling the hardware watchdog (auto-reboot on a full lockup)"
+if [ -e /dev/watchdog ]; then
+  mkdir -p /etc/systemd/system.conf.d
+  cat > /etc/systemd/system.conf.d/drongo-watchdog.conf <<'WDT'
+# Installed by DRONGO. Hardware watchdog so a total lockup self-recovers.
+[Manager]
+RuntimeWatchdogSec=60
+RebootWatchdogSec=10min
+WDT
+  systemctl daemon-reexec 2>/dev/null || true
+  say "  hardware watchdog armed (/dev/watchdog, 60s)"
+else
+  warn "  no /dev/watchdog on this board — skipping (enable the rockchip_wdt kernel module to use it)"
+fi
+
 # ---------------------------------------------------------------------------
 say "2/10  Dedicated unprivileged user '$AGENT_USER'"
 if ! id "$AGENT_USER" >/dev/null 2>&1; then
