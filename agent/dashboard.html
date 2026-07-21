@@ -251,6 +251,7 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
 .set label,.field label{display:block;font-size:12.5px;font-weight:600;margin:10px 0 4px}
 .set input,.set select,.set textarea,input.set,textarea.set,.field input,.field select,.field textarea{width:100%;max-width:560px;background:var(--sunken);color:var(--fg);border:1px solid var(--line2);border-radius:var(--r);padding:8px 11px;font:12.5px var(--mono)}
 .set input:focus,.set select:focus,.set textarea:focus,.field input:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-glow)}
+.set textarea.bigfield{max-width:none;min-height:260px;line-height:1.6;resize:vertical;tab-size:2}
 #suggbox,#missionbox{width:100%;background:var(--sunken);color:var(--fg);border:1px solid var(--line2);border-radius:var(--r);padding:9px 11px;font:13px var(--mono);resize:vertical}
 .swrow{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--line)}
 .sw{position:relative;width:38px;height:22px;flex:none}
@@ -733,9 +734,15 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
     </div>
 
     <div class=subpage data-p=persona>
-     <h3 class=sph>Personality &amp; interests</h3><p class=sphd>How it behaves and talks, and what it likes to build.</p>
-     <label>Persona — how it behaves and talks<textarea id=s_persona rows=6>{{ sv.persona }}</textarea></label>
-     <label>Interests — one per line; it picks its projects from these<textarea id=s_interests rows=9>{{ sv.interests_text }}</textarea></label>
+     <h3 class=sph>Personality &amp; interests</h3><p class=sphd>{{ name }}'s voice, and the pool of ideas it invents projects from. Applies on Save &amp; Restart.</p>
+     <div class=dash>
+      <div class="tile c7"><div class=th>🎭 Persona <span class=meta>— how it behaves &amp; talks</span></div>
+       <p class=meta style="margin:0 0 9px">Its voice, attitude and rules — effectively the system prompt for its personality.</p>
+       <textarea id=s_persona class=bigfield rows=16 spellcheck=false>{{ sv.persona }}</textarea></div>
+      <div class="tile c5"><div class=th>🎯 Interests <span class=meta>— one per line</span></div>
+       <p class=meta style="margin:0 0 9px">The topics it dreams up projects from. One idea per line; blank lines are ignored.</p>
+       <textarea id=s_interests class=bigfield rows=16 spellcheck=false placeholder="retro Amstrad CPC games&#10;generative art with p5.js&#10;CPU-temperature dashboards&#10;Z80 assembly demos">{{ sv.interests_text }}</textarea></div>
+     </div>
     </div>
 
     <div class=subpage data-p=hardware>
