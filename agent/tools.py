@@ -17,6 +17,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import threading
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -166,6 +167,65 @@ def _truncate(text: str, limit: int) -> str:
     return text[:limit] + f"\n…[truncated {len(text) - limit} chars]"
 
 
+def run_guarded(cmd, *, cwd=None, env=None, timeout=30, mem_mb=384,
+                cpu_seconds=None, nproc=96, max_output=8000, shell=False):
+    """Run UNtrusted code (a project script, a local image generator) inside a
+    hard safety envelope and return (returncode, combined_output, timed_out).
+
+    Three cages, because on a 4GB Pi a single runaway can take the whole box down:
+      1. rlimits (address space, CPU time, files, procs, file size, no core) via
+         safeguard.posix_limits — one process can't exhaust RAM / FDs / the SD card;
+      2. its OWN session/process group (start_new_session) so a timeout SIGKILLs
+         the WHOLE tree — a forked server or worker pool can't orphan and live on
+         eating memory after we return (the bug that locked the Pi up);
+      3. a bounded, non-blocking drain of stdout — a child spewing output can't
+         balloon THIS process's memory (which would just move the OOM to us).
+
+    The outer cage is the systemd unit (MemoryMax + MemorySwapMax=0 + TasksMax);
+    this is the inner one. Both are needed: cgroups stop the tree's total RAM/pids,
+    these stop a single process and reap orphans. stderr is merged into stdout."""
+    cpu_seconds = int(cpu_seconds if cpu_seconds is not None else max(5, timeout))
+    proc = subprocess.Popen(
+        cmd, shell=shell, cwd=cwd, env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        start_new_session=True,
+        preexec_fn=safeguard.posix_limits(mem_mb=mem_mb, cpu_seconds=cpu_seconds,
+                                          nproc=nproc),
+    )
+    buf, cap, size = [], max(4096, max_output * 4), [0]
+
+    def _drain():
+        # Read to EOF so the child never blocks on a full pipe (which would dodge
+        # the timeout), but stop STORING once we have plenty — keeps our RAM flat
+        # no matter how much the child prints.
+        try:
+            for chunk in iter(lambda: proc.stdout.read(4096), ""):
+                if size[0] < cap:
+                    buf.append(chunk)
+                    size[0] += len(chunk)
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_drain, daemon=True)
+    t.start()
+    timed_out = False
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _kill_group(proc)                     # reap the WHOLE tree, not just the child
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+    t.join(timeout=2)
+    try:
+        proc.stdout.close()
+    except Exception:
+        pass
+    return proc.returncode, _truncate("".join(buf), max_output), timed_out
+
+
 # ----------------------------------------------------------------------
 # Shell + filesystem
 # ----------------------------------------------------------------------
@@ -190,7 +250,12 @@ def shell(ctx: ToolContext, command: str = "", **_):
             command, shell=True, cwd=ctx.workspace,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             env=_project_env(ctx.cfg), start_new_session=True,
-            preexec_fn=safeguard.posix_limits(cpu_seconds=timeout),
+            # Generous per-process limits — the agent's own shell legitimately
+            # compiles code and downloads deps. The hard cage is the systemd
+            # cgroup (MemoryMax + MemorySwapMax=0 + TasksMax); this just stops a
+            # single command running away with FDs/CPU.
+            preexec_fn=safeguard.posix_limits(mem_mb=1024, cpu_seconds=timeout,
+                                              fsize_mb=4096, nproc=200),
         )
         try:
             out, err = proc.communicate(timeout=timeout)
@@ -567,16 +632,18 @@ def _generate_image_local(ctx, prompt, filename, out_path):
                 "Run system/image-gen.sh or point local_cmd at your generator.")
     cmd = tmpl.replace("{prompt}", shlex.quote(prompt[:600])).replace("{out}", shlex.quote(str(out_path)))
     to = int(ctx.cfg.get("tools", "images", "timeout", default=600))
-    try:
-        proc = subprocess.run(cmd, shell=True, cwd=ctx.workspace, capture_output=True,
-                              text=True, timeout=to, env=_project_env(ctx.cfg),
-                              preexec_fn=safeguard.posix_limits(cpu_seconds=to + 30))
-    except subprocess.TimeoutExpired:
+    # Sandboxed like every other untrusted run: own process group so a timeout
+    # reaps the whole tree (image models fork workers), generous RAM (the agent
+    # cgroup is the real ceiling), bounded log output.
+    rc, cout, timed_out = run_guarded(
+        cmd, cwd=ctx.workspace, env=_project_env(ctx.cfg), timeout=to,
+        mem_mb=1536, cpu_seconds=to + 30, nproc=64, max_output=1200, shell=True)
+    if timed_out:
         return f"ERROR: local image generation timed out after {to}s (it's slow on this box)."
     if not out_path.exists() or out_path.stat().st_size < 512:
-        return f"ERROR: local generator produced no image. stderr: {(proc.stderr or '')[:300]}"
+        return f"ERROR: local generator produced no image. output: {cout[:300]}"
     if not _image_ext(out_path.read_bytes()[:8]):
-        return f"ERROR: local generator output isn't a recognised image. stderr: {(proc.stderr or '')[:200]}"
+        return f"ERROR: local generator output isn't a recognised image. output: {cout[:200]}"
     rel = f"images/{filename}"
     ctx.add_artifact(rel, f"image: {prompt[:60]}")
     return (f"saved a real image to {rel} via the local generator. It is now in the "

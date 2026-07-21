@@ -34,6 +34,14 @@ WatchdogSec=600
 # --- Resource caps (cgroups). 4GB box: leave headroom for the OS + Ollama. ---
 MemoryHigh=900M
 MemoryMax=1200M
+# CRITICAL on a Pi: cap RAM but FORBID swap. Without this, a memory-hungry child
+# (a project the agent runs) hits MemoryMax, the kernel "reclaims" by thrashing
+# the SD-card swap, and the WHOLE box goes unresponsive on I/O while PID 1 stays
+# alive — so the watchdog never fires. With swap forbidden, the cgroup OOM-kills
+# the offender instantly instead of dragging the system down. This is THE fix for
+# the run-a-project-and-the-Pi-locks-up bug.
+MemorySwapMax=0
+MemoryZSwapMax=0
 CPUQuota=180%
 TasksMax=256
 

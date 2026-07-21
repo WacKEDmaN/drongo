@@ -26,10 +26,18 @@ from .loop import AgentLoop
 from .memory import Memory
 
 
-def _setup_logging(cfg, level=logging.INFO):
+def _setup_logging(cfg, level=logging.INFO, basename="agent"):
+    from logging.handlers import RotatingFileHandler
     handlers = [logging.StreamHandler(sys.stdout)]
     try:
-        handlers.append(logging.FileHandler(cfg.logs_dir / "agent.log", encoding="utf-8"))
+        # ROTATE — a plain FileHandler grows forever and will eventually fill the
+        # SD card and wedge the whole Pi (esp. the dashboard, which logs a line per
+        # HTTP request and polls itself constantly). 5MB × 3 = 15MB hard ceiling.
+        # The agent and the dashboard log to SEPARATE files so their rotations
+        # never race over one inode.
+        handlers.append(RotatingFileHandler(
+            cfg.logs_dir / f"{basename}.log", maxBytes=5_000_000,
+            backupCount=3, encoding="utf-8"))
     except Exception:
         pass
     logging.basicConfig(
@@ -37,11 +45,15 @@ def _setup_logging(cfg, level=logging.INFO):
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+    # The dashboard polls itself every few seconds; Werkzeug's per-request INFO
+    # lines would otherwise swamp the log and journald. Only warnings+ from it.
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 
 def _build(args):
     cfg = load_config(args.config)
-    _setup_logging(cfg, logging.DEBUG if args.verbose else logging.INFO)
+    _setup_logging(cfg, logging.DEBUG if args.verbose else logging.INFO,
+                   basename="web" if getattr(args, "cmd", None) == "web" else "agent")
     mem = Memory(cfg.db_path)
     from .config import apply_overrides
     # Dashboard-saved settings are applied best-effort: a corrupt/partial blob

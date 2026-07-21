@@ -578,10 +578,21 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
     </div>
 
     <div class=subpage data-p=notes>
-     <h3 class=sph>Notes &amp; lessons</h3><p class=sphd>Facts it saved and lessons it drew from its work.</p>
+     <h3 class=sph>Notes &amp; lessons</h3><p class=sphd>Facts it saved and lessons it drew from its work. Add, edit or delete them here — the agent reuses these, so purge anything it learned wrong.</p>
      <div class=dash>
-      <div class="tile c6"><div class=th>Notes <span class=meta id=notecount></span></div><div id=notewrap class=meta>loading…</div></div>
-      <div class="tile c6"><div class=th>Lessons learned</div><div id=lessonwrap class=meta>loading…</div></div>
+      <div class="tile c6"><div class=th>Notes <span class=meta id=notecount></span></div>
+       <div style="margin:8px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <input id=noteTopic class=set placeholder="topic" style="max-width:120px;display:inline-block">
+        <input id=noteContent class=set placeholder="a fact worth remembering…" style="max-width:280px;display:inline-block" onkeydown="if(event.key==='Enter')addNote()">
+        <button class=act onclick="addNote()">＋ add</button>
+       </div>
+       <div id=notewrap class=meta>loading…</div></div>
+      <div class="tile c6"><div class=th>Lessons learned</div>
+       <div style="margin:8px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <input id=lessonText class=set placeholder="a one-line lesson…" style="max-width:340px;display:inline-block" onkeydown="if(event.key==='Enter')addLesson()">
+        <button class=act onclick="addLesson()">＋ add</button>
+       </div>
+       <div id=lessonwrap class=meta>loading…</div></div>
      </div>
     </div>
 
@@ -1165,16 +1176,40 @@ sudo {{ hp.code }}/system/image-gen.sh</pre>
      const del=document.createElement('button');del.className='act danger';del.textContent='delete';
      del.onclick=()=>{if(confirm('Delete skill '+s.name+'?'))delSkill(s.name);};
      row.append(nm,wy,view,del);sk.appendChild(row);});
-   const nw=$('#notewrap');nw.replaceChildren();const notes=d.notes||[];
+   const nw=$('#notewrap');nw.replaceChildren();const notes=(d.notes||[]).slice();
    $('#notecount').textContent='('+notes.length+')';
    if(!notes.length){const p=document.createElement('div');p.className='meta';p.textContent='No notes yet — the agent saves research findings with save_note.';nw.appendChild(p);}
-   notes.slice().reverse().forEach(n=>{const row=document.createElement('div');row.className='fbrow';
-     const a=document.createElement('span');a.textContent=(n.topic||'(note)')+' — '+(n.content||'').slice(0,140);a.style.flex='1';
-     row.appendChild(a);nw.appendChild(row);});
-   const lw=$('#lessonwrap');lw.replaceChildren();const lessons=d.lessons||[];
+   notes.reverse().forEach(n=>{const row=document.createElement('div');row.className='fbrow';
+     const a=document.createElement('span');a.style.flex='1';
+     const b=document.createElement('b');b.textContent=(n.topic||'(note)')+' ';a.appendChild(b);
+     a.appendChild(document.createTextNode('— '+(n.content||'')));
+     const ed=document.createElement('button');ed.className='act';ed.textContent='edit';ed.onclick=()=>editNote(n);
+     const del=document.createElement('button');del.className='act danger';del.textContent='✕';del.title='delete note';
+     del.onclick=()=>{if(confirm('Delete this note?'))delNote(n.ts);};
+     row.append(a,ed,del);nw.appendChild(row);});
+   const lw=$('#lessonwrap');lw.replaceChildren();const lessons=(d.lessons||[]).slice();
    if(!lessons.length){const p=document.createElement('div');p.className='meta';p.textContent='No lessons yet.';lw.appendChild(p);}
-   lessons.slice().reverse().forEach(t=>{const row=document.createElement('div');row.className='fbrow';
-     const a=document.createElement('span');a.textContent='• '+t;row.appendChild(a);lw.appendChild(row);});}
+   lessons.reverse().forEach(l=>{const row=document.createElement('div');row.className='fbrow';
+     const a=document.createElement('span');a.style.flex='1';a.textContent='• '+(l.txt||'');
+     const ed=document.createElement('button');ed.className='act';ed.textContent='edit';ed.onclick=()=>editLesson(l);
+     const del=document.createElement('button');del.className='act danger';del.textContent='✕';del.title='delete lesson';
+     del.onclick=()=>{if(confirm('Delete this lesson?'))delLesson(l.t);};
+     row.append(a,ed,del);lw.appendChild(row);});}
+ function _postBrain(url,body,okmsg){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
+   .then(r=>r.json()).then(d=>{toast(d.ok?(okmsg||'done ✓'):(d.error||'failed'));if(d.ok)loadBrain();return d;}).catch(()=>{toast('failed');return{};});}
+ function addNote(){const t=$('#noteTopic'),c=$('#noteContent');const content=(c.value||'').trim();
+   if(!content){toast('type a note first');return;}
+   _postBrain('/control/note_add',{topic:(t.value||'').trim()||'note',content},'note added ✓').then(d=>{if(d.ok){t.value='';c.value='';}});}
+ function editNote(n){const topic=prompt('Topic:',n.topic||'');if(topic===null)return;
+   const content=prompt('Note:',n.content||'');if(content===null||!content.trim())return;
+   _postBrain('/control/note_edit',{ts:n.ts,topic,content},'note updated ✓');}
+ function delNote(ts){_postBrain('/control/note_delete',{ts},'note deleted ✓');}
+ function addLesson(){const el=$('#lessonText');const text=(el.value||'').trim();
+   if(!text){toast('type a lesson first');return;}
+   _postBrain('/control/lesson_add',{text},'lesson added ✓').then(d=>{if(d.ok)el.value='';});}
+ function editLesson(l){const text=prompt('Lesson:',l.txt||'');if(text===null||!text.trim())return;
+   _postBrain('/control/lesson_edit',{t:l.t,text},'lesson updated ✓');}
+ function delLesson(t){_postBrain('/control/lesson_delete',{t},'lesson deleted ✓');}
  function importSkill(){const raw=($('#skilljson').value||'').trim();if(!raw){toast('paste a skill JSON first');return;}
    fetch('/control/skill_import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({json:raw})})
    .then(r=>r.json()).then(d=>{toast(d.ok?('added: '+(d.saved||[]).join(', ')):(d.error||'failed'));if(d.ok){$('#skilljson').value='';loadBrain();}});}

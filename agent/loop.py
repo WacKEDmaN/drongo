@@ -127,6 +127,17 @@ Rules:
   `[ -d "$CPCT_PATH" ]`: sdcc (C for Z80), zcc (z88dk — C+asm for CPC/Spectrum),
   pasmo (Z80 assembler, also for SymbOS), and CPCtelera at $CPCT_PATH (Amstrad CPC
   games). Produce a runnable .dsk/.cdt/.tap or .bin and document how to load it.
+- HARDWARE SAFETY — this is a real board that can HANG. NEVER actively scan or
+  probe the I2C bus: no `i2cdetect`, no `i2cget`/`i2cset` sweeps, and no
+  smbus/smbus2 address-probing loops (`for addr in range(...): bus.read_byte(addr)`).
+  On this SoC the power-management IC (PMIC), RTC and other critical chips sit on
+  I2C, and poking their addresses LOCKS UP THE WHOLE MACHINE — a hard freeze the
+  watchdog can't recover. To discover hardware, read PASSIVELY: list /dev/i2c-*,
+  read /sys/bus/i2c/devices/* (already-bound devices + drivers), and use the
+  discover_sensors tool (it inventories buses safely without touching them). Only
+  ever address a specific i2c device if your human gave you its exact bus AND
+  address for a known peripheral. The same caution applies to raw /dev memory,
+  GPIO banks you haven't been told are free, and SPI/1-wire blind probing.
 - Return "final" ONLY when the artifact actually exists and works and you've
   verified it (e.g. read the file back / ran it). NEVER return "final" just
   because you're stuck, blocked, rate-limited, or out of ideas — that falsely

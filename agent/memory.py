@@ -16,6 +16,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def _ts_eq(a, b) -> bool:
+    """Match two timestamps across a JSON round-trip (the dashboard sends a note's
+    ts back as the id to edit/delete). Small epsilon guards float formatting."""
+    try:
+        return abs(float(a) - float(b)) < 1e-6
+    except (TypeError, ValueError):
+        return False
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS journal (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +93,12 @@ class Memory:
         try:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
+            # Bound the WAL. The dashboard is a constant reader, which can hold back
+            # checkpoints; without a size limit the -wal file grows to its high-water
+            # mark and stays there, and on a small SD card that trends toward a full
+            # disk (→ box wedges). Cap it and let it truncate back down on checkpoint.
+            self._conn.execute("PRAGMA wal_autocheckpoint=1000")
+            self._conn.execute("PRAGMA journal_size_limit=%d" % (32 * 1024 * 1024))
         except Exception:
             pass
         self._conn.executescript(SCHEMA)
@@ -213,20 +228,51 @@ class Memory:
             self.remember("suggestion", "")
         return s
 
-    def add_lesson(self, text):
+    def add_lesson(self, text) -> bool:
         """Record a one-line lesson learned from a project (capped ring of 25)."""
         text = str(text or "").strip()
         if not text:
-            return
+            return False
         v = self.recall("lessons")
         v = v if isinstance(v, list) else []
         v.append({"t": time.time(), "txt": text[:200]})
         self.remember("lessons", v[-25:])
+        return True
 
     def recent_lessons(self, limit=8):
         v = self.recall("lessons")
         v = v if isinstance(v, list) else []
         return [x["txt"] for x in v[-limit:] if x.get("txt")]
+
+    def lessons_full(self, limit=25) -> list:
+        """Lessons WITH their timestamps — the id the dashboard edits/deletes by."""
+        v = self.recall("lessons")
+        v = v if isinstance(v, list) else []
+        return v[-limit:]
+
+    def delete_lesson(self, t) -> bool:
+        v = self.recall("lessons")
+        v = v if isinstance(v, list) else []
+        nv = [x for x in v if not _ts_eq(x.get("t"), t)]
+        if len(nv) == len(v):
+            return False
+        self.remember("lessons", nv)
+        return True
+
+    def edit_lesson(self, t, text) -> bool:
+        text = str(text or "").strip()
+        if not text:
+            return False
+        v = self.recall("lessons")
+        v = v if isinstance(v, list) else []
+        hit = False
+        for x in v:
+            if _ts_eq(x.get("t"), t):
+                x["txt"] = text[:200]
+                hit = True
+        if hit:
+            self.remember("lessons", v)
+        return hit
 
     # ---- skills library + standing mission ----------------------------
     def add_skill(self, name, desc, code) -> bool:
@@ -280,6 +326,31 @@ class Memory:
             return v[-limit:]
         hits = [n for n in v if q in (n.get("topic", "") + " " + n.get("content", "")).lower()]
         return hits[-limit:]
+
+    def delete_note(self, ts) -> bool:
+        v = self.recall("notes")
+        v = v if isinstance(v, list) else []
+        nv = [n for n in v if not _ts_eq(n.get("ts"), ts)]
+        if len(nv) == len(v):
+            return False
+        self.remember("notes", nv)
+        return True
+
+    def edit_note(self, ts, topic, content) -> bool:
+        content = str(content or "").strip()
+        if not content:
+            return False
+        v = self.recall("notes")
+        v = v if isinstance(v, list) else []
+        hit = False
+        for n in v:
+            if _ts_eq(n.get("ts"), ts):
+                n["topic"] = str(topic or "").strip()[:80]
+                n["content"] = content[:2000]
+                hit = True
+        if hit:
+            self.remember("notes", v)
+        return hit
 
     @staticmethod
     def _tokens(text) -> set:

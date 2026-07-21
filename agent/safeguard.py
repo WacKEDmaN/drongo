@@ -71,6 +71,12 @@ BUILTIN_DENY = [
     r"\b(userdel|groupdel|usermod|adduser|useradd|visudo)\b",
     r"\bpasswd\b(?!\s+-S)",
     r"\bsudoers\b",
+    # --- I2C bus probing: on this SoC the PMIC/RTC live on I2C and actively
+    #     scanning it HARD-LOCKS the whole board (a freeze the watchdog can't
+    #     catch). Safe hardware discovery goes through discover_sensors / sysfs,
+    #     never these. Blocks i2cdetect and the i2c read/write CLIs outright.
+    r"\bi2cdetect\b",
+    r"\bi2c(set|get|dump|transfer)\b",
     # --- network / egress controls (the "Data Cage" must stay up) ---
     r"\b(iptables|nft|nftables)\b.*\b(-f|flush|delete)\b",
     r"\bufw\s+disable\b",
@@ -226,8 +232,17 @@ def safe_join(workspace: str, path: str) -> str:
     return full
 
 
-def posix_limits(mem_mb: int = 1024, cpu_seconds: int = 120, nofile: int = 256):
-    """Return a preexec_fn capping a child process (no-op off POSIX)."""
+def posix_limits(mem_mb: int = 512, cpu_seconds: int = 120, nofile: int = 256,
+                 nproc: int = 128, fsize_mb: int = 512):
+    """Return a preexec_fn capping a child process (no-op off POSIX).
+
+    This is the PER-PROCESS cage (address space, CPU time, open files, process
+    count, single-file size, no core dumps). It is deliberately paired with the
+    systemd unit's cgroup cage (MemoryMax + MemorySwapMax=0 + TasksMax), which
+    bounds the whole process TREE — an rlimit can't, since each fork gets its own
+    fresh budget. Defaults are sized for a 4GB box: modest RAM, a bounded pid
+    count (so a naive fork bomb hits a wall), and a file-size cap so a runaway
+    can't fill the SD card. Callers tighten these further for untrusted code."""
     if resource is None or os.name != "posix":
         return None
 
@@ -236,7 +251,9 @@ def posix_limits(mem_mb: int = 1024, cpu_seconds: int = 120, nofile: int = 256):
             (resource.RLIMIT_AS, mem_mb * 1024 * 1024, mem_mb * 1024 * 1024),
             (resource.RLIMIT_CPU, cpu_seconds, cpu_seconds + 5),
             (resource.RLIMIT_NOFILE, nofile, nofile),
-            (resource.RLIMIT_NPROC, 256, 256),
+            (resource.RLIMIT_NPROC, nproc, nproc),
+            (resource.RLIMIT_FSIZE, fsize_mb * 1024 * 1024, fsize_mb * 1024 * 1024),
+            (resource.RLIMIT_CORE, 0, 0),   # never dump a multi-GB core on OOM
         ):
             try:
                 resource.setrlimit(what, (soft, hard))

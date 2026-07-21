@@ -21,7 +21,6 @@ import os
 import re
 import shutil
 import struct
-import subprocess
 import time
 import zlib
 from pathlib import Path
@@ -582,9 +581,42 @@ def create_app(cfg, mem: Memory) -> Flask:
         except Exception:
             pass
         return {"ok": True, "skills": mem.skills(), "notes": mem.notes(),
-                "lessons": mem.recent_lessons(limit=25),
+                "lessons": mem.lessons_full(limit=25),   # {t, txt} so the UI can edit/delete
                 "repo_files": len(mem.recall("repo_index") or []),
                 "dataset_examples": n_ds}
+
+    # ---- notes & lessons: human CRUD (the agent poisoned its own memory with a
+    #      method that locks the box; you need to be able to fix/purge these) ----
+    @app.route("/control/note_add", methods=["POST"])
+    def control_note_add():
+        d = request.get_json(silent=True) or {}
+        ok = mem.add_note(d.get("topic") or "note", d.get("content") or "")
+        return {"ok": bool(ok)}
+
+    @app.route("/control/note_edit", methods=["POST"])
+    def control_note_edit():
+        d = request.get_json(silent=True) or {}
+        return {"ok": mem.edit_note(d.get("ts"), d.get("topic") or "", d.get("content") or "")}
+
+    @app.route("/control/note_delete", methods=["POST"])
+    def control_note_delete():
+        d = request.get_json(silent=True) or {}
+        return {"ok": mem.delete_note(d.get("ts"))}
+
+    @app.route("/control/lesson_add", methods=["POST"])
+    def control_lesson_add():
+        d = request.get_json(silent=True) or {}
+        return {"ok": mem.add_lesson(d.get("text") or "")}
+
+    @app.route("/control/lesson_edit", methods=["POST"])
+    def control_lesson_edit():
+        d = request.get_json(silent=True) or {}
+        return {"ok": mem.edit_lesson(d.get("t"), d.get("text") or "")}
+
+    @app.route("/control/lesson_delete", methods=["POST"])
+    def control_lesson_delete():
+        d = request.get_json(silent=True) or {}
+        return {"ok": mem.delete_lesson(d.get("t"))}
 
     @app.route("/control/skill_import", methods=["POST"])
     def control_skill_import():
@@ -975,13 +1007,15 @@ def create_app(cfg, mem: Memory) -> Flask:
         cmd = ["bash", full] if rel.endswith(".sh") else [py, full]
         cwd = os.path.dirname(full) if rel.endswith(".sh") else str(ws)
         try:
-            p = subprocess.run(cmd, cwd=cwd, capture_output=True,
-                               text=True, timeout=30, env=env,
-                               preexec_fn=safeguard.posix_limits(mem_mb=300, cpu_seconds=25))
-            out = (p.stdout or "") + (("\n[stderr]\n" + p.stderr) if p.stderr else "")
-            return {"ok": True, "rc": p.returncode, "out": out[:4000] or "(no output)"}
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "error": "timed out after 30s"}
+            # Sandboxed: rlimits + its own process group so a timeout kills the
+            # WHOLE tree (a forked server/worker can't orphan and keep eating RAM),
+            # and output can't balloon the dashboard's memory.
+            rc, out, timed_out = tools.run_guarded(
+                cmd, cwd=cwd, env=env, timeout=30, mem_mb=300, cpu_seconds=25,
+                nproc=64, max_output=4000)
+            if timed_out:
+                return {"ok": False, "error": "timed out after 30s (killed)"}
+            return {"ok": True, "rc": rc, "out": out or "(no output)"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -1006,19 +1040,20 @@ def create_app(cfg, mem: Memory) -> Flask:
         py = venv_py if os.path.exists(venv_py) else "python3"
         env = tools._project_env(cfg)   # venv on PATH + SECRETS STRIPPED (no key leak)
         try:
-            p = subprocess.run([py, full], cwd=str(ws), capture_output=True,
-                               text=True, timeout=20, env=env,
-                               preexec_fn=safeguard.posix_limits(mem_mb=300, cpu_seconds=15))
-        except subprocess.TimeoutExpired:
-            return Response('{"error":"data script timed out"}', status=504,
-                            mimetype="application/json")
+            # Same sandbox as /run: rlimits + own process group (timeout reaps the
+            # whole tree) + bounded output. stderr is merged into the output.
+            rc, out, timed_out = tools.run_guarded(
+                [py, full], cwd=str(ws), env=env, timeout=20, mem_mb=300,
+                cpu_seconds=15, nproc=64, max_output=200000)
         except Exception as e:
             return Response(json.dumps({"error": str(e)}), status=500,
                             mimetype="application/json")
-        out = p.stdout or ""
-        if p.returncode != 0:
-            return Response(json.dumps({"error": "data script exited %d" % p.returncode,
-                                        "stderr": (p.stderr or "")[:1000]}),
+        if timed_out:
+            return Response('{"error":"data script timed out"}', status=504,
+                            mimetype="application/json")
+        if rc != 0:
+            return Response(json.dumps({"error": "data script exited %d" % rc,
+                                        "stderr": out[:1000]}),
                             status=502, mimetype="application/json")
         ct = "application/json" if out.lstrip().startswith(("{", "[")) else "text/plain; charset=utf-8"
         return Response(out, mimetype=ct)

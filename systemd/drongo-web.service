@@ -27,6 +27,11 @@ PrivateTmp=true
 TasksMax=32
 MemoryHigh=320M
 MemoryMax=512M
+# Forbid swap: if a project run (the /run button) balloons memory, the cgroup
+# OOM-kills it instantly instead of thrashing the SD-card swap and locking the
+# whole Pi. See drongo.service for the full explanation.
+MemorySwapMax=0
+MemoryZSwapMax=0
 CPUWeight=20
 CPUQuota=60%
 Nice=10

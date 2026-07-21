@@ -165,6 +165,22 @@ outward**; each outer layer is owned by root and recovers the one inside it.
   broken agent) restarts a wedged agent, rolls back a crash-looping one to the
   last-known-good commit, watches temperature/load/disk, and — only if you opt in
   — reboots the host as an absolute last resort.
+- **Running code can't take the box down.** Everything the agent runs — its own
+  shell, project ▶ Run, live-dashboard backends, the local image generator — is
+  launched in **its own process group** (a timeout kills the *whole* tree, so a
+  forked server/worker can't orphan and keep eating RAM) with **per-process
+  rlimits** (address space, CPU, files, pids, file size). The systemd cgroup is
+  the outer cage: `MemoryMax` **plus `MemorySwapMax=0`**, so a memory-hungry run
+  is **OOM-killed instantly instead of thrashing the SD-card swap** (which is what
+  silently locks up a Pi — the box goes unresponsive while PID 1 stays alive, so
+  no watchdog fires). Logs rotate and the SQLite WAL is size-bounded, so nothing
+  fills the card.
+- **No blind hardware probing.** Actively scanning I2C on this SoC can hang the
+  whole board (the PMIC/RTC live on the bus). The agent discovers hardware
+  **passively** (sysfs + the `discover_sensors` tool), the shell **denylists
+  `i2cdetect`/`i2cset`/`i2cget`**, and its build rules forbid address-probing
+  loops. If you *want* it to talk to a specific sensor, give it the exact bus +
+  address.
 
 ---
 
@@ -278,7 +294,9 @@ rail. The rail collapses to a hamburger on phones.
 - **Brain** — steer it and see everything it has *learned*: **suggest its next project**,
   set its **standing mission**, a knowledge-base summary (repo files indexed /
   skills / notes / lessons / training examples), saved **skills** (code view + delete),
-  **notes** and **lessons**. Import a skill by pasting JSON or downloading a pack from a URL,
+  and **notes** and **lessons** you can **add, edit and delete** — so when the agent
+  learns something wrong, you can correct or purge it (it reuses these when it builds).
+  Import a skill by pasting JSON or downloading a pack from a URL,
   and download the curated **training dataset** (JSONL). Plus a **raw memory browser** —
   every key in its long-term store, inspectable (API keys masked) and deletable, so you
   see and control exactly what it remembers.
@@ -533,6 +551,8 @@ sudo drongo doctor
 | Agent keeps restarting / `systemctl status drongo` shows **failed** | Read `journalctl -u drongo -n 50`. If it's a safeguard error, the installer's seal step didn't finish — just re-run `sudo ./install.sh`. |
 | **SAFE MODE** in the logs | It restarted too many times and threw the handbrake on. Fix the underlying error (logs), then `sudo systemctl restart drongo`; two clean cycles and it exits safe mode on its own. |
 | Whole board feels sluggish / OOM | Only if you added a **local model** — it's too big. Drop to a smaller one and add zram (see [docs/local-model.md](docs/local-model.md)). Cloud-only shouldn't OOM. |
+| **Whole Pi hard-locks when a project runs** (SSH dies, watchdog never fires) | A run ballooned memory and the cgroup **thrashed swap** instead of OOM-killing. Fixed by `MemorySwapMax=0` on both units — deploy it: `git pull && sudo ./update.sh`. **Verify the caps are actually live** (ARM boards sometimes boot with the memory controller off): `systemctl show drongo -p MemoryMax -p MemorySwapMax` must show non-empty values, and `cat /sys/fs/cgroup/cgroup.controllers` must list `memory`. If `memory` is missing, add `cgroup_enable=memory cgroup_memory=1` to the kernel cmdline and reboot. |
+| **Locks up specifically when it scans I2C** | Active I2C probing hangs this SoC (PMIC on the bus). Purge the bad method: Brain → Notes & lessons → delete the i2c-scan note/lesson. The shell now denylists `i2cdetect`/`i2cset`/`i2cget` and the build rules forbid probe loops; for the bot's own Python `smbus` code, hide the dangerous bus from `drongo` (find it with `ls -l /dev/i2c-*` + `i2cdetect -l` **on your own login**, then a udev rule). |
 | **`/sbin/init` (PID 1) constantly at 10–20% CPU** | The **apport** crash-reporter is stuck in a restart-loop (Ubuntu [LP#1895286](https://bugs.launchpad.net/bugs/1895286)) — not the agent. Fix once: `sudo rm -f /var/crash/*`, then `sudo systemctl disable --now apport.service whoopsie.service`. The installer now does this automatically. |
 | No Discord alerts | Check `DISCORD_WEBHOOK_URL` is set in `/etc/drongo/drongo.env` and `alerts.discord.enabled: true`. Test the webhook with `curl -d '{"content":"test"}' -H "Content-Type: application/json" <url>`. |
 | "pip: permission denied" / can't install packages | It needs its writable venv at `/var/lib/drongo/runtime/venv`. `sudo ./update.sh` (or a restart) creates it; after that `pip install …` and `python …` in its shell use that venv automatically. Native packages (numpy etc.) need ARM wheels or build tools; pure-Python (Flask, etc.) just works. |
