@@ -277,6 +277,36 @@ for grp in i2c gpio spi dialout video; do
   getent group "$grp" >/dev/null 2>&1 && usermod -aG "$grp" "$AGENT_USER" || true
 done
 
+# Wall off the PMIC / voltage-regulator I2C bus. On this SoC the power chips
+# (rk80x PMIC, syr82x CPU/GPU regulators) sit on i2c-0, and PROBING them — a
+# stray i2cdetect or an smbus address sweep in a project — swings the SoC's own
+# supply rails and HARD-LOCKS the whole board (a freeze no watchdog can recover:
+# the kernel itself is wedged). The agent stays in the i2c group so a real sensor
+# bus still works, but the power bus is made root-only so an unprivileged script
+# physically can't open it. Detected by driver NAME so it targets the right bus
+# on any Rockchip board, not a hardcoded number.
+say "2b/10 Protecting the PMIC I2C bus (probing it hard-locks the board)"
+_pmic_re='rk80[5-9]|rk8[12][0-9]|syr82[0-9]|fan5352[0-9]|fan53555|tcs452[0-9]|xz3216|wl2868|lp8752'
+_danger="$(for _n in /sys/bus/i2c/devices/*/name; do
+    [ -f "$_n" ] || continue
+    _b="$(basename "$(dirname "$_n")")"
+    case "$_b" in i2c-*) continue ;; esac        # skip bus adapters; want client chips
+    grep -Eqi "$_pmic_re" "$_n" 2>/dev/null && printf '%s\n' "${_b%%-*}"
+  done | sort -u)"
+if [ -n "$_danger" ]; then
+  {
+    echo "# Installed by DRONGO. These I2C buses carry the PMIC / CPU-GPU voltage"
+    echo "# regulators — probing them hard-locks the board. Root-only so the"
+    echo "# unprivileged 'drongo' agent (in the i2c group) can't open them."
+    for _b in $_danger; do echo "KERNEL==\"i2c-$_b\", GROUP=\"root\", MODE=\"0600\""; done
+  } > /etc/udev/rules.d/99-drongo-i2c.rules
+  udevadm control --reload-rules 2>/dev/null || true
+  udevadm trigger --subsystem-match=i2c 2>/dev/null || true
+  say "  power bus(es) now root-only: $(printf 'i2c-%s ' $_danger)"
+else
+  warn "  no PMIC/regulator seen on I2C — skipping (unusual; check /sys/bus/i2c/devices)"
+fi
+
 # ---------------------------------------------------------------------------
 say "3/10  Directories"
 mkdir -p "$INSTALL" "$RUNTIME"/{workspace,state,logs} \
