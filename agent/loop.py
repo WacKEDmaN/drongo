@@ -153,7 +153,7 @@ IDEATE_SYSTEM = """{persona}
 
 Decide your next self-directed project. Finishable in a handful of steps, but
 genuinely useful or delightful.
-
+{focus}
 USE THE HARDWARE. This box has spare CPU going to waste — when it fits, prefer
 computationally RICH projects that actually exercise it: fractals and Mandelbrot
 zooms, particle systems, cellular automata (Game of Life, reaction-diffusion),
@@ -161,18 +161,31 @@ ray/path tracers, procedural worlds/maps, physics sims, pathfinding visualisers,
 number-crunching. Compute real pixels/data, don't just print a stub. (simulation
 and generative_art task_types are made for this.)
 
-NOVELTY IS THE POINT. Look hard at what you've recently built and deliberately do
+{novelty}
+
+Reply with ONE JSON object only:
+  {{"task_type": "<one of: {types}>", "title": "<short title>", "description": "<what to build and why, 1-3 sentences>"}}
+"""
+
+# Novelty guidance when there is NO standing mission: maximise variety across
+# everything.
+_NOVELTY_FREE = """NOVELTY IS THE POINT. Look hard at what you've recently built and deliberately do
 something DIFFERENT — a different task_type AND a different subject. Variety is
 across games, generative images, utilities, research notes, retro/Z80, creative
 toys — not ten versions of the same idea.
 Specifically: do NOT keep building hardware/temperature/CPU/sensor things. Reading
 the box's own stats is fun ONCE; if you've done it recently, that subject is OFF
 the table this round. Don't bolt a temp/CPU readout onto an unrelated project
-either. When in doubt, pick the kind of thing you've done LEAST.
+either. When in doubt, pick the kind of thing you've done LEAST."""
 
-Reply with ONE JSON object only:
-  {{"task_type": "<one of: {types}>", "title": "<short title>", "description": "<what to build and why, 1-3 sentences>"}}
-"""
+# Novelty guidance when a standing mission IS set: the mission fixes the SUBJECT,
+# so variety comes from the FORM — never from drifting off the mission.
+_NOVELTY_MISSION = """VARIETY WITHIN THE MISSION. Your standing mission (above) fixes the SUBJECT — do
+NOT drift off it to chase novelty; that is the mistake to avoid. Get your variety
+from the FORM instead: rotate across different KINDS of on-mission projects (a
+game, a demo/intro, a graphics or music routine, a tool, a tutorial/how-to, a
+research note) and different techniques, so each is genuinely new — just never
+build the same on-mission project twice, and never wander to an unrelated subject."""
 
 # Generic project-word noise to ignore when spotting what subjects it overuses.
 _THEME_STOP = {
@@ -283,6 +296,7 @@ class AgentLoop:
         self.mem.push_step("info", "🧠 deciding what to build next…")
         recent = self.mem.recent_projects(self.cfg.get("loop", "max_recent_tasks", default=12))
         interests = self.cfg.get("interests", default=[])
+        mission = self.mem.get_mission()
         hw = self.mem.recall("hardware")
         if hw:
             hw_hint = (f"\nKnown hardware: model={hw.get('model')}, "
@@ -307,7 +321,9 @@ class AgentLoop:
                 steer += f"\nYou have NOT done these types recently — strongly prefer one: {', '.join(unused)}."
             if overused:
                 steer += f"\nYou have OVER-DONE these types — avoid them now: {', '.join(overused)}."
-            if themes:
+            # ...but ONLY when there's no standing mission. A mission is a
+            # deliberately repeated subject — don't tell it to abandon that subject.
+            if themes and not mission:
                 steer += (f"\nYou keep reusing these subjects: {', '.join(themes)}. Pick a DIFFERENT "
                           f"subject this time — do NOT just bolt CPU/temperature/sensor readouts onto "
                           f"another project.")
@@ -333,13 +349,28 @@ class AgentLoop:
                          ". This is genuinely new — your next project SHOULD identify, test or "
                          "use it (e.g. capture from the camera, read the new sensor, document "
                          "what it is). This OVERRIDES the 'avoid sensors' guidance above. ***" + steer)
-            mission = self.mem.get_mission()
-            mission_txt = (f"YOUR STANDING MISSION (bias your choice strongly toward this): "
-                           f"{mission}\n" if mission else "")
+            if mission:
+                mission_txt = (
+                    f"*** YOUR STANDING MISSION — THIS IS THE POINT, FOLLOW IT: {mission}\n"
+                    f"    Every project this round MUST serve this mission; get your variety by "
+                    f"varying the KIND of project, never by leaving the subject. ***\n")
+                closing = ("Propose your next project now — a DIFFERENT project from the list "
+                           "above, but squarely ON your standing mission.")
+            else:
+                mission_txt = ""
+                closing = "Propose your next project now — genuinely different from the list above."
             user = (f"{mission_txt}Your interests: {interests}\n"
                     f"Recently built (newest first): {recent_lines}{steer}{hw_hint}\n\n"
-                    "Propose your next project now — genuinely different from the list above.")
-        system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES))
+                    f"{closing}")
+        # A standing mission fixes the subject; it OVERRIDES the novelty push (except
+        # when the human gave an explicit one-off suggestion — that wins this round).
+        use_mission = bool(mission) and not suggestion
+        focus = (f"\n*** STANDING MISSION (this OVERRIDES the variety guidance below): {mission}\n"
+                 f"    Every project MUST serve it — vary the KIND of project, not the subject. ***\n"
+                 if use_mission else "")
+        system = IDEATE_SYSTEM.format(persona=self.persona, types=", ".join(TASK_TYPES),
+                                      focus=focus,
+                                      novelty=(_NOVELTY_MISSION if use_mission else _NOVELTY_FREE))
 
         def _one():
             text, provider = self.router.complete(system, user, temperature=0.95, purpose="ideate")
