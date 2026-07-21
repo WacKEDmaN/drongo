@@ -142,7 +142,8 @@ main{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:13px 15px;min-width:0}
 .c4{grid-column:span 4}.c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
 @media(max-width:1050px){.c4,.c5,.c6,.c7,.c8{grid-column:span 12}}
-.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:13px}
+.pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:stretch}
+@media(max-width:760px){.pgrid{grid-template-columns:1fr}}
 .th{font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:9px;display:flex;align-items:center;gap:8px}
 
 /* ---- cards / stats ---- */
@@ -203,7 +204,6 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
 .pkgck{accent-color:var(--acc)}
 
 /* ---- projects ---- */
-.pgrid{align-items:start}
 .proj{position:relative;overflow:hidden;padding:14px 15px 12px;display:flex;flex-direction:column;transition:border-color .15s,transform .12s}
 .proj:hover{border-color:var(--line2);transform:translateY(-1px)}
 .proj::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--good)}
@@ -213,7 +213,7 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
 .phdr .ptitle{font-weight:600;font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ptype{font:9.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--info);background:rgba(87,183,230,.1);border:1px solid rgba(87,183,230,.25);padding:2px 7px;border-radius:5px;flex:none}
 .pmeta{font:11px var(--mono);color:var(--mut);margin-top:5px}
-.pbody{font-size:12.5px;color:#cbd7e3;margin-top:8px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.pbody{font-size:12.5px;color:#cbd7e3;margin-top:8px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
 .card.expanded .pbody{-webkit-line-clamp:unset;display:block}
 .parts{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px}
 .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
@@ -279,7 +279,7 @@ table.usaget,table.log{width:100%;border-collapse:collapse;font-family:var(--mon
 /* ---- legacy accordion panels (still used inside settings groups) ---- */
 .panel{border:1px solid var(--line);border-radius:var(--r);margin:10px 0;background:var(--panel)}
 .phead{width:100%;text-align:left;background:none;border:0;color:var(--fg);font:600 12px var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:12px 14px;display:flex;justify-content:space-between;align-items:center}
-.pbody{display:none;padding:0 14px 14px}
+.panel .pbody{display:none;padding:0 14px 14px}
 .panel.open>.pbody{display:block}
 .chev{transition:.15s;color:var(--faint)} .panel.open>.phead .chev{transform:rotate(180deg);color:var(--acc)}
 
