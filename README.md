@@ -542,37 +542,43 @@ Don't want to hand a cloud search provider your queries? Run **[SearXNG](https:/
 DuckDuckGo/etc., exposes a JSON API, and needs **no API key**. DRONGO uses it
 before any cloud provider when `SEARXNG_URL` is set.
 
-Run it (Docker is easiest; the image is multi-arch so it works on the Pi's arm64,
-but it's happiest on a spare box on your LAN):
+**The easy way — let the installer do it:**
+
+```bash
+sudo ./install.sh --searxng          # at install time
+# — or, on an already-installed box, just the search piece:
+sudo bash /opt/drongo/system/searxng.sh
+```
+
+That installs Docker (if missing), runs SearXNG on `127.0.0.1:8888` with the JSON
+API pre-enabled, verifies it answers, and (via `--searxng`) sets `SEARXNG_URL` for
+you. The plain installer also *offers* it as a yes/no question. Then restart:
+`sudo systemctl restart drongo drongo-web`.
+
+**Manual / on a spare LAN box** (recommended if the Pi also runs a local LLM):
 
 ```bash
 docker run -d --name searxng --restart unless-stopped -p 8888:8080 \
-  -v searxng:/etc/searxng searxng/searxng:latest
+  -v /etc/searxng:/etc/searxng searxng/searxng:latest
 ```
 
-Enable the JSON API (off by default) — add to the `search:` block of
+Enable the JSON API (off by default) and turn off the bot-limiter — put this in
 `/etc/searxng/settings.yml`, then `docker restart searxng`:
 
 ```yaml
+use_default_settings: true
+server:
+  limiter: false        # let a non-browser client (DRONGO) query the API
 search:
-  formats:
-    - html
-    - json
+  formats: [html, json]
 ```
 
-Point DRONGO at it and restart — either run the setup wizard (`sudo /opt/drongo/configure.sh`,
-which now asks for `SEARXNG_URL`), or set it by hand:
-
-```bash
-echo 'SEARXNG_URL=http://127.0.0.1:8888' | sudo tee -a /etc/drongo/drongo.env   # or http://<lan-ip>:8888
-sudo systemctl restart drongo drongo-web
-```
+Point DRONGO at it: set `SEARXNG_URL=http://<host>:8888` in `/etc/drongo/drongo.env`
+(the wizard `sudo /opt/drongo/configure.sh` asks for it), then restart the services.
 
 Test it: `curl 'http://127.0.0.1:8888/search?q=rk3399&format=json'` should return
-JSON with a `results` array. If it 403s, JSON isn't enabled yet (step above). On a
-4 GB Pi it's light when idle; if you also run a local LLM, prefer putting SearXNG
-on another LAN machine. If you enforce egress filtering, SearXNG needs to reach
-the upstream engines.
+JSON with a `results` array. If it 403s, JSON isn't enabled (or the limiter is on).
+If you enforce egress filtering, SearXNG itself needs to reach the upstream engines.
 
 ---
 

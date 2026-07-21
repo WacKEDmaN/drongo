@@ -32,6 +32,7 @@
 #                      audio, cups); frees disk. Kernel/firmware/boot untouched.
 #    --retro           install the Z80/Amstrad toolchain (sdcc/z88dk/CPCtelera)
 #    --imggen          build the local image generator (OnnxStream — slow on a Pi)
+#    --searxng         self-hosted web search (installs Docker + runs SearXNG, no API key)
 #    --yes, -y         accept all defaults, don't prompt (non-interactive)
 # ===========================================================================
 set -euo pipefail
@@ -48,6 +49,7 @@ STRIP_DESKTOP=""      # disable the GUI (reversible, nothing uninstalled)
 PURGE_DESKTOP=""      # actually REMOVE the desktop packages (frees disk; stronger)
 RETRO=""
 IMGGEN=""
+SEARXNG=""            # self-hosted web search (Docker + SearXNG); off by default
 ASSUME_YES=0
 
 # --- friendly failure: tell the beginner exactly where it broke ------------
@@ -59,6 +61,7 @@ while [ $# -gt 0 ]; do
     --purge-desktop) PURGE_DESKTOP=1; STRIP_DESKTOP=1 ;;   # remove the packages outright
     --retro) RETRO=1 ;;
     --imggen) IMGGEN=1 ;;
+    --searxng) SEARXNG=1 ;;
     --local) WANT_LOCAL=1 ;;
     --model) [ $# -ge 2 ] || { echo "--model needs a value, e.g. --model qwen2.5:1.5b-instruct"; exit 1; }
              MODEL="$2"; WANT_LOCAL=1; shift ;;     # asking for a model means you want local
@@ -162,6 +165,9 @@ if [ "$_TTY" -eq 1 ]; then
   if [ -z "$IMGGEN" ]; then
     if confirm 'Build the local image generator (OnnxStream - slow on a Pi)?' N; then IMGGEN=1; else IMGGEN=0; fi
   fi
+  if [ -z "$SEARXNG" ]; then
+    if confirm 'Self-hosted web search? Installs Docker + runs SearXNG (no API key, no cloud).' N; then SEARXNG=1; else SEARXNG=0; fi
+  fi
 fi
 # Resolve anything still unanswered (non-interactive / --yes / flag absent).
 WANT_LOCAL="${WANT_LOCAL:-0}"
@@ -170,7 +176,8 @@ STRIP_DESKTOP="${STRIP_DESKTOP:-0}"
 PURGE_DESKTOP="${PURGE_DESKTOP:-0}"
 RETRO="${RETRO:-0}"
 IMGGEN="${IMGGEN:-0}"
-echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP  purge-desktop=$PURGE_DESKTOP  retro=$RETRO  imggen=$IMGGEN"
+SEARXNG="${SEARXNG:-0}"
+echo "    chosen: local=$WANT_LOCAL  model=$MODEL  strip-desktop=$STRIP_DESKTOP  purge-desktop=$PURGE_DESKTOP  retro=$RETRO  imggen=$IMGGEN  searxng=$SEARXNG"
 
 # ---------------------------------------------------------------------------
 # Memory headroom via ZRAM (compressed swap that lives in RAM) — deliberately NOT
@@ -457,6 +464,20 @@ fi
 if [ "$IMGGEN" -eq 1 ]; then
   say "Local image generator: OnnxStream (low-priority build; this takes a while)"
   $LOAD bash "$INSTALL/system/image-gen.sh" || warn "image generator had problems (see above) — re-run sudo $INSTALL/system/image-gen.sh"
+fi
+
+# Optional self-hosted web search (Docker + SearXNG). No API key, no cloud broker.
+if [ "$SEARXNG" -eq 1 ]; then
+  say "Self-hosted web search: Docker + SearXNG"
+  if bash "$INSTALL/system/searxng.sh"; then
+    # Wire the agent to it (only add the line once).
+    if ! grep -q '^SEARXNG_URL=' "$ETC/drongo.env" 2>/dev/null; then
+      echo 'SEARXNG_URL=http://127.0.0.1:8888' >> "$ETC/drongo.env"
+    fi
+    say "  web search -> http://127.0.0.1:8888 (SEARXNG_URL set)"
+  else
+    warn "SearXNG setup had problems (see above) — re-run sudo $INSTALL/system/searxng.sh"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
