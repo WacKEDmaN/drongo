@@ -560,7 +560,8 @@ search:
     - json
 ```
 
-Point DRONGO at it and restart:
+Point DRONGO at it and restart — either run the setup wizard (`sudo /opt/drongo/configure.sh`,
+which now asks for `SEARXNG_URL`), or set it by hand:
 
 ```bash
 echo 'SEARXNG_URL=http://127.0.0.1:8888' | sudo tee -a /etc/drongo/drongo.env   # or http://<lan-ip>:8888

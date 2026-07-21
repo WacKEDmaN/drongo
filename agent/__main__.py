@@ -255,6 +255,24 @@ def cmd_configure(args):
         if v:
             set_env(envf, var, v)
 
+    print("\nWeb search — how it researches online (Enter to skip):")
+    print("  Best option is self-hosted SearXNG: open-source, no API key, no cloud.")
+    print("  (docker run -d --name searxng -p 8888:8080 searxng/searxng, then enable")
+    print("   JSON in its settings.yml — search.formats: [html, json].)")
+    sx = ask("  SEARXNG_URL  [e.g. http://127.0.0.1:8888]: ")
+    if sx:
+        set_env(envf, "SEARXNG_URL", sx.rstrip("/"))
+        print("  -> SearXNG web search ON.\n")
+    else:
+        print("  (or a hosted search key instead — Enter to skip each:)")
+        for var, where in [("BRAVE_API_KEY", "brave.com/search/api — 2000 free/mo"),
+                           ("TAVILY_API_KEY", "tavily.com"),
+                           ("SERPER_API_KEY", "serper.dev")]:
+            v = ask(f"    {var}  [{where}]: ")
+            if v:
+                set_env(envf, var, v)
+                break
+
     os.chmod(envf, 0o600)
     if os.path.exists(obsf):
         os.chmod(obsf, 0o600)
